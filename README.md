@@ -36,3 +36,4 @@ make
 
 - 调整词表
 - 调整语料
+- GptScorer
