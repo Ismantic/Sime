@@ -5,9 +5,25 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Optimization flags for Release builds
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -funroll-loops -finline-functions -ffast-math -flto -DNDEBUG" CACHE STRING "Release flags" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Release linker flags" FORCE)
+
+# Debug flags
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g3 -ggdb" CACHE STRING "Debug flags" FORCE)
+
+# Set default build type to Release if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(NEW_ROOT ${CMAKE_CURRENT_LIST_DIR})
 set(NEW_SRC_DIR ${NEW_ROOT}/src)
 set(NEW_INC_DIR ${NEW_ROOT}/include)
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "C++ Release flags: ${CMAKE_CXX_FLAGS_RELEASE}")
+message(STATUS "C++ Debug flags: ${CMAKE_CXX_FLAGS_DEBUG}")
 
 add_library(sime_core
     ${NEW_SRC_DIR}/ustr.cc

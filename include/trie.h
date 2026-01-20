@@ -10,20 +10,25 @@
 
 namespace sime {
 
-struct Move {
-    std::uint32_t i = 0;
-    Unit unit{};
+// Trie structures are stored in binary blob and frequently accessed
+// Align to 8 bytes for optimal cache performance
+struct alignas(8) Move {
+    std::uint32_t i = 0;    // 4 bytes - child node index
+    Unit unit{};            // 4 bytes - unit value
+    // Total: 8 bytes (naturally aligned)
 };
 
-struct Entry {
-    std::uint32_t i = 0;
-    std::uint8_t cost = 0;
-    std::uint8_t empty[3]{};
+struct alignas(8) Entry {
+    std::uint32_t i = 0;      // 4 bytes - token ID
+    std::uint8_t cost = 0;    // 1 byte - cost
+    std::uint8_t empty[3]{};  // 3 bytes - padding
+    // Total: 8 bytes (naturally aligned)
 };
 
-struct Node {
-    std::uint16_t count = 0;
-    std::uint16_t move_count = 0;
+struct alignas(4) Node {
+    std::uint16_t count = 0;       // 2 bytes - number of entries
+    std::uint16_t move_count = 0;  // 2 bytes - number of moves
+    // Total: 4 bytes
 
     const Move* GetMove() const;
     const Entry* GetEntry() const;

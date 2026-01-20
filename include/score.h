@@ -18,9 +18,12 @@ public:
     static constexpr std::size_t PrTableSize = 1u << PrBits;
     static constexpr std::size_t BowTableSize = 1u << BowBits;
 
-    struct State {
-        std::uint32_t level = 0;
-        std::uint32_t index = 0;
+    // Scorer state is frequently used as map key and compared
+    // Align to 8 bytes for better cache performance
+    struct alignas(8) State {
+        std::uint32_t level = 0;  // 4 bytes
+        std::uint32_t index = 0;  // 4 bytes
+        // Total: 8 bytes (naturally aligned)
 
         bool operator<(const State& other) const {
             if (level != other.level) {
@@ -41,20 +44,24 @@ public:
     void Back(State& state) const;
 
 private:
-    struct NodeEntry {
-        TokenID id = 0;
-        std::uint32_t child = 0;
-        std::uint32_t bow = 0;
-        std::uint32_t pr = 0;
-        std::uint32_t bon = 0;
-        std::uint32_t boe = 0;
+    // Language model node entry - align to 32 bytes for cache efficiency
+    struct alignas(32) NodeEntry {
+        TokenID id = 0;            // 4 bytes - token ID
+        std::uint32_t child = 0;   // 4 bytes - child index
+        std::uint32_t bow = 0;     // 4 bytes - backoff weight index
+        std::uint32_t pr = 0;      // 4 bytes - probability index
+        std::uint32_t bon = 0;     // 4 bytes - backoff node index
+        std::uint32_t boe = 0;     // 4 bytes - backoff end level
+        // Total: 24 bytes, padded to 32 bytes
     };
 
-    struct LeaveEntry {
-        TokenID id = 0;
-        std::uint32_t pr = 0;
-        std::uint32_t bon = 0;
-        std::uint32_t boe = 0;
+    // Language model leaf entry - align to 16 bytes
+    struct alignas(16) LeaveEntry {
+        TokenID id = 0;          // 4 bytes - token ID
+        std::uint32_t pr = 0;    // 4 bytes - probability index
+        std::uint32_t bon = 0;   // 4 bytes - backoff node index
+        std::uint32_t boe = 0;   // 4 bytes - backoff end level
+        // Total: 16 bytes (naturally aligned)
     };
 
     double RawMove(State s, TokenID w, State& r) const;

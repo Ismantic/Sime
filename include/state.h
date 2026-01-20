@@ -12,12 +12,15 @@ namespace sime {
 
 using SentenceScore = double;
 
-struct State {
-    SentenceScore score = 0.0;
-    std::size_t frame_index = 0;
-    const State* backtrace = nullptr;
-    Scorer::State scorer_state{};
-    TokenID backtrace_token = 0;
+// Cache-aligned State structure to avoid false sharing
+// Aligned to 64 bytes (typical cache line size) for optimal performance
+struct alignas(64) State {
+    SentenceScore score = 0.0;           // 8 bytes
+    std::size_t frame_index = 0;         // 8 bytes
+    const State* backtrace = nullptr;    // 8 bytes
+    Scorer::State scorer_state{};        // 8 bytes (2 × uint32_t)
+    TokenID backtrace_token = 0;         // 4 bytes
+    // Total: 36 bytes, padded to 64 bytes
 
     State() = default;
 
