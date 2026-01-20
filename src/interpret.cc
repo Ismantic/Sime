@@ -3,6 +3,7 @@
 #include "ustr.h"
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace {
 constexpr sime::TokenID kScoreNotToken = 69;
@@ -97,6 +98,29 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
         result.text = std::move(composed);
         results.push_back(std::move(result));
     }
+
+    // Remove duplicate results: keep only the best score for each unique text
+    std::unordered_map<std::u32string, DecodeResult> unique_results;
+    for (auto& result : results) {
+        auto it = unique_results.find(result.text);
+        if (it == unique_results.end() || result.score > it->second.score) {
+            unique_results[result.text] = std::move(result);
+        }
+    }
+
+    // Convert back to vector and sort by score (descending)
+    results.clear();
+    for (auto& [text, result] : unique_results) {
+        results.push_back(std::move(result));
+    }
+    std::sort(results.begin(), results.end(),
+              [](const auto& a, const auto& b) { return a.score > b.score; });
+
+    // Limit to max_best results
+    if (results.size() > max_best) {
+        results.resize(max_best);
+    }
+
     return results;
 }
 
