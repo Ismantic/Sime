@@ -71,33 +71,61 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
 
     Process(lattice);
 
-    const auto tail_states = lattice.back().states.GetFilteredResult();
-    if (tail_states.empty()) {
-        return results;
-    }
+    
 
-    const std::size_t total =
-        std::min<std::size_t>(max_best, tail_states.size());
-    for (std::size_t rank = 0; rank < total; ++rank) {
-        auto path = Backtrace(tail_states[rank], lattice.size() - 1);
-        if (path.empty()) {
-            continue;
+        const auto tail_states = lattice.back().states.GetFilteredResult();
+
+        if (tail_states.empty()) {
+
+            return results;
+
         }
-        DecodeResult result;
-        result.score = -tail_states[rank].score;
-        std::u32string composed;
-        composed.reserve(path.size() * 4);
-        for (const auto& word : path) {
-            result.tokens.push_back(word.id);
-            composed += ToText(word, units);
+
+    
+
+        const std::size_t total =
+
+            std::min<std::size_t>(max_best, tail_states.size());
+
+        for (std::size_t rank = 0; rank < total; ++rank) {
+
+            auto path = Backtrace(tail_states[rank], lattice.size() - 1);
+
+            if (path.empty()) {
+
+                continue;
+
+            }
+
+            DecodeResult result;
+
+            result.score = -tail_states[rank].score;
+
+            std::u32string composed;
+
+            composed.reserve(path.size() * 4);
+
+            for (const auto& word : path) {
+
+                result.tokens.push_back(word.id);
+
+                composed += ToText(word, units);
+
+            }
+
+            if (composed.empty()) {
+
+                continue;
+
+            }
+
+            result.text = std::move(composed);
+
+            results.push_back(std::move(result));
+
         }
-        if (composed.empty()) {
-            continue;
-        }
-        result.text = std::move(composed);
-        results.push_back(std::move(result));
-    }
-    return results;
+
+        return results;
 }
 
 void Interpreter::InitLattice(const std::vector<Unit>& units,
@@ -136,6 +164,8 @@ void Interpreter::InitLattice(const std::vector<Unit>& units,
 }
 
 void Interpreter::Process(std::vector<Column>& lattice) const {
+#if SIME_USE_FAST_STATES
+    // Optimized version with staged pruning
     for (std::size_t col = 0; col < lattice.size(); ++col) {
         auto& column = lattice[col];
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
@@ -150,6 +180,28 @@ void Interpreter::Process(std::vector<Column>& lattice) const {
             }
         }
     }
+
+    // Staged pruning: prune all columns after processing
+    for (auto& column : lattice) {
+        column.states.Prune();
+    }
+#else
+    // Original version with immediate pruning on every Add()
+    for (std::size_t col = 0; col < lattice.size(); ++col) {
+        auto& column = lattice[col];
+        for (auto it = column.states.begin(); it != column.states.end(); ++it) {
+            const auto& value = *it;
+            for (const auto& word : column.vecs) {
+                Scorer::State next_state{};
+                double step = scorer_.ScoreMove(value.scorer_state, word.id, next_state);
+                scorer_.Back(next_state);
+                double next_cost = value.score + step;
+                State next(next_cost, word.right, &value, next_state, word.id);
+                lattice[word.right].states.Add(next);
+            }
+        }
+    }
+#endif
 }
 
 std::vector<Interpreter::Lattice> Interpreter::Backtrace(

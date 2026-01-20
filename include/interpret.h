@@ -10,6 +10,19 @@
 #include <string_view>
 #include <vector>
 
+// Enable optimized state management with flat hash table and staged pruning
+// Set to 1 to use FastNetStates (faster), 0 to use NetStates (original)
+// FastNetStates is now fully debugged and enabled by default
+#ifndef SIME_USE_FAST_STATES
+#define SIME_USE_FAST_STATES 1
+#endif
+
+// Staged pruning: prune every N frames instead of every state addition
+// Only used when SIME_USE_FAST_STATES is enabled
+#ifndef SIME_PRUNE_INTERVAL
+#define SIME_PRUNE_INTERVAL 4
+#endif
+
 namespace sime {
 
 struct DecodeResult {
@@ -45,7 +58,11 @@ private:
 
     struct Column {
         std::vector<Lattice> vecs;
+#if SIME_USE_FAST_STATES
+        FastNetStates states;
+#else
         NetStates states;
+#endif
     };
 
     void InitLattice(const std::vector<Unit>& units,

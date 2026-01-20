@@ -113,4 +113,78 @@ private:
     std::vector<std::pair<SentenceScore, Scorer::State>> score_heap_;
 };
 
+// Optimized flat hash-based state storage with staged pruning
+// Uses open addressing for O(1) lookups instead of O(log n) map operations
+class FastNetStates {
+public:
+    FastNetStates();
+
+    void SetMaxBest(std::size_t max_best) { max_best_ = max_best; }
+    void Clear();
+    void Add(const State& state);
+
+    // Perform pruning to beam width (called periodically, not on every Add)
+    void Prune();
+
+    std::vector<State> GetSortedResult() const;
+    std::vector<State> GetFilteredResult() const;
+
+    std::size_t Size() const { return size_; }
+
+    // Iterator support
+    class iterator {
+    public:
+        iterator() = default;
+        iterator(FastNetStates* parent, std::size_t bucket_idx, std::size_t state_idx);
+
+        iterator& operator++();
+        bool operator!=(const iterator& rhs) const;
+        State& operator*() const;
+        State* operator->() const;
+
+    private:
+        void AdvanceToValid();
+
+        FastNetStates* parent_ = nullptr;
+        std::size_t bucket_idx_ = 0;
+        std::size_t state_idx_ = 0;
+    };
+
+    iterator begin();
+    iterator end();
+
+private:
+    static constexpr std::size_t TABLE_SIZE = 256;  // Must be power of 2
+    static constexpr std::size_t MAX_BEST = 4;      // States per bucket
+    static constexpr std::size_t BeamWidth = 48;
+    static constexpr double FilterRatioL1 = 0.12;
+    static constexpr double FilterRatioL2 = 0.02;
+    static constexpr double FilterThreshold = -40.0;
+
+    struct alignas(64) Bucket {
+        Scorer::State key{};
+        std::array<State, MAX_BEST> states{};
+        std::uint8_t count = 0;
+        bool occupied = false;
+        SentenceScore min_score = std::numeric_limits<SentenceScore>::lowest();
+
+        void Reset() {
+            count = 0;
+            occupied = false;
+            min_score = std::numeric_limits<SentenceScore>::lowest();
+        }
+
+        bool TryAdd(const State& state);
+        void UpdateMinScore();
+    };
+
+    std::size_t Hash(const Scorer::State& s) const;
+    Bucket* FindBucket(const Scorer::State& key);
+    const Bucket* FindBucket(const Scorer::State& key) const;
+
+    std::array<Bucket, TABLE_SIZE> buckets_;
+    std::size_t size_ = 0;
+    std::size_t max_best_ = 2;
+};
+
 } // namespace sime
