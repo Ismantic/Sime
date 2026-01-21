@@ -1,0 +1,18 @@
+[Addon]
+# 插件名称
+Name=sime
+# 插件类别
+Category=InputMethod
+# 默认启用
+Enabled=True
+# 库名称（不含 lib 前缀和 .so 后缀）
+Library=sime
+# 类型
+Type=SharedLibrary
+# 按需加载
+OnDemand=True
+
+[Addon/OptionalDependencies]
+# 可选依赖（用于复用拼音解析等）
+0=quickphrase
+1=pinyin

@@ -10,6 +10,9 @@ option(SIME_ENABLE_SIMD "Enable SIMD (AVX2) optimizations" ON)
 option(SIME_ENABLE_PGO_GENERATE "Generate PGO profile data" OFF)
 option(SIME_ENABLE_PGO_USE "Use PGO profile data for optimization" OFF)
 
+# Fcitx5 integration
+option(SIME_ENABLE_FCITX5 "Build fcitx5 input method plugin" ON)
+
 # Optimization flags for Release builds
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -mtune=native -funroll-loops -finline-functions -ffast-math -flto -DNDEBUG" CACHE STRING "Release flags" FORCE)
 set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto" CACHE STRING "Release linker flags" FORCE)
@@ -119,3 +122,8 @@ set(_sime_targets
 foreach(target_name IN LISTS _sime_targets)
     target_compile_options(${target_name} PRIVATE -Wall -Wextra -pedantic -Wconversion)
 endforeach()
+
+# Fcitx5 input method plugin
+if(SIME_ENABLE_FCITX5)
+    add_subdirectory(fcitx5)
+endif()
