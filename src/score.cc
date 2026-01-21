@@ -5,6 +5,11 @@
 #include <fstream>
 #include <limits>
 
+// SIMD intrinsics
+#ifdef SIME_HAS_AVX2
+#include <immintrin.h>
+#endif
+
 namespace sime {
 namespace {
 constexpr std::uint32_t TokenMask = (1U << Scorer::TokenBits) - 1U;
@@ -230,6 +235,50 @@ std::size_t Scorer::GetNode(int level,
                             std::size_t end,
                             TokenID w) const {
     const auto& nodes = node_levels_[static_cast<std::size_t>(level)];
+    const std::size_t count = end - begin;
+
+#ifdef SIME_HAS_AVX2
+    // For small ranges (8-32 elements), use SIMD linear search
+    // This can be faster than binary search due to:
+    // 1. Avoiding branch mispredictions
+    // 2. Better use of SIMD parallelism
+    // 3. Prefetching benefits
+    if (count >= 8 && count <= 32) {
+        const __m256i target_vec = _mm256_set1_epi32(static_cast<int>(w));
+        const std::size_t simd_end = begin + (count & ~7u);  // Round down to multiple of 8
+
+        for (std::size_t i = begin; i < simd_end; i += 8) {
+            // Load 8 token IDs (assuming NodeEntry has id as first member)
+            // We need to gather the IDs since NodeEntry is larger than 4 bytes
+            alignas(32) std::uint32_t ids[8];
+            for (int j = 0; j < 8; ++j) {
+                ids[j] = nodes[i + static_cast<std::size_t>(j)].id;
+            }
+            __m256i data = _mm256_load_si256(reinterpret_cast<const __m256i*>(ids));
+            __m256i cmp = _mm256_cmpeq_epi32(data, target_vec);
+            int mask = _mm256_movemask_epi8(cmp);
+
+            if (mask != 0) {
+                // Found a match, determine which element
+                int byte_pos = __builtin_ctz(static_cast<unsigned>(mask));
+                return i + static_cast<std::size_t>(byte_pos / 4);
+            }
+        }
+
+        // Check remaining elements (< 8)
+        for (std::size_t i = simd_end; i < end; ++i) {
+            if (nodes[i].id == w) {
+                return i;
+            }
+            if (nodes[i].id > w) {
+                return end;  // Not found, array is sorted
+            }
+        }
+        return end;
+    }
+#endif
+
+    // Fallback to binary search for larger ranges or when SIMD not available
     auto first = nodes.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = nodes.begin() + static_cast<std::ptrdiff_t>(end);
     auto it = std::lower_bound(first, last, w, [](const NodeEntry& node, TokenID id) {
@@ -242,8 +291,46 @@ std::size_t Scorer::GetNode(int level,
 }
 
 std::size_t Scorer::GetLeave(std::size_t begin,
-                             std::size_t end, 
+                             std::size_t end,
                              TokenID w) const {
+    const std::size_t count = end - begin;
+
+#ifdef SIME_HAS_AVX2
+    // SIMD linear search for small ranges
+    if (count >= 8 && count <= 32) {
+        const __m256i target_vec = _mm256_set1_epi32(static_cast<int>(w));
+        const std::size_t simd_end = begin + (count & ~7u);
+
+        for (std::size_t i = begin; i < simd_end; i += 8) {
+            // Gather token IDs from LeaveEntry structs
+            alignas(32) std::uint32_t ids[8];
+            for (int j = 0; j < 8; ++j) {
+                ids[j] = leave_level_[i + static_cast<std::size_t>(j)].id;
+            }
+            __m256i data = _mm256_load_si256(reinterpret_cast<const __m256i*>(ids));
+            __m256i cmp = _mm256_cmpeq_epi32(data, target_vec);
+            int mask = _mm256_movemask_epi8(cmp);
+
+            if (mask != 0) {
+                int byte_pos = __builtin_ctz(static_cast<unsigned>(mask));
+                return i + static_cast<std::size_t>(byte_pos / 4);
+            }
+        }
+
+        // Check remaining elements
+        for (std::size_t i = simd_end; i < end; ++i) {
+            if (leave_level_[i].id == w) {
+                return i;
+            }
+            if (leave_level_[i].id > w) {
+                return end;
+            }
+        }
+        return end;
+    }
+#endif
+
+    // Fallback to binary search
     auto first = leave_level_.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = leave_level_.begin() + static_cast<std::ptrdiff_t>(end);
     auto it = std::lower_bound(first, last, w, [](const LeaveEntry& leaf, TokenID id) {
