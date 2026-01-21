@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 
 namespace sime {
@@ -43,6 +44,15 @@ public:
     double ScoreMove(State s, TokenID w, State& r) const;
     void Back(State& state) const;
 
+    // Cached version of Back() for performance optimization
+    void BackCached(State& state) const;
+
+    // Clear the back cache (useful for benchmarking or memory management)
+    void ClearBackCache() const { back_cache_.clear(); }
+
+    // Get cache statistics
+    std::size_t GetBackCacheSize() const { return back_cache_.size(); }
+
 private:
     // Language model node entry - align to 32 bytes for cache efficiency
     struct alignas(32) NodeEntry {
@@ -68,6 +78,11 @@ private:
     std::size_t GetNode(int level, std::size_t b, std::size_t e, TokenID w) const;
     std::size_t GetLeave(std::size_t b, std::size_t e, TokenID w) const;
 
+    // Convert State to a unique key for caching
+    static std::uint64_t StateToKey(const State& s) {
+        return (static_cast<std::uint64_t>(s.level) << 32) | s.index;
+    }
+
     int order_ = 0;
     bool use_log_ = false;
     std::vector<int> level_sizes_;
@@ -75,6 +90,10 @@ private:
     std::vector<LeaveEntry> leave_level_;
     std::vector<float> pr_table_;
     std::vector<float> bow_table_;
+
+    // Back cache: maps input state to backed state
+    // mutable because Back is conceptually const (doesn't modify Scorer state)
+    mutable std::unordered_map<std::uint64_t, State> back_cache_;
 
 };
 

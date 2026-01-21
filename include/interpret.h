@@ -23,6 +23,12 @@
 #define SIME_PRUNE_INTERVAL 4
 #endif
 
+// Enable batch processing optimization for better cache locality
+// Collects state transitions per column before processing
+#ifndef SIME_USE_BATCH_PROCESSING
+#define SIME_USE_BATCH_PROCESSING 1
+#endif
+
 namespace sime {
 
 struct DecodeResult {

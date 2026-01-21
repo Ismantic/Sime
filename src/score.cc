@@ -125,6 +125,7 @@ void Scorer::Reset() {
     leave_level_.clear();
     pr_table_.clear();
     bow_table_.clear();
+    back_cache_.clear();
 }
 
 void Scorer::Back(State& state) const {
@@ -146,6 +147,19 @@ void Scorer::Back(State& state) const {
         state.level = node.boe;
         state.index = node.bon;
     }
+}
+
+void Scorer::BackCached(State& state) const {
+    std::uint64_t key = StateToKey(state);
+    auto it = back_cache_.find(key);
+    if (it != back_cache_.end()) {
+        state = it->second;
+        return;
+    }
+
+    // Cache miss: compute and store
+    Back(state);
+    back_cache_[key] = state;
 }
 
 double Scorer::ScoreMove(State s, TokenID w, State& r) const {

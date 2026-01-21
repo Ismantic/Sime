@@ -225,8 +225,54 @@ void Interpreter::InitLattice(const std::vector<Unit>& units,
 }
 
 void Interpreter::Process(std::vector<Column>& lattice) const {
-#if SIME_USE_FAST_STATES
-    // Optimized version with staged pruning
+#if SIME_USE_FAST_STATES && SIME_USE_BATCH_PROCESSING
+    // Batch processing with staged pruning - best performance
+    // Pre-allocate space for transitions to avoid reallocation
+    struct Transition {
+        const State* from_state;
+        TokenID word_id;
+        std::size_t target_col;
+    };
+    std::vector<Transition> transitions;
+
+    for (std::size_t col = 0; col < lattice.size(); ++col) {
+        auto& column = lattice[col];
+
+        // Estimate and reserve space for transitions
+        std::size_t estimated_transitions =
+            column.states.Size() * column.vecs.size();
+        if (estimated_transitions > 0) {
+            transitions.clear();
+            transitions.reserve(estimated_transitions);
+
+            // Collect all transitions for this column
+            for (auto it = column.states.begin(); it != column.states.end(); ++it) {
+                const auto& value = *it;
+                for (const auto& word : column.vecs) {
+                    transitions.push_back({&value, word.id, word.right});
+                }
+            }
+
+            // Batch process all transitions
+            for (const auto& trans : transitions) {
+                Scorer::State next_state{};
+                double step = scorer_.ScoreMove(trans.from_state->scorer_state,
+                                               trans.word_id, next_state);
+                scorer_.BackCached(next_state);
+                double next_cost = trans.from_state->score + step;
+                State next(next_cost, trans.target_col, trans.from_state,
+                          next_state, trans.word_id);
+                lattice[trans.target_col].states.Add(next);
+            }
+        }
+    }
+
+    // Staged pruning: prune all columns after processing
+    for (auto& column : lattice) {
+        column.states.Prune();
+    }
+#elif SIME_USE_FAST_STATES
+    // Optimized version with staged pruning but no batch processing
     for (std::size_t col = 0; col < lattice.size(); ++col) {
         auto& column = lattice[col];
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
@@ -234,7 +280,7 @@ void Interpreter::Process(std::vector<Column>& lattice) const {
             for (const auto& word : column.vecs) {
                 Scorer::State next_state{};
                 double step = scorer_.ScoreMove(value.scorer_state, word.id, next_state);
-                scorer_.Back(next_state);
+                scorer_.BackCached(next_state);
                 double next_cost = value.score + step;
                 State next(next_cost, word.right, &value, next_state, word.id);
                 lattice[word.right].states.Add(next);
@@ -255,7 +301,7 @@ void Interpreter::Process(std::vector<Column>& lattice) const {
             for (const auto& word : column.vecs) {
                 Scorer::State next_state{};
                 double step = scorer_.ScoreMove(value.scorer_state, word.id, next_state);
-                scorer_.Back(next_state);
+                scorer_.BackCached(next_state);
                 double next_cost = value.score + step;
                 State next(next_cost, word.right, &value, next_state, word.id);
                 lattice[word.right].states.Add(next);
