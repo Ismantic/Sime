@@ -3,6 +3,7 @@
 #include "ustr.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace {
 constexpr sime::TokenID kScoreNotToken = 69;
@@ -107,25 +108,85 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
 
             for (const auto& word : path) {
 
-                result.tokens.push_back(word.id);
+                            result.tokens.push_back(word.id);
 
-                composed += ToText(word, units);
+                            composed += ToText(word, units);
 
-            }
+                        }
 
-            if (composed.empty()) {
+                        if (composed.empty()) {
 
-                continue;
+                            continue;
 
-            }
+                        }
 
-            result.text = std::move(composed);
+                        result.text = std::move(composed);
 
-            results.push_back(std::move(result));
+                        results.push_back(std::move(result));
 
-        }
+                    }
 
-        return results;
+            
+
+                // Remove duplicate results: keep only the best score for each unique text
+
+                // Optimization: sort first, then in-place deduplication with early exit
+
+                if (!results.empty()) {
+
+                    // First, sort by score (descending) to ensure best results first
+
+                    std::sort(results.begin(), results.end(),
+
+                              [](const auto& a, const auto& b) { return a.score > b.score; });
+
+            
+
+                    // Then deduplicate: keep first occurrence (highest score) of each unique text
+
+                    if (results.size() > 1) {
+
+                        std::unordered_set<std::u32string> seen;
+
+                        seen.reserve(std::min(results.size(), max_best));
+
+            
+
+                        auto write_it = results.begin();
+
+                        for (auto read_it = results.begin(); read_it != results.end(); ++read_it) {
+
+                            if (seen.insert(read_it->text).second) {
+
+                                if (write_it != read_it) {
+
+                                    *write_it = std::move(*read_it);
+
+                                }
+
+                                ++write_it;
+
+                                // Early exit once we have max_best unique results
+
+                                if (static_cast<std::size_t>(std::distance(results.begin(), write_it)) >= max_best) {
+
+                                    break;
+
+                                }
+
+                            }
+
+                        }
+
+                        results.erase(write_it, results.end());
+
+                    }
+
+                }
+
+            
+
+                return results;
 }
 
 void Interpreter::InitLattice(const std::vector<Unit>& units,
