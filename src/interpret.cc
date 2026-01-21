@@ -3,7 +3,7 @@
 #include "ustr.h"
 
 #include <algorithm>
-#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 constexpr sime::TokenID kScoreNotToken = 69;
@@ -100,25 +100,32 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     }
 
     // Remove duplicate results: keep only the best score for each unique text
-    std::unordered_map<std::u32string, DecodeResult> unique_results;
-    for (auto& result : results) {
-        auto it = unique_results.find(result.text);
-        if (it == unique_results.end() || result.score > it->second.score) {
-            unique_results[result.text] = std::move(result);
+    // Optimization: sort first, then in-place deduplication with early exit
+    if (!results.empty()) {
+        // First, sort by score (descending) to ensure best results first
+        std::sort(results.begin(), results.end(),
+                  [](const auto& a, const auto& b) { return a.score > b.score; });
+
+        // Then deduplicate: keep first occurrence (highest score) of each unique text
+        if (results.size() > 1) {
+            std::unordered_set<std::u32string> seen;
+            seen.reserve(std::min(results.size(), max_best));
+
+            auto write_it = results.begin();
+            for (auto read_it = results.begin(); read_it != results.end(); ++read_it) {
+                if (seen.insert(read_it->text).second) {
+                    if (write_it != read_it) {
+                        *write_it = std::move(*read_it);
+                    }
+                    ++write_it;
+                    // Early exit once we have max_best unique results
+                    if (static_cast<std::size_t>(std::distance(results.begin(), write_it)) >= max_best) {
+                        break;
+                    }
+                }
+            }
+            results.erase(write_it, results.end());
         }
-    }
-
-    // Convert back to vector and sort by score (descending)
-    results.clear();
-    for (auto& [text, result] : unique_results) {
-        results.push_back(std::move(result));
-    }
-    std::sort(results.begin(), results.end(),
-              [](const auto& a, const auto& b) { return a.score > b.score; });
-
-    // Limit to max_best results
-    if (results.size() > max_best) {
-        results.resize(max_best);
     }
 
     return results;
