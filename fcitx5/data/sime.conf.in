@@ -1,13 +1,18 @@
 [InputMethod]
-# 输入法名称
+Name[ca]=Sime
+Name[da]=Sime
+Name[de]=Sime
+Name[fr]=Sime
+Name[ja]=Sime
+Name[ko]=Sime
+Name[ru]=Sime
+Name[tr]=Sime
+Name[vi]=Sime
+Name[zh_CN]=是语
+Name[zh_TW]=是語
 Name=Sime
-# 输入法图标
-Icon=sime
-# 输入法标签（显示在状态栏）
+Icon=fcitx-pinyin
 Label=是
-# 语言代码
 LangCode=zh_CN
-# 输入法描述
-Description=Sime Chinese Input Method Engine
-# 优先级
-Priority=90
+Addon=sime
+Configurable=True

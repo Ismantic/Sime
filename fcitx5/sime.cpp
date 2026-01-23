@@ -1,5 +1,6 @@
 #include "sime.h"
 #include "ustr.h"
+#include <filesystem>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputpanel.h>
@@ -102,27 +103,20 @@ void SimeEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
 
     // 获取按键信息
     auto key = keyEvent.key();
+    auto sym = key.sym();
 
     // 处理字母输入 (a-z)
-    if (key.checkKeyList(
-            {FcitxKey_a, FcitxKey_b, FcitxKey_c, FcitxKey_d, FcitxKey_e,
-             FcitxKey_f, FcitxKey_g, FcitxKey_h, FcitxKey_i, FcitxKey_j,
-             FcitxKey_k, FcitxKey_l, FcitxKey_m, FcitxKey_n, FcitxKey_o,
-             FcitxKey_p, FcitxKey_q, FcitxKey_r, FcitxKey_s, FcitxKey_t,
-             FcitxKey_u, FcitxKey_v, FcitxKey_w, FcitxKey_x, FcitxKey_y,
-             FcitxKey_z})) {
-        state->appendPinyin(static_cast<char>(key.sym()));
+    if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
+        state->appendPinyin(static_cast<char>(sym));
         updateCandidates(ic);
         keyEvent.filterAndAccept();
         return;
     }
 
     // 处理数字选词 (1-9)
-    if (key.checkKeyList({FcitxKey_1, FcitxKey_2, FcitxKey_3, FcitxKey_4,
-                          FcitxKey_5, FcitxKey_6, FcitxKey_7, FcitxKey_8,
-                          FcitxKey_9})) {
+    if (sym >= FcitxKey_1 && sym <= FcitxKey_9) {
         if (!state->isEmpty()) {
-            int index = key.sym() - FcitxKey_1; // 0-based index
+            int index = sym - FcitxKey_1; // 0-based index
             selectCandidate(ic, index);
             keyEvent.filterAndAccept();
             return;
@@ -203,7 +197,7 @@ void SimeEngine::updateCandidates(InputContext *ic) {
         for (size_t i = 0; i < results.size(); ++i) {
             auto &result = results[i];
             // 将 u32string 转换为 UTF-8
-            std::string text = sime::ustr::ToU8(result.text);
+            std::string text = sime::ustr::FromU32(result.text);
             candidates.emplace_back(text, result.score, static_cast<int>(i));
         }
 
@@ -224,9 +218,9 @@ update_panel:
     for (size_t i = 0; i < candidates.size(); ++i) {
         const auto &cand = candidates[i];
         auto label = std::to_string(i + 1) + ". ";
-        candidateList->append<SimeCandidateWord>(this, cand.text,
+        auto textWithLabel = label + cand.text;
+        candidateList->append<SimeCandidateWord>(this, textWithLabel,
                                                   static_cast<int>(i));
-        candidateList->candidateFromLabel(i)->setText(Text(label + cand.text));
     }
 
     inputPanel.setCandidateList(std::move(candidateList));

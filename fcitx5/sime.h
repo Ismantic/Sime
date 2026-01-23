@@ -74,8 +74,13 @@ private:
                                      "/usr/share/sime/pydict_sc.ime.bin"};
         Option<std::string> lmPath{this, "LMPath", "语言模型路径",
                                    "/usr/share/sime/lm_sc.t3g"};
+
+        const char *typeName() const override { return "SimeConfig"; }
     };
     Config config_;
+
+    // 允许 SimeCandidateWord 访问 selectCandidate
+    friend class SimeCandidateWord;
 };
 
 class SimeEngineFactory : public AddonFactory {

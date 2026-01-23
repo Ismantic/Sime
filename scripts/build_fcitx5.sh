@@ -16,12 +16,12 @@ echo
 echo "📦 检查依赖..."
 MISSING_DEPS=()
 
-if ! pkg-config --exists fcitx5; then
-    MISSING_DEPS+=("fcitx5")
+if ! pkg-config --exists Fcitx5Core; then
+    MISSING_DEPS+=("Fcitx5Core")
 fi
 
-if ! pkg-config --exists Fcitx5Core; then
-    MISSING_DEPS+=("fcitx5-core")
+if ! pkg-config --exists Fcitx5Utils; then
+    MISSING_DEPS+=("Fcitx5Utils")
 fi
 
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then

@@ -1,18 +1,12 @@
 [Addon]
-# 插件名称
-Name=sime
-# 插件类别
+Name[zh_CN]=是语输入法
+Name=Sime
 Category=InputMethod
-# 默认启用
-Enabled=True
-# 库名称（不含 lib 前缀和 .so 后缀）
-Library=sime
-# 类型
+Version=1.0.0
+Library=libsime
 Type=SharedLibrary
-# 按需加载
-OnDemand=True
+OnDemand=False
+Configurable=True
 
-[Addon/OptionalDependencies]
-# 可选依赖（用于复用拼音解析等）
-0=quickphrase
-1=pinyin
+[Addon/Dependencies]
+0=core:5.1
