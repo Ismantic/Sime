@@ -56,10 +56,22 @@ public:
     static const UnitEntry* GetTable(std::size_t& count);
 };
 
+// Result structure for enhanced parsing with partial match support
+struct ParseResult {
+    bool complete = false;          // Whether the entire input was successfully parsed
+    std::vector<Unit> units;        // Parsed pinyin syllable units
+    std::size_t matched_len = 0;    // Number of characters that were successfully matched
+};
+
 class UnitParser {
 public:
     bool ParseToken(std::string_view token, std::vector<Unit>& units) const;
     bool ParseUnits(std::string_view phone, std::vector<Unit>& units) const;
+
+    // Enhanced parsing with optional partial matching support
+    // When allow_partial is true, returns longest prefix match if complete match fails
+    ParseResult ParseTokenEnhanced(std::string_view token,
+                                   bool allow_partial = true) const;
 
     static bool IsDelimiter(char ch);
 

@@ -35,6 +35,8 @@ struct DecodeResult {
     std::u32string text;
     double score = 0.0;   // larger is better (negative log probability negated)
     std::vector<TokenID> tokens;
+    bool partial_match = false;     // Whether this result is from partial pinyin matching
+    std::size_t matched_length = 0; // Number of input characters that were matched
 };
 
 struct DecodeOptions {

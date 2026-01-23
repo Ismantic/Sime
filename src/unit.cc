@@ -236,4 +236,123 @@ std::size_t UnitParser::MaxUnitLength() {
     return max_len;
 }
 
+ParseResult UnitParser::ParseTokenEnhanced(std::string_view token,
+                                           bool allow_partial) const {
+    ParseResult result;
+
+    if (token.empty()) {
+        result.complete = true;
+        return result;
+    }
+
+    // Step 1: Normalize input (lowercase, alphanumeric only)
+    std::string normalized;
+    normalized.reserve(token.size());
+    for (char ch : token) {
+        if (std::isalnum(static_cast<unsigned char>(ch))) {
+            normalized.push_back(static_cast<char>(
+                std::tolower(static_cast<unsigned char>(ch))));
+        }
+    }
+
+    if (normalized.empty()) {
+        result.complete = true;
+        return result;
+    }
+
+    // Step 2: Dynamic programming segmentation (same as ParseToken)
+    const auto& lookup = UnitLookup();
+    std::size_t max_len = MaxUnitLength();
+    const std::size_t n = normalized.size();
+
+    std::vector<int> back(n + 1, -1);
+    std::vector<Unit> matched(n + 1);
+    back[0] = 0;
+
+    std::string buffer;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (back[i] < 0) {
+            continue;
+        }
+        std::size_t limit = std::min(max_len, n - i);
+
+        // Try longest match first (greedy)
+        for (std::size_t len = limit; len > 0; --len) {
+            buffer.assign(normalized.data() + i, len);
+            auto it = lookup.find(buffer);
+
+            if (it == lookup.end()) {
+                continue;
+            }
+            if (back[i + len] >= 0) {
+                continue;  // Already have a path to this position
+            }
+
+            back[i + len] = static_cast<int>(len);
+            matched[i + len] = it->second;
+        }
+    }
+
+    // Step 3: Check for complete match
+    if (back[n] >= 0) {
+        // Complete match successful
+        result.complete = true;
+        result.matched_len = n;
+
+        // Backtrack to build Unit sequence
+        std::vector<Unit> sequence;
+        for (std::size_t idx = n; idx > 0;) {
+            int len = back[idx];
+            if (len <= 0) {
+                result.complete = false;
+                result.matched_len = 0;
+                result.units.clear();
+                return result;
+            }
+            sequence.push_back(matched[idx]);
+            idx -= static_cast<std::size_t>(len);
+        }
+        std::reverse(sequence.begin(), sequence.end());
+        result.units = std::move(sequence);
+        return result;
+    }
+
+    // Step 4: If partial matching allowed, find longest prefix
+    if (allow_partial) {
+        // Find the last reachable position from the back
+        std::size_t best_pos = 0;
+        for (std::size_t i = n; i > 0; --i) {
+            if (back[i] >= 0) {
+                best_pos = i;
+                break;
+            }
+        }
+
+        if (best_pos > 0) {
+            // Found partial match
+            result.complete = false;
+            result.matched_len = best_pos;
+
+            // Backtrack to build Unit sequence
+            std::vector<Unit> sequence;
+            for (std::size_t idx = best_pos; idx > 0;) {
+                int len = back[idx];
+                if (len <= 0) {
+                    break;
+                }
+                sequence.push_back(matched[idx]);
+                idx -= static_cast<std::size_t>(len);
+            }
+            std::reverse(sequence.begin(), sequence.end());
+            result.units = std::move(sequence);
+            return result;
+        }
+    }
+
+    // Step 5: Complete failure (no match at all)
+    result.complete = false;
+    result.matched_len = 0;
+    return result;
+}
+
 } // namespace sime

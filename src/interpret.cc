@@ -31,6 +31,9 @@ std::vector<DecodeResult> Interpreter::DecodeText(
     const DecodeOptions& options) const {
     std::vector<Unit> units;
     UnitParser parser;
+    bool has_partial_match = false;
+    std::size_t total_matched_length = 0;
+
     std::size_t pos = 0;
     while (pos < input.size()) {
         while (pos < input.size() && UnitParser::IsDelimiter(input[pos])) {
@@ -44,12 +47,33 @@ std::vector<DecodeResult> Interpreter::DecodeText(
             ++pos;
         }
         std::string token(input.substr(start, pos - start));
-        std::vector<Unit> chunk;
-        if (parser.ParseToken(token, chunk)) {
-            units.insert(units.end(), chunk.begin(), chunk.end());
+
+        // Use enhanced parser with partial matching support
+        auto parse_result = parser.ParseTokenEnhanced(token, true);
+
+        if (!parse_result.units.empty()) {
+            units.insert(units.end(), parse_result.units.begin(), parse_result.units.end());
+            total_matched_length += parse_result.matched_len;
+
+            // Track if any token was partially matched
+            if (!parse_result.complete) {
+                has_partial_match = true;
+            }
         }
     }
-    return DecodeUnits(units, options);
+
+    // Decode using the parsed units
+    auto results = DecodeUnits(units, options);
+
+    // Mark results as partial matches if input was partially matched
+    if (has_partial_match && !results.empty()) {
+        for (auto& result : results) {
+            result.partial_match = true;
+            result.matched_length = total_matched_length;
+        }
+    }
+
+    return results;
 }
 
 std::vector<DecodeResult> Interpreter::DecodeUnits(
