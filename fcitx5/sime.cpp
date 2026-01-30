@@ -1,6 +1,7 @@
 #include "sime.h"
 #include "ustr.h"
 #include <filesystem>
+#include <unordered_set>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputpanel.h>
@@ -105,6 +106,35 @@ void SimeEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
     auto key = keyEvent.key();
     auto sym = key.sym();
 
+    // 获取候选词列表（用于翻页）
+    auto &inputPanel = ic->inputPanel();
+    auto candidateList = inputPanel.candidateList();
+    auto *pageable = candidateList ? candidateList->toPageable() : nullptr;
+
+    // ===== 上下键翻页 =====
+
+    // 下键 → 下一页
+    if (!state->isEmpty() && pageable && key.check(FcitxKey_Down)) {
+        if (pageable->hasNext()) {
+            pageable->next();
+            state->setCurrentPage(state->getCurrentPage() + 1);
+            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+            keyEvent.filterAndAccept();
+            return;
+        }
+    }
+
+    // 上键 → 上一页
+    if (!state->isEmpty() && pageable && key.check(FcitxKey_Up)) {
+        if (pageable->hasPrev()) {
+            pageable->prev();
+            state->setCurrentPage(state->getCurrentPage() - 1);
+            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+            keyEvent.filterAndAccept();
+            return;
+        }
+    }
+
     // 处理字母输入 (a-z)
     if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
         state->appendPinyin(static_cast<char>(sym));
@@ -113,30 +143,52 @@ void SimeEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
         return;
     }
 
-    // 处理数字选词 (1-9)
+    // 处理数字选词 (1-9) - 使用页码支持翻页
     if (sym >= FcitxKey_1 && sym <= FcitxKey_9) {
         if (!state->isEmpty()) {
-            int index = sym - FcitxKey_1; // 0-based index
-            selectCandidate(ic, index);
-            keyEvent.filterAndAccept();
-            return;
+            int keyIdx = sym - FcitxKey_1;  // 0-8 (对应按键 1-9)
+            int currentPage = state->getCurrentPage();
+            int pageSize = *config_.pageSize;
+
+            // 计算当前页的起始索引
+            int pageStart = currentPage * pageSize;
+
+            // 计算要选择的候选的全局索引
+            int targetIdx = pageStart + keyIdx;
+
+            // 确保索引有效
+            const auto &candidates = state->candidates();
+            if (targetIdx >= 0 && targetIdx < static_cast<int>(candidates.size())) {
+                selectCandidate(ic, targetIdx);
+                keyEvent.filterAndAccept();
+                return;
+            }
         }
     }
 
-    // 处理空格 - 选择第一个候选词
+    // 处理空格 - 选择第一个候选词或提交
     if (key.check(FcitxKey_space)) {
         if (!state->isEmpty()) {
+            // 有拼音，选择第一个候选
             selectCandidate(ic, 0);
             keyEvent.filterAndAccept();
             return;
+        } else if (state->hasSelections()) {
+            // 没有拼音但有选择历史，提交所有已选文字
+            ic->commitString(state->getCommittedText());
+            state->reset();
+            clearPreedit(ic);
+            keyEvent.filterAndAccept();
+            return;
         }
     }
 
-    // 处理退格 - 删除最后一个字符
+    // 处理退格 - 删除拼音字符或撤销选择
     if (key.check(FcitxKey_BackSpace)) {
+        // 优先级 1: 拼音缓冲区不为空，删除最后一个字符
         if (!state->isEmpty()) {
             state->deleteLast();
-            if (state->isEmpty()) {
+            if (state->isEmpty() && !state->hasSelections()) {
                 clearPreedit(ic);
             } else {
                 updateCandidates(ic);
@@ -144,20 +196,46 @@ void SimeEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
             keyEvent.filterAndAccept();
             return;
         }
+
+        // 优先级 2: 拼音缓冲区为空但有选择历史，撤销最后一次选择
+        if (state->hasSelections()) {
+            const auto* lastSel = state->getLastSelection();
+            if (lastSel) {
+                std::string restored_pinyin = lastSel->original_pinyin;
+
+                // 弹出历史栈
+                state->popSelection();
+
+                // 恢复原拼音
+                state->setPinyinBuffer(restored_pinyin);
+                state->clearCache();
+                updateCandidates(ic);
+
+                keyEvent.filterAndAccept();
+                return;
+            }
+        }
+
+        // 优先级 3: 都为空，不处理（传递给应用程序）
     }
 
-    // 处理 Enter - 提交当前拼音
+    // 处理 Enter - 提交所有内容
     if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter)) {
-        if (!state->isEmpty()) {
-            commitPreedit(ic);
+        if (!state->isEmpty() || state->hasSelections()) {
+            // 提交已选文字 + 当前拼音
+            std::string toCommit = state->getCommittedText() + state->pinyinBuffer();
+            ic->commitString(toCommit);
+            state->reset();
+            clearPreedit(ic);
             keyEvent.filterAndAccept();
             return;
         }
     }
 
-    // 处理 Escape - 清空输入
+    // 处理 Escape - 清空所有输入
     if (key.check(FcitxKey_Escape)) {
-        if (!state->isEmpty()) {
+        if (!state->isEmpty() || state->hasSelections()) {
+            state->reset();  // 清空拼音和选择历史
             clearPreedit(ic);
             keyEvent.filterAndAccept();
             return;
@@ -169,58 +247,123 @@ void SimeEngine::updateCandidates(InputContext *ic) {
     auto *state = this->state(ic);
     auto &inputPanel = ic->inputPanel();
 
-    // 如果没有拼音输入，清空面板
-    if (state->isEmpty()) {
+    // 如果没有拼音输入且没有选择历史，清空面板
+    if (state->isEmpty() && !state->hasSelections()) {
         clearPreedit(ic);
         return;
     }
 
+    const auto& pinyin = state->pinyinBuffer();
+
+    // 重置页码（当拼音变化时）
+    state->resetPage();
+
     // 检查缓存
-    if (state->pinyinBuffer() == state->cachedPinyin() &&
+    if (!pinyin.empty() && pinyin == state->cachedPinyin() &&
         !state->candidates().empty()) {
-        // 使用缓存的候选词
         goto update_panel;
     }
 
-    // 调用 Sime 核心进行解码
-    if (interpreter_ && interpreter_->Ready()) {
-        sime::DecodeOptions options;
-        options.num = static_cast<std::size_t>(*config_.numCandidates);
+    // 生成候选词
+    if (!pinyin.empty() && interpreter_ && interpreter_->Ready()) {
+        std::vector<std::size_t> prefixes = findAllValidPrefixes(pinyin);
 
-        auto results =
-            interpreter_->DecodeText(state->pinyinBuffer(), options);
-
-        // 转换为候选词
-        std::vector<SimeCandidate> candidates;
-        candidates.reserve(results.size());
-
-        for (size_t i = 0; i < results.size(); ++i) {
-            auto &result = results[i];
-            // 将 u32string 转换为 UTF-8
-            std::string text = sime::ustr::FromU32(result.text);
-            candidates.emplace_back(text, result.score, static_cast<int>(i));
+        if (prefixes.empty()) {
+            // 无有效拼音前缀
+            state->setCandidates({});
+            state->setCachedPinyin(pinyin);
+            goto update_panel;
         }
 
-        state->setCandidates(std::move(candidates));
-        state->setCachedPinyin(state->pinyinBuffer());
+        std::vector<SimeCandidate> all_candidates;
+        std::unordered_set<std::string> seen_texts;  // 去重
+
+        // 为每个有效前缀生成候选
+        for (std::size_t prefix_len : prefixes) {
+            std::string prefix = pinyin.substr(0, prefix_len);
+            bool is_complete = (prefix_len == pinyin.size());
+
+            sime::DecodeOptions options;
+            // 为每个前缀请求足够多的候选，支持无限翻页
+            // 完整匹配请求更多，前缀匹配请求较少
+            options.num = is_complete ? 100 : 50;
+
+            auto results = interpreter_->DecodeText(prefix, options);
+
+            for (const auto& result : results) {
+                std::string text = sime::ustr::FromU32(result.text);
+
+                // 去重
+                if (seen_texts.count(text)) {
+                    continue;
+                }
+                seen_texts.insert(text);
+
+                all_candidates.emplace_back(
+                    text,
+                    result.score,
+                    0,  // 稍后重新索引
+                    prefix_len,
+                    is_complete ? MatchCategory::COMPLETE_MATCH
+                                : MatchCategory::PREFIX_MATCH
+                );
+            }
+        }
+
+        // 排序：完整匹配优先 -> 词长优先 -> 得分优先
+        std::sort(all_candidates.begin(), all_candidates.end(),
+            [](const SimeCandidate& a, const SimeCandidate& b) {
+                if (a.category != b.category) {
+                    return a.category < b.category;  // COMPLETE < PREFIX
+                }
+                if (a.matched_length != b.matched_length) {
+                    return a.matched_length > b.matched_length;  // 更长的在前
+                }
+                return a.score > b.score;  // 更高分在前
+            });
+
+        // 不限制候选数量，支持无限翻页
+        // 重新索引所有候选
+        for (size_t i = 0; i < all_candidates.size(); ++i) {
+            all_candidates[i].index = static_cast<int>(i);
+        }
+
+        state->setCandidates(std::move(all_candidates));
+        state->setCachedPinyin(pinyin);
     }
 
 update_panel:
-    // 设置 preedit (拼音显示)
+    // ===== 更新 Preedit 显示 =====
     Text preedit;
-    preedit.append(state->pinyinBuffer());
+
+    // 第一部分：已选择的文字（加粗+下划线）
+    if (state->hasSelections()) {
+        std::string committed = state->getCommittedText();
+        preedit.append(committed, TextFormatFlags{TextFormatFlag::Underline, TextFormatFlag::Bold});
+    }
+
+    // 第二部分：当前拼音（普通样式）
+    if (!state->isEmpty()) {
+        preedit.append(state->pinyinBuffer());
+    }
+
+    preedit.setCursor(preedit.toString().size());
     inputPanel.setClientPreedit(preedit);
 
-    // 设置候选词列表
+    // ===== 更新候选列表 =====
     auto candidateList = std::make_unique<CommonCandidateList>();
-    const auto &candidates = state->candidates();
+    candidateList->setPageSize(*config_.pageSize);
+    candidateList->setLayoutHint(CandidateLayoutHint::Horizontal);
 
+    // 设置选择键（每页从1开始）
+    candidateList->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
+
+    const auto &candidates = state->candidates();
     for (size_t i = 0; i < candidates.size(); ++i) {
         const auto &cand = candidates[i];
-        auto label = std::to_string(i + 1) + ". ";
-        auto textWithLabel = label + cand.text;
-        candidateList->append<SimeCandidateWord>(this, textWithLabel,
-                                                  static_cast<int>(i));
+        // 不手动添加标签，让 CandidateList 自动为每页生成
+        candidateList->append<SimeCandidateWord>(
+            this, cand.text, static_cast<int>(i));
     }
 
     inputPanel.setCandidateList(std::move(candidateList));
@@ -231,11 +374,34 @@ void SimeEngine::selectCandidate(InputContext *ic, int index) {
     auto *state = this->state(ic);
     const auto &candidates = state->candidates();
 
-    if (index >= 0 && index < static_cast<int>(candidates.size())) {
-        // 提交选中的候选词
-        ic->commitString(candidates[static_cast<size_t>(index)].text);
+    if (index < 0 || index >= static_cast<int>(candidates.size())) {
+        return;
+    }
 
-        // 重置状态
+    const auto &selected = candidates[static_cast<size_t>(index)];
+    const std::string &pinyin = state->pinyinBuffer();
+
+    // ===== 1. 记录原始消耗的拼音 =====
+    std::string consumed_pinyin = pinyin.substr(0, selected.matched_length);
+
+    // ===== 2. 推入选择历史（而非立即提交！） =====
+    state->pushSelection(selected.text, selected.matched_length, consumed_pinyin);
+
+    // ===== 3. 计算剩余拼音 =====
+    std::string remaining;
+    if (selected.matched_length < pinyin.size()) {
+        remaining = pinyin.substr(selected.matched_length);
+    }
+
+    // ===== 4. 更新状态 =====
+    if (!remaining.empty()) {
+        // 还有剩余拼音，继续输入
+        state->setPinyinBuffer(remaining);
+        state->clearCache();
+        updateCandidates(ic);
+    } else {
+        // 拼音全部消耗完毕，提交所有已选文字并重置
+        ic->commitString(state->getCommittedText());
         state->reset();
         clearPreedit(ic);
     }
@@ -256,6 +422,49 @@ void SimeEngine::clearPreedit(InputContext *ic) {
     auto &inputPanel = ic->inputPanel();
     inputPanel.reset();
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+}
+
+std::vector<std::size_t> SimeEngine::findAllValidPrefixes(const std::string& pinyin) const {
+    std::vector<std::size_t> prefixes;
+    sime::UnitParser parser;
+
+    // 从最长到最短尝试所有可能的前缀
+    for (std::size_t len = pinyin.size(); len > 0; --len) {
+        std::string prefix = pinyin.substr(0, len);
+
+        // ParseTokenEnhanced(text, allow_partial=false) 只匹配完整拼音
+        auto parse_result = parser.ParseTokenEnhanced(prefix, false);
+
+        // 只有完整匹配且匹配了整个前缀才添加
+        if (parse_result.complete && parse_result.matched_len == len) {
+            prefixes.push_back(len);
+        }
+    }
+
+    return prefixes;  // 例如 "xuanci" -> [7, 4, 2] 对应 "xuanci", "xuan", "xu"
+}
+
+std::string SimeEngine::extractPinyinPrefix(const std::string& pinyin) const {
+    // 如果拼音太短，不提取前缀
+    if (pinyin.size() <= 2) {
+        return "";
+    }
+
+    // 使用 UnitParser 的增强解析功能
+    sime::UnitParser parser;
+    auto parse_result = parser.ParseTokenEnhanced(pinyin, true);
+
+    // 如果完整匹配，不需要前缀
+    if (parse_result.complete) {
+        return "";
+    }
+
+    // 如果有部分匹配，返回匹配的前缀
+    if (parse_result.matched_len > 0 && parse_result.matched_len < pinyin.size()) {
+        return pinyin.substr(0, parse_result.matched_len);
+    }
+
+    return "";
 }
 
 } // namespace fcitx

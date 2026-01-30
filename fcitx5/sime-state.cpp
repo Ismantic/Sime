@@ -7,6 +7,8 @@ void SimeState::reset() {
     candidates_.clear();
     selectedIndex_ = 0;
     cachedPinyin_.clear();
+    selectionHistory_.clear();
+    currentPage_ = 0;
 }
 
 void SimeState::appendPinyin(char c) {

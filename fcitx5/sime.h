@@ -46,6 +46,15 @@ public:
     // 重新加载配置
     void reloadConfig() override;
 
+    // 输入法列表（用于 fcitx5 发现输入法）
+    std::vector<InputMethodEntry> listInputMethods() override {
+        std::vector<InputMethodEntry> result;
+        InputMethodEntry entry("sime-pinyin", _("Sime"), "zh_CN", "sime");
+        entry.setLabel("是").setIcon("fcitx-pinyin").setConfigurable(true);
+        result.push_back(std::move(entry));
+        return result;
+    }
+
     // 获取工厂名称
     std::string addonName() const { return "sime"; }
 
@@ -58,6 +67,12 @@ private:
     void clearPreedit(InputContext *ic);
     SimeState *state(InputContext *ic);
 
+    // 提取拼音前缀（用于部分匹配）
+    std::string extractPinyinPrefix(const std::string& pinyin) const;
+
+    // 查找所有有效的拼音前缀（用于渐进式匹配）
+    std::vector<std::size_t> findAllValidPrefixes(const std::string& pinyin) const;
+
     // Fcitx5 实例
     Instance *instance_;
 
@@ -69,7 +84,8 @@ private:
 
     // 配置
     struct Config : public Configuration {
-        Option<int> numCandidates{this, "NumCandidates", "候选词数量", 5};
+        Option<int> numCandidates{this, "NumCandidates", "候选词数量", 10};
+        Option<int> pageSize{this, "PageSize", "每页候选数", 7};
         Option<std::string> dictPath{this, "DictPath", "词典路径",
                                      "/usr/share/sime/pydict_sc.ime.bin"};
         Option<std::string> lmPath{this, "LMPath", "语言模型路径",
