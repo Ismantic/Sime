@@ -1,6 +1,8 @@
 #include "sime.h"
 #include "ustr.h"
+#include <chrono>
 #include <filesystem>
+#include <map>
 #include <unordered_set>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/candidatelist.h>
@@ -266,7 +268,12 @@ void SimeEngine::updateCandidates(InputContext *ic) {
 
     // 生成候选词
     if (!pinyin.empty() && interpreter_ && interpreter_->Ready()) {
+        auto t_start = std::chrono::high_resolution_clock::now();
+
         std::vector<std::size_t> prefixes = findAllValidPrefixes(pinyin);
+
+        auto t_prefixes = std::chrono::high_resolution_clock::now();
+        auto dur_prefixes = std::chrono::duration_cast<std::chrono::milliseconds>(t_prefixes - t_start).count();
 
         if (prefixes.empty()) {
             // 无有效拼音前缀
@@ -279,16 +286,33 @@ void SimeEngine::updateCandidates(InputContext *ic) {
         std::unordered_set<std::string> seen_texts;  // 去重
 
         // 为每个有效前缀生成候选
+        // 限制处理时间：如果前缀太多，只处理最重要的几个
+        std::size_t max_prefixes_to_process = 3;  // 最多处理3个前缀
+        std::size_t processed = 0;
+        
         for (std::size_t prefix_len : prefixes) {
+            if (processed >= max_prefixes_to_process) {
+                break;
+            }
+            processed++;
+            
             std::string prefix = pinyin.substr(0, prefix_len);
             bool is_complete = (prefix_len == pinyin.size());
 
             sime::DecodeOptions options;
-            // 为每个前缀请求足够多的候选，支持无限翻页
-            // 完整匹配请求更多，前缀匹配请求较少
-            options.num = is_complete ? 100 : 50;
+            // 减少候选数量以提高性能
+            // 完整匹配请求更多候选，部分匹配请求较少
+            options.num = is_complete ? 100 : 30;
 
+            auto t_decode_start = std::chrono::high_resolution_clock::now();
             auto results = interpreter_->DecodeText(prefix, options);
+            auto t_decode_end = std::chrono::high_resolution_clock::now();
+            auto dur_decode = std::chrono::duration_cast<std::chrono::milliseconds>(t_decode_end - t_decode_start).count();
+
+            // 如果解码时间太长，记录警告
+            if (dur_decode > 100) {
+                FCITX_INFO() << "DecodeText('" << prefix << "') took " << dur_decode << "ms (slow!)";
+            }
 
             for (const auto& result : results) {
                 std::string text = sime::ustr::FromU32(result.text);
@@ -322,13 +346,87 @@ void SimeEngine::updateCandidates(InputContext *ic) {
                 return a.score > b.score;  // 更高分在前
             });
 
-        // 不限制候选数量，支持无限翻页
-        // 重新索引所有候选
-        for (size_t i = 0; i < all_candidates.size(); ++i) {
-            all_candidates[i].index = static_cast<int>(i);
+        // 优化候选数量：按前缀长度分组过滤
+        // 单字保留全部，多字词每个前缀限制数量
+        std::vector<SimeCandidate> filtered_candidates;
+        std::size_t single_char_count = 0;
+        std::size_t multi_char_count = 0;
+        constexpr std::size_t MAX_MULTI_CHAR_PER_PREFIX = 5;  // 每个前缀的多字词最多5个
+        constexpr double SCORE_THRESHOLD = 5.0;               // 词频阈值
+
+        // 按 matched_length 分组
+        std::map<std::size_t, std::vector<std::size_t>> groups;
+        for (std::size_t i = 0; i < all_candidates.size(); ++i) {
+            groups[all_candidates[i].matched_length].push_back(i);
         }
 
-        state->setCandidates(std::move(all_candidates));
+        // 处理每个分组
+        for (auto& [prefix_len, indices] : groups) {
+            // 找到该分组内多字词的最高得分
+            double max_score = -1000.0;
+            for (std::size_t idx : indices) {
+                const auto& cand = all_candidates[idx];
+                // 计算字符数
+                std::size_t char_count = 0;
+                for (std::size_t i = 0; i < cand.text.size(); ) {
+                    unsigned char c = cand.text[i];
+                    if (c < 0x80) i += 1;
+                    else if (c < 0xE0) i += 2;
+                    else if (c < 0xF0) i += 3;
+                    else i += 4;
+                    char_count++;
+                }
+
+                if (char_count > 1 && cand.score > max_score) {
+                    max_score = cand.score;
+                }
+            }
+
+            // 过滤该分组的候选
+            std::size_t group_multi_count = 0;
+            for (std::size_t idx : indices) {
+                auto& cand = all_candidates[idx];
+                // 计算字符数
+                std::size_t char_count = 0;
+                for (std::size_t i = 0; i < cand.text.size(); ) {
+                    unsigned char c = cand.text[i];
+                    if (c < 0x80) i += 1;
+                    else if (c < 0xE0) i += 2;
+                    else if (c < 0xF0) i += 3;
+                    else i += 4;
+                    char_count++;
+                }
+
+                if (char_count == 1) {
+                    // 单字：保留所有
+                    filtered_candidates.push_back(std::move(cand));
+                    single_char_count++;
+                } else {
+                    // 多字词：分组内限制数量+词频阈值
+                    bool count_ok = group_multi_count < MAX_MULTI_CHAR_PER_PREFIX;
+                    bool score_ok = (cand.score >= max_score - SCORE_THRESHOLD);
+
+                    if (count_ok && score_ok) {
+                        filtered_candidates.push_back(std::move(cand));
+                        multi_char_count++;
+                        group_multi_count++;
+                    }
+                }
+            }
+        }
+
+        // 重新索引所有候选
+        for (size_t i = 0; i < filtered_candidates.size(); ++i) {
+            filtered_candidates[i].index = static_cast<int>(i);
+        }
+
+        auto t_end = std::chrono::high_resolution_clock::now();
+        auto dur_total = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
+
+        // 减少日志输出，避免频繁日志导致性能问题
+        // FCITX_INFO() << "updateCandidates('" << pinyin << "') took " << dur_total << "ms";
+
+        state->setCandidates(std::move(filtered_candidates));
         state->setCachedPinyin(pinyin);
     }
 
@@ -428,20 +526,40 @@ std::vector<std::size_t> SimeEngine::findAllValidPrefixes(const std::string& pin
     std::vector<std::size_t> prefixes;
     sime::UnitParser parser;
 
-    // 从最长到最短尝试所有可能的前缀
-    for (std::size_t len = pinyin.size(); len > 0; --len) {
+    // 1. 总是添加完整输入
+    prefixes.push_back(pinyin.size());
+
+    // 2. 找到所有有效的分割点
+    // 从长到短检查每个前缀，只要前缀和剩余部分都是完整拼音序列，就添加
+    for (std::size_t len = pinyin.size() - 1; len > 0; --len) {
         std::string prefix = pinyin.substr(0, len);
+        auto prefix_result = parser.ParseTokenEnhanced(prefix, false);
 
-        // ParseTokenEnhanced(text, allow_partial=false) 只匹配完整拼音
-        auto parse_result = parser.ParseTokenEnhanced(prefix, false);
+        // 前缀必须是完整的拼音序列
+        if (!prefix_result.complete || prefix_result.matched_len != len) {
+            // 减少日志输出
+        // FCITX_INFO() << "  Checking prefix '" << prefix << "' (len=" << len << "): SKIP";
+            continue;
+        }
 
-        // 只有完整匹配且匹配了整个前缀才添加
-        if (parse_result.complete && parse_result.matched_len == len) {
+        // 检查剩余部分是否也是完整的拼音序列
+        std::string remaining = pinyin.substr(len);
+        auto remaining_result = parser.ParseTokenEnhanced(remaining, false);
+
+        // 减少日志输出
+        // FCITX_INFO() << "  Prefix '" << prefix << "' valid, remaining '" << remaining << "'";
+
+        // 如果剩余部分也是完整的拼音序列，这就是一个有效的分割点
+        if (remaining_result.complete && remaining_result.matched_len == remaining.size()) {
             prefixes.push_back(len);
+            // FCITX_INFO() << "  -> Added boundary at " << len;
         }
     }
 
-    return prefixes;  // 例如 "xuanci" -> [7, 4, 2] 对应 "xuanci", "xuan", "xu"
+    // 减少日志输出
+    // FCITX_INFO() << "findAllValidPrefixes('" << pinyin << "') found " << prefixes.size() << " prefixes";
+
+    return prefixes;
 }
 
 std::string SimeEngine::extractPinyinPrefix(const std::string& pinyin) const {

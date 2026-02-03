@@ -100,14 +100,14 @@ private:
     void AdjustDown(std::size_t node);
 
 private:
-    static constexpr std::size_t BeamWidth = 48;
+    static constexpr std::size_t BeamWidth = 200;   // 增大beam宽度
     static constexpr double FilterRatioL1 = 0.12;
     static constexpr double FilterRatioL2 = 0.02;
     static constexpr double FilterThreshold = -40.0;
 
     StateMap state_map_;
     std::size_t size_ = 0;
-    std::size_t max_best_ = 2;
+    std::size_t max_best_ = 100;  // 增大默认值
 
     std::map<Scorer::State, std::size_t> heap_index_;
     std::vector<std::pair<SentenceScore, Scorer::State>> score_heap_;
@@ -154,9 +154,9 @@ public:
     iterator end();
 
 private:
-    static constexpr std::size_t TABLE_SIZE = 256;  // Must be power of 2
-    static constexpr std::size_t MAX_BEST = 4;      // States per bucket
-    static constexpr std::size_t BeamWidth = 48;
+    static constexpr std::size_t TABLE_SIZE = 512;  // Must be power of 2 (增大)
+    static constexpr std::size_t MAX_BEST = 20;     // States per bucket (增大到20)
+    static constexpr std::size_t BeamWidth = 200;   // 增大beam宽度
     static constexpr double FilterRatioL1 = 0.12;
     static constexpr double FilterRatioL2 = 0.02;
     static constexpr double FilterThreshold = -40.0;
@@ -184,7 +184,7 @@ private:
 
     std::array<Bucket, TABLE_SIZE> buckets_;
     std::size_t size_ = 0;
-    std::size_t max_best_ = 2;
+    std::size_t max_best_ = 100;  // 增大默认值
 };
 
 } // namespace sime
