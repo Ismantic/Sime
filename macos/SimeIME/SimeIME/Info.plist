@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Basic bundle information -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>SimeIME</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.ismantic.SimeIME</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>SimeIME</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Ismantic. All rights reserved.</string>
+
+    <!-- Component Description for Text Services Manager -->
+    <key>ComponentDescription</key>
+    <dict>
+        <key>ComponentSubType</key>
+        <integer>1936943730</integer>
+        <key>ComponentType</key>
+        <integer>1768846196</integer>
+        <key>ComponentManufacturer</key>
+        <integer>1936879985</integer>
+    </dict>
+
+    <!-- Input Method specific settings -->
+    <key>InputMethodConnectionName</key>
+    <string>com.ismantic.SimeIME_1_Connection</string>
+    <key>InputMethodServerControllerClass</key>
+    <string>SimeInputController</string>
+    <key>TISInputSourceID</key>
+    <string>com.ismantic.SimeIME</string>
+    <key>TISIntendedLanguage</key>
+    <string>zh-Hans</string>
+    
+    <!-- Component description for Text Services Manager -->
+    <!-- Menubar icon (rectangular for better display in status bar) -->
+    <key>tsInputMethodIconFileKey</key>
+    <string>sime_menubar</string>
+    <!-- App icon (square for system preferences and input source selector) -->
+    <key>CFBundleIconFile</key>
+    <string>sime.icns</string>
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array>
+        <string>Hans</string>
+        <string>Hant</string>
+    </array>
+    
+    <!-- Input mode settings -->
+    <key>InputMethodType</key>
+    <string>KeyboardInputMethod</string>
+    
+    <!-- Enable the input method -->
+    <key>InputMethodEnabled</key>
+    <true/>
+    
+    <!-- Principal class -->
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    
+    <!-- High resolution support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Security settings -->
+    <key>NSAppSandboxEnabled</key>
+    <false/>
+    
+    <!-- Required for input methods -->
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
