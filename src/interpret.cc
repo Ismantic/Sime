@@ -65,11 +65,20 @@ std::vector<DecodeResult> Interpreter::DecodeText(
     // Decode using the parsed units
     auto results = DecodeUnits(units, options);
 
-    // Mark results as partial matches if input was partially matched
-    if (has_partial_match && !results.empty()) {
-        for (auto& result : results) {
-            result.partial_match = true;
-            result.matched_length = total_matched_length;
+    // Set matched_length for all results
+    if (!results.empty()) {
+        if (has_partial_match) {
+            // Partial match: use the matched length
+            for (auto& result : results) {
+                result.partial_match = true;
+                result.matched_length = total_matched_length;
+            }
+        } else {
+            // Complete match: matched length is the full input length
+            for (auto& result : results) {
+                result.partial_match = false;
+                result.matched_length = input.size();
+            }
         }
     }
 

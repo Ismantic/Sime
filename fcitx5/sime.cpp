@@ -201,18 +201,9 @@ void SimeEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
 
         // 优先级 2: 拼音缓冲区为空但有选择历史，撤销最后一次选择
         if (state->hasSelections()) {
-            const auto* lastSel = state->getLastSelection();
-            if (lastSel) {
-                std::string restored_pinyin = lastSel->original_pinyin;
-
-                // 弹出历史栈
-                state->popSelection();
-
-                // 恢复原拼音
-                state->setPinyinBuffer(restored_pinyin);
+            if (state->getManager()->UndoLastSelection()) {
                 state->clearCache();
                 updateCandidates(ic);
-
                 keyEvent.filterAndAccept();
                 return;
             }
@@ -476,32 +467,19 @@ void SimeEngine::selectCandidate(InputContext *ic, int index) {
         return;
     }
 
-    const auto &selected = candidates[static_cast<size_t>(index)];
-    const std::string &pinyin = state->pinyinBuffer();
+    // 使用 SelectionManager 的选词逻辑
+    auto result = state->getManager()->SelectCandidate(static_cast<std::size_t>(index));
 
-    // ===== 1. 记录原始消耗的拼音 =====
-    std::string consumed_pinyin = pinyin.substr(0, selected.matched_length);
-
-    // ===== 2. 推入选择历史（而非立即提交！） =====
-    state->pushSelection(selected.text, selected.matched_length, consumed_pinyin);
-
-    // ===== 3. 计算剩余拼音 =====
-    std::string remaining;
-    if (selected.matched_length < pinyin.size()) {
-        remaining = pinyin.substr(selected.matched_length);
-    }
-
-    // ===== 4. 更新状态 =====
-    if (!remaining.empty()) {
-        // 还有剩余拼音，继续输入
-        state->setPinyinBuffer(remaining);
-        state->clearCache();
-        updateCandidates(ic);
-    } else {
+    if (result.should_commit) {
         // 拼音全部消耗完毕，提交所有已选文字并重置
-        ic->commitString(state->getCommittedText());
+        ic->commitString(result.text_to_commit);
         state->reset();
         clearPreedit(ic);
+    } else {
+        // 还有剩余拼音，继续输入
+        state->setPinyinBuffer(result.remaining_pinyin);
+        state->clearCache();
+        updateCandidates(ic);
     }
 }
 

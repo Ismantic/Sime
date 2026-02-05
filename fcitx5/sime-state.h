@@ -5,6 +5,8 @@
 #include <fcitx/inputcontextproperty.h>
 #include <string>
 #include <vector>
+#include <memory>
+#include "selection_manager.h"
 
 namespace fcitx {
 
@@ -30,14 +32,14 @@ struct SimeCandidate {
 // Sime 输入法状态（每个 InputContext 一个实例）
 class SimeState : public InputContextProperty {
 public:
-    // 选择历史记录
+    // 选择历史记录（保持与旧接口兼容）
     struct Selection {
         std::string text;              // 选择的文字："选"
         std::size_t consumed_length;   // 消耗的拼音字符数：4
         std::string original_pinyin;   // 被消耗的原始拼音："xuan"
     };
 
-    SimeState() = default;
+    SimeState() : manager_(std::make_unique<sime::SelectionManager>()) {}
 
     // 重置状态
     void reset();
@@ -45,13 +47,19 @@ public:
     // 拼音缓冲区操作
     void appendPinyin(char c);
     void deleteLast();
-    bool isEmpty() const { return pinyinBuffer_.empty(); }
+    bool isEmpty() const { return manager_->IsPinyinEmpty(); }
 
     // 访问器
-    const std::string& pinyinBuffer() const { return pinyinBuffer_; }
+    const std::string& pinyinBuffer() const { return manager_->GetPinyinBuffer(); }
     const std::vector<SimeCandidate>& candidates() const { return candidates_; }
     void setCandidates(std::vector<SimeCandidate> cands) {
         candidates_ = std::move(cands);
+        // 同时更新 manager 中的候选词
+        std::vector<sime::Candidate> managerCands;
+        for (const auto& c : candidates_) {
+            managerCands.emplace_back(c.text, c.score, c.matched_length);
+        }
+        manager_->SetCandidates(std::move(managerCands));
     }
 
     // 候选词选择
@@ -59,45 +67,43 @@ public:
     void setSelectedIndex(int index) { selectedIndex_ = index; }
 
     // 缓存管理
-    const std::string& cachedPinyin() const { return cachedPinyin_; }
-    void setCachedPinyin(const std::string& pinyin) { cachedPinyin_ = pinyin; }
+    const std::string& cachedPinyin() const { return manager_->GetCachedPinyin(); }
+    void setCachedPinyin(const std::string& pinyin) { manager_->SetCachedPinyin(pinyin); }
 
     // 设置拼音缓冲区（用于选词后保留剩余拼音）
-    void setPinyinBuffer(const std::string& buffer) { pinyinBuffer_ = buffer; }
+    void setPinyinBuffer(const std::string& buffer) { manager_->SetPinyinBuffer(buffer); }
 
     // 清除缓存（强制重新解码）
     void clearCache() {
-        cachedPinyin_.clear();
+        manager_->ClearCache();
         candidates_.clear();
     }
 
     // 选择历史管理
     void pushSelection(const std::string& text, std::size_t consumed,
                       const std::string& original) {
-        selectionHistory_.push_back({text, consumed, original});
+        manager_->SelectCandidate(0);  // 使用 manager 的选词逻辑
     }
 
     bool popSelection() {
-        if (selectionHistory_.empty()) {
-            return false;
-        }
-        selectionHistory_.pop_back();
-        return true;
+        return manager_->UndoLastSelection();
     }
 
     std::string getCommittedText() const {
-        std::string result;
-        for (const auto& sel : selectionHistory_) {
-            result += sel.text;
-        }
-        return result;
+        return manager_->GetCommittedText();
     }
 
-    bool hasSelections() const { return !selectionHistory_.empty(); }
-    void clearSelections() { selectionHistory_.clear(); }
+    bool hasSelections() const { return manager_->HasSelections(); }
+    void clearSelections() { manager_->Reset(); }
 
     const Selection* getLastSelection() const {
-        return selectionHistory_.empty() ? nullptr : &selectionHistory_.back();
+        const auto* sel = manager_->GetLastSelection();
+        if (!sel) return nullptr;
+        // 转换为旧的 Selection 结构
+        lastSelection_.text = sel->text;
+        lastSelection_.consumed_length = sel->consumed_length;
+        lastSelection_.original_pinyin = sel->original_pinyin;
+        return &lastSelection_;
     }
 
     // 页码管理
@@ -105,13 +111,15 @@ public:
     void setCurrentPage(int page) { currentPage_ = page; }
     void resetPage() { currentPage_ = 0; }
 
+    // 获取底层的 SelectionManager（用于直接访问）
+    sime::SelectionManager* getManager() { return manager_.get(); }
+
 private:
-    std::string pinyinBuffer_;          // 当前拼音输入: "nihao"
-    std::vector<SimeCandidate> candidates_;  // 候选词列表
+    std::unique_ptr<sime::SelectionManager> manager_;  // 底层选词管理器
+    std::vector<SimeCandidate> candidates_;  // 候选词列表（fcitx5 特定）
     int selectedIndex_ = 0;             // 当前选中的候选（0-based）
-    std::string cachedPinyin_;          // 上次解码的拼音（用于缓存）
-    std::vector<Selection> selectionHistory_;  // 选择历史栈
     int currentPage_ = 0;               // 当前页码（0-based）
+    mutable Selection lastSelection_;   // 临时存储用于兼容旧接口
 };
 
 } // namespace fcitx

@@ -69,6 +69,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/interpret.cc
     ${NEW_SRC_DIR}/cut.cc
+    ${NEW_SRC_DIR}/selection_manager.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})

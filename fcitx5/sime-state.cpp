@@ -3,25 +3,18 @@
 namespace fcitx {
 
 void SimeState::reset() {
-    pinyinBuffer_.clear();
+    manager_->Reset();
     candidates_.clear();
     selectedIndex_ = 0;
-    cachedPinyin_.clear();
-    selectionHistory_.clear();
     currentPage_ = 0;
 }
 
 void SimeState::appendPinyin(char c) {
-    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-        // 转换为小写
-        pinyinBuffer_.push_back(static_cast<char>(std::tolower(c)));
-    }
+    manager_->AppendPinyin(c);
 }
 
 void SimeState::deleteLast() {
-    if (!pinyinBuffer_.empty()) {
-        pinyinBuffer_.pop_back();
-    }
+    manager_->DeleteLastPinyin();
 }
 
 } // namespace fcitx
