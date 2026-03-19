@@ -17,6 +17,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/count.cc
     ${NEW_SRC_DIR}/construct.cc
     ${NEW_SRC_DIR}/convert.cc
+    ${NEW_SRC_DIR}/compress.cc
     ${NEW_SRC_DIR}/score.cc
     ${NEW_SRC_DIR}/trie.cc
     ${NEW_SRC_DIR}/state.cc
@@ -36,6 +37,9 @@ target_link_libraries(sime-construct PRIVATE sime_core)
 add_executable(sime-converter ${NEW_ROOT}/app/converter.cc)
 target_link_libraries(sime-converter PRIVATE sime_core)
 
+add_executable(sime-compress ${NEW_ROOT}/app/compress.cc)
+target_link_libraries(sime-compress PRIVATE sime_core)
+
 add_executable(ime_interpreter ${NEW_ROOT}/app/interpreter.cc)
 target_link_libraries(ime_interpreter PRIVATE sime_core)
 
@@ -43,6 +47,7 @@ set(_sime_targets
     sime-count
     sime-construct
     sime-converter
+    sime-compress
     ime_interpreter
 )
 
