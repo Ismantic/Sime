@@ -23,23 +23,6 @@ public:
     virtual std::unique_ptr<Discounter> Clone() const = 0;
 };
 
-
-class GoodTuringDiscounter final : public Discounter {
-public:
-    GoodTuringDiscounter(int r_max, double linear_factor);
-    const char* Name() const override { return "Good-Turing"; }
-    void Init(int max_r, const std::vector<std::uint64_t>& nr) override; 
-    double Discount(double freq) const override;
-    std::unique_ptr<Discounter> Clone() const override {
-        return std::make_unique<GoodTuringDiscounter>(*this);
-    }
-
-private:
-    int rmax_;
-    double linear_factor_;
-    std::vector<double> factors_;
-};
-
 class AbsoluteDiscounter final : public Discounter {
 public:
     explicit AbsoluteDiscounter(std::optional<double> c);

@@ -60,15 +60,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
                 break;
             }
             const auto& method = parts[0];
-            if (method == "GT") {
-                if (parts.size() < 3) {
-                    throw std::runtime_error("GT requires R and dis");
-                }
-                int rmax = std::stoi(parts[1]);
-                double dis = std::stod(parts[2]);
-                opts.discounters.push_back(
-                    std::make_unique<sime::GoodTuringDiscounter>(rmax, dis));
-            } else if (method == "ABS") {
+            if (method == "ABS") {
                 std::optional<double> cval;
                 if (parts.size() > 1) {
                     cval = std::stod(parts[1]);

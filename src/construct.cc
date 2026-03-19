@@ -28,34 +28,6 @@ void EnsureSortedUnique(std::vector<T>& values) {
 
 } // namespace
 
-GoodTuringDiscounter::GoodTuringDiscounter(int r_max, double linear_factor)
-    : rmax_(r_max), linear_factor_(linear_factor) {}
-
-void GoodTuringDiscounter::Init(int max_r, const std::vector<std::uint64_t>& nr) {
-    int limit = std::min(rmax_, max_r - 1);
-    factors_.assign(limit + 1, 1.0);
-    for (int r = 1; r <= limit; ++r) {
-        if (nr[r] == 0 || nr[r + 1] == 0) {
-            factors_[r] = 1.0;
-        } else {
-            factors_[r] = static_cast<double>(nr[r + 1]) /
-                          static_cast<double>(nr[r]);
-        }
-    }
-}
-
-double GoodTuringDiscounter::Discount(double freq) const {
-    int r = static_cast<int>(freq);
-    if (r > 0 && r < static_cast<int>(factors_.size())) {
-        double val = freq * factors_[r];
-        if (val >= freq) {
-            val = freq * linear_factor_;
-        }
-        return val;
-    }
-    return freq * linear_factor_;
-}
-
 AbsoluteDiscounter::AbsoluteDiscounter(std::optional<double> c) : user_c_(c) {}
 
 void AbsoluteDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
