@@ -1,0 +1,2 @@
+- [ ] In trie binary header, write `node_count` before `token_count`
+      Change the header field order so `node_count` is serialized first, then `token_count`.
