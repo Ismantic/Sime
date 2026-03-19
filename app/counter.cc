@@ -8,9 +8,8 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "sime-count -n <num> -o <output> -s <swapfile> "
-                 "[-d dict] [-c count_size] inputfiles...\n"
-                 "  -d: dict file (freq_dict.txt), enables text input mode\n";
+    std::cerr << "sime-count -n <num> -d <dict> -o <output> -s <swapfile> "
+                 "[-c count_size] inputfiles...\n";
 }
 
 sime::CountOptions ParseArgs(int argc, char* argv[]) {
@@ -54,7 +53,7 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
     }
 
     if (opts.num < 1 || opts.num > 3 ||
-        opts.output.empty() || opts.swap.empty() ||
+        opts.dict.empty() || opts.output.empty() || opts.swap.empty() ||
         opts.count_max < 1024 || opts.inputs.empty()) {
         PrintUsage();
         std::exit(1);

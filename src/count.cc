@@ -83,61 +83,6 @@ void FlushCounts(std::map<Item<N>, Cnt>& counts,
 }
 
 template <std::size_t N>
-bool GetToken(std::istream& in, TokenID& i) {
-    return static_cast<bool>(
-        in.read(reinterpret_cast<char*>(&i), sizeof(TokenID)));
-}
-
-template <std::size_t N>
-void ProcessFile(const std::filesystem::path& path, 
-                 std::size_t count_max, 
-                 std::fstream& swap,
-                 std::vector<RunRange<N>>& runs) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input.is_open()) {
-        throw std::runtime_error("Failed to open input file: " + path.string());
-    }
-    std::map<Item<N>, Cnt> counts;
-    Item<N> gram{};
-
-    if constexpr (N == 1) {
-        TokenID i;
-        while (GetToken<N>(input, i)) {
-            gram[0] = i;
-            ++counts[gram];
-            if (counts.size() >= count_max) {
-                FlushCounts(counts, swap, runs);
-            }
-        }
-    } else {
-        std::array<TokenID, N-1> history{};
-        std::size_t filled = 0;
-        while (filled < N-1 && GetToken<N>(input, history[filled])) {
-            ++filled;
-        }
-        if (filled < N-1) {
-            return;
-        }
-        for (std::size_t i = 0; i < N - 1; ++i) {
-            gram[i] = history[i];
-        }
-        TokenID next = 0;
-        while (GetToken<N>(input, next)) {
-            gram[N-1] = next;
-            ++counts[gram];
-            if (counts.size() >= count_max) {
-                FlushCounts(counts, swap, runs);
-            }
-            for (std::size_t i = 0; i < N-1; ++i) {
-                gram[i] = gram[i+1];
-            }
-        }
-    }
-
-    FlushCounts(counts, swap, runs);
-}
-
-template <std::size_t N>
 void ProcessTextFile(const std::filesystem::path& path,
                      const WordMap& wmap,
                      std::size_t count_max,
@@ -333,22 +278,15 @@ void RunImpl(const CountOptions& options) {
     runs.reserve(16);
 
     WordMap wmap;
-    bool text_mode = !options.dict.empty();
-    if (text_mode) {
-        std::cerr << "Loading dict..." << std::flush;
-        if (!LoadWordMap(options.dict, wmap)) {
-            throw std::runtime_error("Failed to load dict: " + options.dict.string());
-        }
-        std::cerr << "done (" << wmap.size() << " words)\n";
+    std::cerr << "Loading dict..." << std::flush;
+    if (!LoadWordMap(options.dict, wmap)) {
+        throw std::runtime_error("Failed to load dict: " + options.dict.string());
     }
+    std::cerr << "done (" << wmap.size() << " words)\n";
 
     for (const auto& input : options.inputs) {
         std::cerr << "Processing " << input << "..." << std::flush;
-        if (text_mode) {
-            ProcessTextFile<N>(input, wmap, options.count_max, swap, runs);
-        } else {
-            ProcessFile<N>(input, options.count_max, swap, runs);
-        }
+        ProcessTextFile<N>(input, wmap, options.count_max, swap, runs);
         std::cerr << "done\n";
     }
 
