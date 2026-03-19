@@ -886,18 +886,8 @@ bool IsWhitespace(char ch) {
 }
 
 bool IsPhoneChar(char ch) {
-    return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == ':' || ch == '"' ||
+    return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '"' ||
            (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
-}
-
-std::uint8_t ClampCost(int value) {
-    if (value < 0) {
-        return 0;
-    }
-    if (value > 31) {
-        return 31;
-    }
-    return static_cast<std::uint8_t>(value);
 }
 
 } // namespace
@@ -917,21 +907,20 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 
     std::string line;
     std::string text;
-    std::uint32_t i = 0;
+    std::uint32_t next_id = kRealTokenStart;
     std::vector<Phone> phones;
     while (std::getline(in, line)) {
-        bool s = ParseLine(line, text, i, phones);
+        bool s = ParseLine(line, text, phones);
         if (text.empty()) {
             continue;
         }
+        std::uint32_t i = next_id++;
         if (lexicon_.size() <= i) {
             lexicon_.resize(i + 1);
         }
-        if (text.front() != '<') {
-            auto& entry = lexicon_[i];
-            if (entry.empty()) {
-                entry = text;
-            }
+        auto& entry = lexicon_[i];
+        if (entry.empty()) {
+            entry = text;
         }
         if (!s) {
             continue;
@@ -949,17 +938,14 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 
 bool TrieConverter::ParseLine(const std::string& line,
                               std::string& text_token,
-                              std::uint32_t& text_id,
                               std::vector<Phone>& phones) const {
     phones.clear();
     text_token.clear();
-    text_id = 0;
     if (line.empty() || line[0] == '#' || line[0] == '\n') {
         return false;
     }
 
-    const char* data = line.c_str();
-    const char* ptr = data;
+    const char* ptr = line.c_str();
     while (*ptr && IsWhitespace(*ptr)) {
         ++ptr;
     }
@@ -971,20 +957,6 @@ bool TrieConverter::ParseLine(const std::string& line,
         ++ptr;
     }
     text_token.assign(word_start, ptr - word_start);
-
-    while (*ptr && IsWhitespace(*ptr)) {
-        ++ptr;
-    }
-    const char* id_start = ptr;
-    while (*ptr && std::isdigit(static_cast<unsigned char>(*ptr))) {
-        ++ptr;
-    }
-    if (id_start == ptr) {
-        return false;
-    }
-    text_id = static_cast<std::uint32_t>(
-        std::strtoul(std::string(id_start, ptr - id_start).c_str(), nullptr,
-                     10));
 
     std::map<std::string, std::uint8_t> unique;
     while (*ptr) {
@@ -1003,26 +975,13 @@ bool TrieConverter::ParseLine(const std::string& line,
         while (pos < token.size() && IsPhoneChar(token[pos])) {
             ++pos;
         }
-        if (pos == 0 || (pos < token.size() && token[pos] != ':')) {
+        if (pos == 0 || pos < token.size()) {
             continue;
         }
-        std::string reading = token.substr(0, pos);
-        int cost = 0;
-        if (pos < token.size() && token[pos] == ':') {
-            try {
-                double prob = std::stod(token.substr(pos + 1));
-                if (prob > 0.0) {
-                    cost = static_cast<int>(-std::log2(prob / 100.0));
-                }
-            } catch (...) {
-                cost = 0;
-            }
-        }
         auto [it, inserted] =
-            unique.emplace(std::move(reading), ClampCost(cost));
-        if (!inserted && ClampCost(cost) < it->second) {
-            it->second = ClampCost(cost);
-        }
+            unique.emplace(std::move(token), static_cast<std::uint8_t>(0));
+        (void)it;
+        (void)inserted;
     }
 
     for (const auto& [p, c] : unique) {

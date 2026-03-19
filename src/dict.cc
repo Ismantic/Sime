@@ -35,16 +35,17 @@ bool Dict::Load(const std::filesystem::path& path) {
     }
     std::string line;
     std::u32string t;
-    TokenID i = 0;
+    TokenID next_id = kRealTokenStart;
     while (std::getline(in, line)) {
-        if (!ParseLine(line, t, i)) {
+        if (!ParseLine(line, t)) {
             continue;
         }
+        TokenID id = next_id++;
         Node* node = &root_;
         for (char32_t c : t) {
             node = &node->children[c];
         }
-        node->token_id = i;
+        node->token_id = id;
     }
     return true;
 }
@@ -53,30 +54,22 @@ void Dict::Clear() {
     root_ = Node{};
 }
 
-bool Dict::ParseLine(std::string_view line, std::u32string& t, TokenID& i) {
+bool Dict::ParseLine(std::string_view line, std::u32string& t) {
     line = Trim(line);
     if (line.empty() || line.front() == '#') {
         return false;
     }
-    auto pos = line.find_first_of(" \t");
-    if (pos == std::string_view::npos) {
-        return false;
+    auto pos = line.find_first_of("\t");
+    std::string_view token;
+    if (pos != std::string_view::npos) {
+        token = line.substr(0, pos);
+    } else {
+        token = line;
     }
-    std::string_view token = line.substr(0, pos);
-    auto rest = line.substr(pos);
-    rest = Trim(rest);
-    if (rest.empty() || !IsDigit(rest.front())) {
+    if (token.empty()) {
         return false;
-    }
-    TokenID value = 0;
-    for (char c : rest) {
-        if (!IsDigit(c)) {
-            break;
-        }
-        value = value * 10 + static_cast<TokenID>(c - '0');
     }
     t = ustr::ToU32(std::string(token));
-    i = value;
     return true;
 }
 

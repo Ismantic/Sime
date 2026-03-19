@@ -34,7 +34,7 @@ private:
         std::unordered_map<char32_t, Node> children{};
     };
 
-    static bool ParseLine(std::string_view line, std::u32string& token, TokenID& id);
+    static bool ParseLine(std::string_view line, std::u32string& token);
 
     Node root_;
 };
