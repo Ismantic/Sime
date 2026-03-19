@@ -877,8 +877,6 @@ struct TrieMove {
 
 struct TrieEntry {
     std::uint32_t i = 0;
-    std::uint8_t cost = 0;
-    std::uint8_t empty[3]{};
 };
 
 bool IsWhitespace(char ch) {
@@ -908,7 +906,7 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
     std::string line;
     std::string text;
     std::uint32_t next_id = kRealTokenStart;
-    std::vector<Phone> phones;
+    std::vector<std::string> phones;
     while (std::getline(in, line)) {
         bool s = ParseLine(line, text, phones);
         if (text.empty()) {
@@ -927,10 +925,10 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
         }
         std::vector<Unit> units;
         for (const auto& phone : phones) {
-            if (!parser.ParseUnits(phone.str, units)) {
+            if (!parser.ParseUnits(phone, units)) {
                 continue;
             }
-            InsertUnits(i, phone.cost, units);
+            InsertUnits(i, units);
         }
     }
     return true;
@@ -938,7 +936,7 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 
 bool TrieConverter::ParseLine(const std::string& line,
                               std::string& text_token,
-                              std::vector<Phone>& phones) const {
+                              std::vector<std::string>& phones) const {
     phones.clear();
     text_token.clear();
     if (line.empty() || line[0] == '#' || line[0] == '\n') {
@@ -958,7 +956,7 @@ bool TrieConverter::ParseLine(const std::string& line,
     }
     text_token.assign(word_start, ptr - word_start);
 
-    std::map<std::string, std::uint8_t> unique;
+    std::set<std::string> unique;
     while (*ptr) {
         while (*ptr && IsWhitespace(*ptr)) {
             ++ptr;
@@ -978,20 +976,14 @@ bool TrieConverter::ParseLine(const std::string& line,
         if (pos == 0 || pos < token.size()) {
             continue;
         }
-        auto [it, inserted] =
-            unique.emplace(std::move(token), static_cast<std::uint8_t>(0));
-        (void)it;
-        (void)inserted;
+        unique.insert(std::move(token));
     }
 
-    for (const auto& [p, c] : unique) {
-        phones.push_back(Phone{p, c});
-    }
+    phones.assign(unique.begin(), unique.end());
     return !phones.empty();
 }
 
 void TrieConverter::InsertUnits(std::uint32_t id,
-                                std::uint8_t cost,
                                 const std::vector<Unit>& units) {
     if (units.empty() || root_ == nullptr) {
         return;
@@ -1000,7 +992,7 @@ void TrieConverter::InsertUnits(std::uint32_t id,
     for (const auto& u : units) {
         node = InsertMove(node, u);
     }
-    InsertText(node, id, cost);
+    InsertText(node, id);
 }
 
 TrieConverter::Node* TrieConverter::CreateNode() {
@@ -1022,13 +1014,8 @@ TrieConverter::Node* TrieConverter::InsertMove(Node* node, Unit u) {
 }
 
 void TrieConverter::InsertText(Node* node,
-                               std::uint32_t id,
-                               std::uint8_t cost) {
-    auto it = node->costs.find(id);
-    if (it == node->costs.end() ||
-        cost < it->second) {
-        node->costs[id] = cost;
-    }
+                               std::uint32_t id) {
+    node->ids.insert(id);
 }
 
 std::size_t TrieConverter::Count() const {
@@ -1053,7 +1040,7 @@ std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
         metrics.size =
             sizeof(TrieNodeHeader) +
             node->moves.size() * sizeof(TrieMove) +
-            node->costs.size() * sizeof(TrieEntry);
+            node->ids.size() * sizeof(TrieEntry);
         metrics.i = offset;
         metrics_[node] = metrics;
         offset += static_cast<std::uint32_t>(metrics.size);
@@ -1073,7 +1060,7 @@ void TrieConverter::SerializeNode(const Node* node,
     TrieNodeHeader header{};
     auto entry_count =
         static_cast<std::uint32_t>(std::min<std::size_t>(
-            node->costs.size(), static_cast<std::size_t>(0xFFF)));
+            node->ids.size(), static_cast<std::size_t>(0xFFF)));
     auto move_count =
         static_cast<std::uint32_t>(std::min<std::size_t>(
             node->moves.size(), static_cast<std::size_t>(0xFFF)));
@@ -1089,30 +1076,11 @@ void TrieConverter::SerializeNode(const Node* node,
         ++idx;
     }
 
-    struct Candidate {
-        std::uint32_t id = 0;
-        std::uint8_t cost = 0;
-    };
-    std::vector<Candidate> candidates;
-    candidates.reserve(node->costs.size());
-    for (const auto& [id, cost] : node->costs) {
-        candidates.push_back(Candidate{id, cost});
-    }
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Candidate& lhs, const Candidate& rhs) {
-                  if (lhs.cost != rhs.cost) {
-                      return lhs.cost < rhs.cost;
-                  }
-                  return lhs.id < rhs.id;
-              });
-
     auto* entries = reinterpret_cast<TrieEntry*>(moves + node->moves.size());
     idx = 0;
-    for (const auto& candidate : candidates) {
+    for (std::uint32_t id : node->ids) {
         TrieEntry info{};
-        info.i = candidate.id & 0xFFFFFFU;
-        info.cost = static_cast<std::uint8_t>(
-            std::min<std::uint32_t>(31, candidate.cost));
+        info.i = id;
         entries[idx++] = info;
     }
 }

@@ -17,8 +17,6 @@ struct Move {
 
 struct Entry {
     std::uint32_t i = 0;
-    std::uint8_t cost = 0;
-    std::uint8_t empty[3]{};
 };
 
 struct Node {

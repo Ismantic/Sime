@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,14 +20,9 @@ public:
     std::vector<std::string> Dump() const;
 
 private:
-    struct Phone {
-        std::string str;
-        std::uint8_t cost = 0;
-    };
-
     struct Node {
         std::map<std::uint32_t, Node*> moves;
-        std::map<std::uint32_t, std::uint8_t> costs;
+        std::set<std::uint32_t> ids;
     };
 
     struct NodeSize {
@@ -36,13 +32,13 @@ private:
 
     bool ParseLine(const std::string& line,
                    std::string& text,
-                   std::vector<Phone>& phones) const;
+                   std::vector<std::string>& phones) const;
 
-    void InsertUnits(std::uint32_t id, std::uint8_t cost, const std::vector<Unit>& units);
+    void InsertUnits(std::uint32_t id, const std::vector<Unit>& units);
 
     Node* CreateNode();
     Node* InsertMove(Node* node, Unit unit);
-    void InsertText(Node* node, std::uint32_t id, std::uint8_t cost);
+    void InsertText(Node* node, std::uint32_t id);
 
     std::size_t SerializeTree(std::vector<char>& buffer);
     std::size_t WriteStrTable(std::vector<char>& buffer);
