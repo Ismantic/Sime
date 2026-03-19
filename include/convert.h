@@ -53,11 +53,4 @@ private:
     std::unordered_map<const Node*, NodeSize> metrics_;
 };
 
-struct ConvertOptions {
-    std::filesystem::path input;
-    std::filesystem::path output;
-};
-
-void ConvertRun(const ConvertOptions& options);
-
 } // namespace sime
