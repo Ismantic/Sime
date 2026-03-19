@@ -1,2 +1,0 @@
-- [ ] Remove dead code: cut.cc / cut.h (Viterbi Cutter)
-      Only used by deleted app/cutter.cc. Still in repo but not compiled.
