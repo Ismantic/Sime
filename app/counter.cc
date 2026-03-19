@@ -8,8 +8,9 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "sime_count -n <num> -o <output> -s <swapfile> "
-                 "[-c count_size] idsfile...\n";
+    std::cerr << "sime-count -n <num> -o <output> -s <swapfile> "
+                 "[-d dict] [-c count_size] inputfiles...\n"
+                 "  -d: dict file (freq_dict.txt), enables text input mode\n";
 }
 
 sime::CountOptions ParseArgs(int argc, char* argv[]) {
@@ -21,10 +22,11 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
         {"output", required_argument, nullptr, 'o'},
         {"swap", required_argument, nullptr, 's'},
         {"count", required_argument, nullptr, 'c'},
+        {"dict", required_argument, nullptr, 'd'},
         {nullptr, 0, nullptr, 0}
     };
 
-    while ((c = getopt_long(argc, argv, "n:o:s:p:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:s:c:d:", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -37,6 +39,9 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
             break;
         case 'c':
             opts.count_max = static_cast<std::size_t>(std::stoul(optarg));
+            break;
+        case 'd':
+            opts.dict = optarg;
             break;
         default:
             PrintUsage();

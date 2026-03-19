@@ -8,7 +8,10 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
+#include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -16,6 +19,31 @@
 namespace sime {
 
 namespace {
+
+using WordMap = std::unordered_map<std::string, TokenID>;
+
+bool LoadWordMap(const std::filesystem::path& path, WordMap& wmap) {
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return false;
+    }
+    TokenID next_id = kRealTokenStart;
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        auto tab = line.find('\t');
+        std::string word;
+        if (tab != std::string::npos) {
+            word = line.substr(0, tab);
+        } else {
+            word = line;
+        }
+        wmap[word] = next_id++;
+    }
+    return true;
+}
 
 template <std::size_t N> 
 constexpr std::size_t GroupSize() {
@@ -102,6 +130,84 @@ void ProcessFile(const std::filesystem::path& path,
             }
             for (std::size_t i = 0; i < N-1; ++i) {
                 gram[i] = gram[i+1];
+            }
+        }
+    }
+
+    FlushCounts(counts, swap, runs);
+}
+
+template <std::size_t N>
+void ProcessTextFile(const std::filesystem::path& path,
+                     const WordMap& wmap,
+                     std::size_t count_max,
+                     std::fstream& swap,
+                     std::vector<RunRange<N>>& runs) {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        throw std::runtime_error("Failed to open input file: " + path.string());
+    }
+    std::map<Item<N>, Cnt> counts;
+    Item<N> gram{};
+
+    auto feed = [&](TokenID id) {
+        if constexpr (N == 1) {
+            gram[0] = id;
+            ++counts[gram];
+            if (counts.size() >= count_max) {
+                FlushCounts(counts, swap, runs);
+            }
+        }
+    };
+
+    // For N > 1, we need a history buffer
+    std::array<TokenID, N> history{};
+    std::size_t filled = 0;
+
+    auto feed_ngram = [&](TokenID id) {
+        if constexpr (N == 1) {
+            feed(id);
+        } else {
+            if (filled < N - 1) {
+                history[filled++] = id;
+                return;
+            }
+            for (std::size_t i = 0; i < N - 1; ++i) {
+                gram[i] = history[i];
+            }
+            gram[N - 1] = id;
+            ++counts[gram];
+            if (counts.size() >= count_max) {
+                FlushCounts(counts, swap, runs);
+            }
+            for (std::size_t i = 0; i < N - 2; ++i) {
+                history[i] = history[i + 1];
+            }
+            history[N - 2] = id;
+        }
+    };
+
+    std::string line;
+    bool first_line = true;
+    while (std::getline(input, line)) {
+        if (line.empty()) {
+            feed_ngram(kSentenceToken);
+            filled = 0;
+            first_line = true;
+            continue;
+        }
+        if (!first_line) {
+            feed_ngram(kSentenceToken);
+            filled = 0;
+        }
+        first_line = false;
+
+        std::istringstream iss(line);
+        std::string word;
+        while (iss >> word) {
+            auto it = wmap.find(word);
+            if (it != wmap.end()) {
+                feed_ngram(it->second);
             }
         }
     }
@@ -218,7 +324,7 @@ void MergeRuns(const std::filesystem::path& swap_path,
 
 template <std::size_t N>
 void RunImpl(const CountOptions& options) {
-    std::fstream swap(options.swap, 
+    std::fstream swap(options.swap,
                       std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
     if (!swap.is_open()) {
         throw std::runtime_error("Failed to open swap file: " + options.swap.string());
@@ -226,16 +332,30 @@ void RunImpl(const CountOptions& options) {
     std::vector<RunRange<N>> runs;
     runs.reserve(16);
 
+    WordMap wmap;
+    bool text_mode = !options.dict.empty();
+    if (text_mode) {
+        std::cerr << "Loading dict..." << std::flush;
+        if (!LoadWordMap(options.dict, wmap)) {
+            throw std::runtime_error("Failed to load dict: " + options.dict.string());
+        }
+        std::cerr << "done (" << wmap.size() << " words)\n";
+    }
+
     for (const auto& input : options.inputs) {
-        std::cout << "Processing " << input << "..." << std::flush;
-        ProcessFile<N>(input, options.count_max, swap, runs);
-        std::cout << "Done\n";
+        std::cerr << "Processing " << input << "..." << std::flush;
+        if (text_mode) {
+            ProcessTextFile<N>(input, wmap, options.count_max, swap, runs);
+        } else {
+            ProcessFile<N>(input, options.count_max, swap, runs);
+        }
+        std::cerr << "done\n";
     }
 
     swap.close();
-    std::cout << "Merging..." << std::flush;
+    std::cerr << "Merging..." << std::flush;
     MergeRuns<N>(options.swap, runs, options.output);
-    std::cout << "Done\n";
+    std::cerr << "done\n";
 }
 
 } // namesace

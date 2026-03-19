@@ -36,7 +36,6 @@ private:
 
     bool ParseLine(const std::string& line,
                    std::string& text,
-                   std::uint32_t& i,
                    std::vector<Phone>& phones) const;
 
     void InsertUnits(std::uint32_t id, std::uint8_t cost, const std::vector<Unit>& units);
