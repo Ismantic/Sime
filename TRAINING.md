@@ -67,7 +67,7 @@ sime-construct -n 3 \
 - `-n 3`：3-gram 模型
 - `-o`：输出路径
 - `-d "ABS"`：每层折扣方法（Absolute Discounting），需指定 3 次对应 3 层
-  - 可选：`GT <rmax> <factor>`（Good-Turing）、`LIN [d]`（Linear）
+  - 可选：`LIN [d]`（Linear）
 - `-w 84054`：词汇表大小（freq_dict.txt 行数）
 - `-b "10"`：句子边界 token（kSentenceToken=10）
 - 末尾：输入 N-gram 文件
