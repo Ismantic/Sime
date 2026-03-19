@@ -176,7 +176,7 @@ std::u32string Interpreter::ToText(const Lattice& n,
         std::string fallback = SliceToUnits(units, n.left, n.right);
         return ustr::ToU32("[" + fallback + "]");
     }
-    const char32_t* chars = trie_.StrAt(n.id);
+    const char32_t* chars = trie_.TokenAt(n.id);
     if (chars == nullptr || chars[0] == 0) {
         std::string fallback = SliceToUnits(units, n.left, n.right);
         return ustr::ToU32("[" + fallback + "]");

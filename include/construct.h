@@ -78,7 +78,7 @@ struct ConstructorOptions {
     std::vector<std::unique_ptr<Discounter>> discounters; // size = order 
     std::vector<TokenID> breakers;
     std::vector<TokenID> excludes;
-    std::uint32_t lexicon_size = 0;
+    std::uint32_t token_count = 0;
 };
 
 class Constructor {

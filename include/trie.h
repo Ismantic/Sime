@@ -39,18 +39,18 @@ public:
     const Node* DoMove(const Node* node, Unit u) const;
     const Entry* GetEntry(const Node* node, uint32_t& count) const;
 
-    const char32_t* StrAt(uint32_t i) const;
+    const char32_t* TokenAt(uint32_t i) const;
 
-    uint32_t StrCount() const;
+    uint32_t TokenCount() const;
     uint32_t NodeCount() const;
 
 private:
     const Node* NodeFrom(std::uint32_t i) const;
     std::uint32_t RootIndex() const;
-    std::uint32_t StrIndex() const;
+    std::uint32_t TokenIndex() const;
 
     std::vector<char> blob_;
-    std::vector<const char32_t*> wstrs_;
+    std::vector<const char32_t*> token_strs_;
 };
 
 } /// namespace sime

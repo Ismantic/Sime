@@ -31,8 +31,8 @@ private:
     };
 
     bool ParseLine(const std::string& line,
-                   std::string& text,
-                   std::vector<std::string>& phones) const;
+                   std::string& token,
+                   std::vector<std::string>& units) const;
 
     void InsertUnits(std::uint32_t id, const std::vector<Unit>& units);
 
@@ -41,7 +41,7 @@ private:
     void InsertText(Node* node, std::uint32_t id);
 
     std::size_t SerializeTree(std::vector<char>& buffer);
-    std::size_t WriteStrTable(std::vector<char>& buffer);
+    std::size_t WriteTokenTable(std::vector<char>& buffer);
     void SerializeNode(const Node* node,
                        const NodeSize& metrics,
                        std::vector<char>& buffer);
@@ -49,7 +49,7 @@ private:
     Node* root_ = nullptr;
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<Node*> order_;
-    std::vector<std::string> lexicon_;
+    std::vector<std::string> tokens_;
     std::unordered_map<const Node*, NodeSize> metrics_;
 };
 

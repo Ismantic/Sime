@@ -20,9 +20,9 @@ namespace sime {
 
 namespace {
 
-using WordMap = std::unordered_map<std::string, TokenID>;
+using TokenMap = std::unordered_map<std::string, TokenID>;
 
-bool LoadWordMap(const std::filesystem::path& path, WordMap& wmap) {
+bool LoadTokenMap(const std::filesystem::path& path, TokenMap& token_map) {
     std::ifstream in(path);
     if (!in.is_open()) {
         return false;
@@ -34,13 +34,13 @@ bool LoadWordMap(const std::filesystem::path& path, WordMap& wmap) {
             continue;
         }
         auto tab = line.find('\t');
-        std::string word;
+        std::string token;
         if (tab != std::string::npos) {
-            word = line.substr(0, tab);
+            token = line.substr(0, tab);
         } else {
-            word = line;
+            token = line;
         }
-        wmap[word] = next_id++;
+        token_map[token] = next_id++;
     }
     return true;
 }
@@ -84,7 +84,7 @@ void FlushCounts(std::map<Item<N>, Cnt>& counts,
 
 template <std::size_t N>
 void ProcessTextFile(const std::filesystem::path& path,
-                     const WordMap& wmap,
+                     const TokenMap& token_map,
                      std::size_t count_max,
                      std::fstream& swap,
                      std::vector<RunRange<N>>& runs) {
@@ -148,10 +148,10 @@ void ProcessTextFile(const std::filesystem::path& path,
         first_line = false;
 
         std::istringstream iss(line);
-        std::string word;
-        while (iss >> word) {
-            auto it = wmap.find(word);
-            if (it != wmap.end()) {
+        std::string token;
+        while (iss >> token) {
+            auto it = token_map.find(token);
+            if (it != token_map.end()) {
                 feed_ngram(it->second);
             }
         }
@@ -277,16 +277,16 @@ void RunImpl(const CountOptions& options) {
     std::vector<RunRange<N>> runs;
     runs.reserve(16);
 
-    WordMap wmap;
+    TokenMap token_map;
     std::cerr << "Loading dict..." << std::flush;
-    if (!LoadWordMap(options.dict, wmap)) {
+    if (!LoadTokenMap(options.dict, token_map)) {
         throw std::runtime_error("Failed to load dict: " + options.dict.string());
     }
-    std::cerr << "done (" << wmap.size() << " words)\n";
+    std::cerr << "done (" << token_map.size() << " tokens)\n";
 
     for (const auto& input : options.inputs) {
         std::cerr << "Processing " << input << "..." << std::flush;
-        ProcessTextFile<N>(input, wmap, options.count_max, swap, runs);
+        ProcessTextFile<N>(input, token_map, options.count_max, swap, runs);
         std::cerr << "done\n";
     }
 
