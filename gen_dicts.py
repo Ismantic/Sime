@@ -55,9 +55,9 @@ def main():
                 continue
 
             # parts[1] is the old ID (discard it)
-            # parts[2:] are pinyins (if any)
+            # parts[2:] are pinyins (if any), strip :prob suffix
             if len(parts) >= 3:
-                pinyins = parts[2:]
+                pinyins = [p.split(":")[0] for p in parts[2:]]
             else:
                 pinyins = []
 
