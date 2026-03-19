@@ -1,0 +1,7 @@
+- [ ] Split convert.cc into two files:
+      - trie_convert.cc: TrieConverter (pinyin_dict.txt -> pinyin.ime.bin)
+      - lm_convert.cc: ConvertRun / ValueCompressor (raw.slm -> lm.t3g)
+      These are independent functionalities sharing convert.cc only by accident.
+
+- [ ] Remove dead code: cut.cc / cut.h (Viterbi Cutter)
+      Only used by deleted app/cutter.cc. Still compiled in sime_core but never linked.
