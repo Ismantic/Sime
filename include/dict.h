@@ -13,7 +13,7 @@
 namespace sime {
 
 struct Match {
-    TokenID token_id = NotToken;
+    TokenID token_id = kNotToken;
     std::size_t length = 0;
 };
 
