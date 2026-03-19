@@ -176,14 +176,14 @@ bool UnitParser::ParseToken(std::string_view token,
     return true;
 }
 
-bool UnitParser::ParseUnits(std::string_view phone,
+bool UnitParser::ParseUnits(std::string_view input,
                             std::vector<Unit>& units) const {
     units.clear();
     std::size_t pos = 0;
-    while (pos <= phone.size()) {
-        std::size_t next = phone.find('\'', pos);
+    while (pos <= input.size()) {
+        std::size_t next = input.find('\'', pos);
         std::string_view segment =
-            phone.substr(pos, next == std::string::npos
+            input.substr(pos, next == std::string::npos
                                    ? std::string::npos
                                    : next - pos);
         if (!segment.empty()) {

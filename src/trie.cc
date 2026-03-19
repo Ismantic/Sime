@@ -30,10 +30,10 @@ Trie::~Trie() { Clear(); }
 
 void Trie::Clear() {
     blob_.clear();
-    wstrs_.clear();
+    token_strs_.clear();
 }
 
-uint32_t Trie::StrCount() const {
+uint32_t Trie::TokenCount() const {
     if (blob_.size() < sizeof(std::uint32_t)) {
         return 0;
     }
@@ -47,7 +47,7 @@ uint32_t Trie::NodeCount() const {
     return reinterpret_cast<const std::uint32_t*>(blob_.data())[1];
 }
 
-std::uint32_t Trie::StrIndex() const {
+std::uint32_t Trie::TokenIndex() const {
     if (blob_.size() < 3 * sizeof(std::uint32_t)) {
         return 0;
     }
@@ -89,12 +89,12 @@ bool Trie::Load(const std::filesystem::path& path) {
         return false;
     }
 
-    uint32_t count = StrCount();
-    wstrs_.reserve(count);
-    const char* base = blob_.data() + StrIndex();
+    uint32_t count = TokenCount();
+    token_strs_.reserve(count);
+    const char* base = blob_.data() + TokenIndex();
     auto p = reinterpret_cast<const char32_t*>(base);
     for (uint32_t i = 0; i < count; ++i) {
-        wstrs_.push_back(p);
+        token_strs_.push_back(p);
         while (*p++) {}
     }
 
@@ -129,11 +129,11 @@ const Entry* Trie::GetEntry(const Node* node, uint32_t& count) const {
     return node->GetEntry();
 }
 
-const char32_t* Trie::StrAt(uint32_t i) const {
-    if (i >= wstrs_.size()) {
+const char32_t* Trie::TokenAt(uint32_t i) const {
+    if (i >= token_strs_.size()) {
         return nullptr;
     }
-    return wstrs_[i];
+    return token_strs_[i];
 }
 
 } // namespace sime

@@ -25,15 +25,12 @@ struct TrieMove {
     std::uint32_t unit = 0;
 };
 
-struct TrieEntry {
-    std::uint32_t i = 0;
-};
 
 bool IsWhitespace(char ch) {
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
-bool IsPhoneChar(char ch) {
+bool IsUnitChar(char ch) {
     return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '"' ||
            (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
 }
@@ -44,7 +41,7 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
     nodes_.clear();
     order_.clear();
     metrics_.clear();
-    lexicon_.clear();
+    tokens_.clear();
     root_ = CreateNode();
     UnitParser parser;
 
@@ -54,28 +51,28 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
     }
 
     std::string line;
-    std::string text;
+    std::string token;
     std::uint32_t next_id = kRealTokenStart;
-    std::vector<std::string> phones;
+    std::vector<std::string> unit_strs;
     while (std::getline(in, line)) {
-        bool s = ParseLine(line, text, phones);
-        if (text.empty()) {
+        bool s = ParseLine(line, token, unit_strs);
+        if (token.empty()) {
             continue;
         }
         std::uint32_t i = next_id++;
-        if (lexicon_.size() <= i) {
-            lexicon_.resize(i + 1);
+        if (tokens_.size() <= i) {
+            tokens_.resize(i + 1);
         }
-        auto& entry = lexicon_[i];
+        auto& entry = tokens_[i];
         if (entry.empty()) {
-            entry = text;
+            entry = token;
         }
         if (!s) {
             continue;
         }
         std::vector<Unit> units;
-        for (const auto& phone : phones) {
-            if (!parser.ParseUnits(phone, units)) {
+        for (const auto& u : unit_strs) {
+            if (!parser.ParseUnits(u, units)) {
                 continue;
             }
             InsertUnits(i, units);
@@ -85,10 +82,10 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 }
 
 bool TrieConverter::ParseLine(const std::string& line,
-                              std::string& text_token,
-                              std::vector<std::string>& phones) const {
-    phones.clear();
-    text_token.clear();
+                              std::string& token,
+                              std::vector<std::string>& units) const {
+    units.clear();
+    token.clear();
     if (line.empty() || line[0] == '#' || line[0] == '\n') {
         return false;
     }
@@ -100,11 +97,11 @@ bool TrieConverter::ParseLine(const std::string& line,
     if (*ptr == '\0' || *ptr == '#') {
         return false;
     }
-    const char* word_start = ptr;
+    const char* start = ptr;
     while (*ptr && !IsWhitespace(*ptr)) {
         ++ptr;
     }
-    text_token.assign(word_start, ptr - word_start);
+    token.assign(start, ptr - start);
 
     std::set<std::string> unique;
     while (*ptr) {
@@ -114,23 +111,23 @@ bool TrieConverter::ParseLine(const std::string& line,
         if (*ptr == '\0') {
             break;
         }
-        const char* token_start = ptr;
+        const char* part_start = ptr;
         while (*ptr && !IsWhitespace(*ptr)) {
             ++ptr;
         }
-        std::string token(token_start, ptr - token_start);
+        std::string part(part_start, ptr - part_start);
         std::size_t pos = 0;
-        while (pos < token.size() && IsPhoneChar(token[pos])) {
+        while (pos < part.size() && IsUnitChar(part[pos])) {
             ++pos;
         }
-        if (pos == 0 || pos < token.size()) {
+        if (pos == 0 || pos < part.size()) {
             continue;
         }
-        unique.insert(std::move(token));
+        unique.insert(std::move(part));
     }
 
-    phones.assign(unique.begin(), unique.end());
-    return !phones.empty();
+    units.assign(unique.begin(), unique.end());
+    return !units.empty();
 }
 
 void TrieConverter::InsertUnits(std::uint32_t id,
@@ -169,13 +166,13 @@ void TrieConverter::InsertText(Node* node,
 }
 
 std::size_t TrieConverter::Count() const {
-    return lexicon_.size();
+    return tokens_.size();
 }
 
 std::vector<std::string> TrieConverter::Dump() const {
     std::vector<std::string> result;
-    result.reserve(lexicon_.size());
-    for (const auto& entry : lexicon_) {
+    result.reserve(tokens_.size());
+    for (const auto& entry : tokens_) {
         result.push_back(entry);
     }
     return result;
@@ -190,7 +187,7 @@ std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
         metrics.size =
             sizeof(TrieNodeHeader) +
             node->moves.size() * sizeof(TrieMove) +
-            node->ids.size() * sizeof(TrieEntry);
+            node->ids.size() * sizeof(std::uint32_t);
         metrics.i = offset;
         metrics_[node] = metrics;
         offset += static_cast<std::uint32_t>(metrics.size);
@@ -226,18 +223,16 @@ void TrieConverter::SerializeNode(const Node* node,
         ++idx;
     }
 
-    auto* entries = reinterpret_cast<TrieEntry*>(moves + node->moves.size());
+    auto* entries = reinterpret_cast<std::uint32_t*>(moves + node->moves.size());
     idx = 0;
     for (std::uint32_t id : node->ids) {
-        TrieEntry info{};
-        info.i = id;
-        entries[idx++] = info;
+        entries[idx++] = id;
     }
 }
 
-std::size_t TrieConverter::WriteStrTable(std::vector<char>& buffer) {
+std::size_t TrieConverter::WriteTokenTable(std::vector<char>& buffer) {
     std::vector<char32_t> table;
-    for (const auto& entry : lexicon_) {
+    for (const auto& entry : tokens_) {
         if (entry.empty()) {
             table.push_back(0);
             continue;
@@ -256,17 +251,17 @@ std::size_t TrieConverter::WriteStrTable(std::vector<char>& buffer) {
 bool TrieConverter::Write(const std::filesystem::path& output) {
     std::vector<char> buffer;
     auto tree_size = SerializeTree(buffer);
-    WriteStrTable(buffer);
-    std::uint32_t str_count =
-        static_cast<std::uint32_t>(lexicon_.size());
+    WriteTokenTable(buffer);
+    std::uint32_t token_count =
+        static_cast<std::uint32_t>(tokens_.size());
     std::uint32_t node_count =
         static_cast<std::uint32_t>(order_.size());
-    std::uint32_t str_offset =
+    std::uint32_t token_offset =
         static_cast<std::uint32_t>(tree_size + 3 * sizeof(std::uint32_t));
     auto* header = reinterpret_cast<std::uint32_t*>(buffer.data());
-    header[0] = str_count;
+    header[0] = token_count;
     header[1] = node_count;
-    header[2] = str_offset;
+    header[2] = token_offset;
 
     std::ofstream out(output, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {

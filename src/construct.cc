@@ -446,7 +446,7 @@ void Constructor::Discount() {
         }
     }
     Node& root = node_levels_[0][0];
-    double base = 1.0 / std::max<std::uint32_t>(opts_.lexicon_size, 1);
+    double base = 1.0 / std::max<std::uint32_t>(opts_.token_count, 1);
     root.pr = opts_.use_log_pr ? -std::log(base) : base;
     root.pr = static_cast<float>(root.pr);
 }
@@ -674,7 +674,7 @@ void RunConstruct(const ConstructOptions& options) {
     builder_opts.use_log_pr = options.use_log;
     builder_opts.output_path = options.output.string();
     builder_opts.cutoffs = options.cutoffs;
-    builder_opts.lexicon_size = options.token_count;
+    builder_opts.token_count = options.token_count;
     builder_opts.breakers = options.break_ids;
     builder_opts.excludes = options.exclude_ids;
     builder_opts.discounters.reserve(options.discounters.size());
