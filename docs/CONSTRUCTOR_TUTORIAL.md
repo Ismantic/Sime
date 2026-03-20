@@ -19,7 +19,7 @@
 - `w1, w2, w3` 是词的 `TokenID`
 - `freq` 是该 trigram 在语料中出现的次数
 
-`Constructor` 要把这些计数转成一个支持 back-off 的 n-gram 语言模型，并写成中间文件 `raw.slm`。后续再由 `sime-compress` 压缩成运行时使用的 `lm.t3g`。
+`Constructor` 要把这些计数转成一个支持 back-off 的 n-gram 语言模型，并写成中间文件 `raw.slm`。后续再由 `sime-compact` 压缩成运行时使用的 `lm.t3g`。
 
 ## 2. 语言模型的核心公式
 
@@ -472,7 +472,7 @@ offset ... size_3 * DiskLeaf
 - 结构清晰，适合进一步压缩
 - 使用 float 保存概率和回退权重
 
-后续 `sime-compress` 会把它压缩成 `lm.t3g`：
+后续 `sime-compact` 会把它压缩成 `lm.t3g`：
 
 - 概率做量化压缩
 - 预计算 threaded backoff state

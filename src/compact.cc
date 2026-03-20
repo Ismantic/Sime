@@ -1,4 +1,4 @@
-#include "compress.h"
+#include "compact.h"
 #include "common.h"
 
 #include <algorithm>
@@ -761,7 +761,7 @@ void WriteModel(const SimpleSlm& model,
 
 } // namespace
 
-void CompressRun(const CompressOptions& options) {
+void CompactRun(const CompactOptions& options) {
     SimpleSlm model;
     if (!model.Load(options.input)) {
         throw std::runtime_error("failed to load primitive slm");

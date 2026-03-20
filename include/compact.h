@@ -4,11 +4,11 @@
 
 namespace sime {
 
-struct CompressOptions {
+struct CompactOptions {
     std::filesystem::path input;
     std::filesystem::path output;
 };
 
-void CompressRun(const CompressOptions& options);
+void CompactRun(const CompactOptions& options);
 
 } // namespace sime

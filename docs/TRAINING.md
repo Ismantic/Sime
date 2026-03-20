@@ -75,7 +75,7 @@ sime-construct -n 3 \
 ### 5. 压缩语言模型
 
 ```bash
-sime-compress output/raw.slm output/lm.t3g
+sime-compact output/raw.slm output/lm.t3g
 ```
 
 将概率和 backoff 权重量化压缩，计算 backoff 状态索引。
@@ -141,7 +141,7 @@ $SIME/sime-construct -n 3 -o $OUT/raw.slm \
     $OUT/raw.3gram
 
 # 5. 压缩
-$SIME/sime-compress $OUT/raw.slm $OUT/lm.t3g
+$SIME/sime-compact $OUT/raw.slm $OUT/lm.t3g
 
 # 6. 拼音 Trie
 $SIME/sime-converter pinyin_dict.txt $OUT/pinyin.ime.bin
