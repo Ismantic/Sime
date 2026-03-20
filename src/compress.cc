@@ -248,7 +248,7 @@ struct RawNodeOnDisk {
     float bow = 0.0f;
 };
 
-struct RawLeafOnDisk {
+struct RawLeaveOnDisk {
     TokenID id = 0;
     float pr = 0.0f;
 };
@@ -397,9 +397,9 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
     }
 
     std::size_t leaf_total = static_cast<std::size_t>(level_sizes_.back());
-    std::vector<RawLeafOnDisk> raw_leaves(leaf_total);
+    std::vector<RawLeaveOnDisk> raw_leaves(leaf_total);
     if (!in.read(reinterpret_cast<char*>(raw_leaves.data()),
-                 static_cast<std::streamsize>(raw_leaves.size() * sizeof(RawLeafOnDisk)))) {
+                 static_cast<std::streamsize>(raw_leaves.size() * sizeof(RawLeaveOnDisk)))) {
         return false;
     }
     leaves_.resize(leaf_total);

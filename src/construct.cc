@@ -574,7 +574,7 @@ struct DiskNode {
     float bow = 0.0f;
 };
 
-struct DiskLeaf {
+struct DiskLeave {
     TokenID id = 0;
     float pr = 0.0f;
 };
@@ -607,7 +607,7 @@ void Constructor::Write(FILE* out) const {
         }
     }
     for (const auto& leaf : leaves_) {
-        DiskLeaf raw;
+        DiskLeave raw;
         raw.id = leaf.id;
         raw.pr = static_cast<float>(leaf.pr);
         fwrite(&raw, sizeof(raw), 1, out);
