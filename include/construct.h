@@ -2,14 +2,11 @@
 
 #include "common.h"
 
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <string>
-#include <string_view>
 #include <vector>
 
 namespace sime {
@@ -53,18 +50,21 @@ private:
     double d_ = 0.0;
 };
 
-struct ConstructorOptions {
+struct ConstructOptions {
     int num = 0;
     bool use_log_pr = false;
-    std::string output_path;
-    std::vector<std::uint32_t> cutoffs; // size = order
-    std::vector<std::unique_ptr<Discounter>> discounters; // size = order
+    std::filesystem::path output;
+    std::filesystem::path input;
     std::uint32_t token_count = 0;
+    std::vector<std::uint32_t> cutoffs;
+    std::vector<std::unique_ptr<Discounter>> discounters;
+    std::vector<int> prune_cutoffs;
+    std::vector<int> prune_reserves;
 };
 
 class Constructor {
 public:
-    explicit Constructor(ConstructorOptions opts);
+    explicit Constructor(ConstructOptions opts);
     void InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt);
     void Finalize();
     void Prune(const std::vector<int>& cutoffs, const std::vector<int>& reserves);
@@ -124,7 +124,7 @@ private:
     template <typename ChildLevel>
     void DiscountLevel(NodeLevel& level, ChildLevel& child, Discounter& disc);
 
-    ConstructorOptions opts_;
+    ConstructOptions opts_;
     std::vector<std::unique_ptr<Discounter>> discounter_storage_;
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
@@ -140,18 +140,6 @@ private:
     mutable double prune_cache_pb_ = 0.0;
 };
 
-struct ConstructOptions {
-    int num = 0;
-    bool use_log = false;
-    std::filesystem::path output;
-    std::filesystem::path input;
-    std::uint32_t token_count = 0;
-    std::vector<std::uint32_t> cutoffs;
-    std::vector<std::unique_ptr<Discounter>> discounters;
-    std::vector<int> prune_cutoffs;
-    std::vector<int> prune_reserves;
-};
-
-void RunConstruct(const ConstructOptions& options);
+void RunConstruct(ConstructOptions options);
 
 } // namespace sime
