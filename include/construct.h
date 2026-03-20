@@ -85,11 +85,11 @@ private:
         double pr = 0.0;
     };
 
-    struct NodeInfo {
-        double distance = 0.0;
+    struct NodeScore {
+        double score = 0.0;
         std::uint32_t index = 0;
         bool has_child = false;
-        bool operator<(const NodeInfo& other) const;
+        bool operator<(const NodeScore& other) const;
     };
 
     using NodeLevel = std::vector<Node>;
@@ -111,7 +111,7 @@ private:
     void CalcBow();
     const void* FindChild(int level, const Node* node, TokenID i) const;
     double GetPr(int level, const TokenID* tokens) const;
-    double CalcDistance(int level, std::vector<int>& indices, std::vector<TokenID>& words);
+    double CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words);
 
     template <typename ChildLevel>
     double CalcNodeBow(int level, 
