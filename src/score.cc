@@ -13,7 +13,7 @@ constexpr std::uint32_t PrMask = (1U << Scorer::PrBits) - 1U;
 constexpr std::uint32_t BonMask = (1U << Scorer::BonBits) - 1U;
 constexpr std::uint32_t BoeMask = (1U << Scorer::BoeBits) - 1U;
 
-constexpr TokenID ScoreNotToken = 69;
+constexpr TokenID ScoreNotToken = kRealTokenStart - 1;
 
 } // namespace
 
