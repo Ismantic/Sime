@@ -63,9 +63,9 @@ void LinearDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
 
 double LinearDiscounter::Discount(double freq) const { return freq * d_; }
 
-bool Constructor::NodeInfo::operator<(const NodeInfo& other) const {
+bool Constructor::NodeScore::operator<(const NodeScore& other) const {
     if (has_child == other.has_child) {
-        return distance < other.distance;
+        return score < other.score;
     }
     return !has_child && other.has_child;
 }
@@ -277,7 +277,7 @@ void Constructor::DiscountLevel(NodeLevel& level,
     }
 }
 
-double Constructor::CalcDistance(int level, std::vector<int>& indices, std::vector<TokenID>& words) {
+double Constructor::CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words) {
     double ph = 1.0;
     for (int i = 1; i < level; ++i) {
         ph *= GetPr(i, words.data() + level - i + 1);
@@ -324,8 +324,8 @@ double Constructor::CalcDistance(int level, std::vector<int>& indices, std::vect
         return 0.0;
     }
     double phw_backoff = bow * ph_w;
-    double distance = phw * (std::log(phw) - std::log(phw_backoff));
-    return std::max(distance, 0.0);
+    double score = phw * (std::log(phw) - std::log(phw_backoff));
+    return std::max(score, 0.0);
 }
 
 void Constructor::PruneLevel(int level) {
@@ -336,7 +336,7 @@ void Constructor::PruneLevel(int level) {
     if (n <= 0) {
         return;
     }
-    std::vector<NodeInfo> candidates;
+    std::vector<NodeScore> candidates;
     candidates.reserve(static_cast<std::size_t>(n));
     std::vector<int> indices(opts_.num + 1, 0);
     std::vector<TokenID> words(opts_.num + 2, 0);
@@ -362,8 +362,8 @@ void Constructor::PruneLevel(int level) {
             const Node& node = node_levels_[level][idx];
             has_child = ((node_levels_[level][idx + 1].child - node.child) > 0);
         }
-        double dist = has_child ? 0.0 : CalcDistance(level, indices, words);
-        candidates.push_back(NodeInfo{dist, static_cast<std::uint32_t>(idx), has_child});
+        double dist = has_child ? 0.0 : CalcScore(level, indices, words);
+        candidates.push_back(NodeScore{dist, static_cast<std::uint32_t>(idx), has_child});
     }
     std::sort(candidates.begin(), candidates.end());
     int cuts = std::min(prune_cutoffs_[level], static_cast<int>(candidates.size()));
