@@ -206,28 +206,16 @@ constexpr std::uint32_t kBonBits = 23;
 constexpr std::uint32_t kBolBits = 2;
 constexpr std::uint32_t kChildBits = 23;
 
-struct RawNodeOnDisk {
+struct RawNode {
     TokenID id = 0;
     float pr = 0.0f;
     std::uint32_t child = 0;
     float bow = 0.0f;
 };
 
-struct RawLeaveOnDisk {
-    TokenID id = 0;
-    float pr = 0.0f;
-};
-
-struct RawNode {
-    TokenID id = 0;
-    std::uint32_t child = 0;
-    double pr = 0.0;
-    double bow = 0.0;
-};
-
 struct RawLeaf {
     TokenID id = 0;
-    double pr = 0.0;
+    float pr = 0.0f;
 };
 
 class SimpleSlm {
@@ -342,34 +330,18 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
 
     levels_.resize(order_);
     for (int lvl = 0; lvl < order_; ++lvl) {
-        std::size_t count = static_cast<std::size_t>(level_sizes_[lvl]);
-        std::vector<RawNodeOnDisk> raw(count);
-        if (!in.read(reinterpret_cast<char*>(raw.data()),
-                     static_cast<std::streamsize>(raw.size() * sizeof(RawNodeOnDisk)))) {
+        auto& nodes = levels_[lvl];
+        nodes.resize(static_cast<std::size_t>(level_sizes_[lvl]));
+        if (!in.read(reinterpret_cast<char*>(nodes.data()),
+                     static_cast<std::streamsize>(nodes.size() * sizeof(RawNode)))) {
             return false;
         }
-        auto& nodes = levels_[lvl];
-        nodes.resize(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            nodes[i].id = raw[i].id;
-            nodes[i].child = static_cast<std::uint32_t>(raw[i].child);
-            nodes[i].pr = static_cast<double>(raw[i].pr);
-            nodes[i].bow = static_cast<double>(raw[i].bow);
-
-        }
     }
 
-    std::size_t leaf_total = static_cast<std::size_t>(level_sizes_.back());
-    std::vector<RawLeaveOnDisk> raw_leaves(leaf_total);
-    if (!in.read(reinterpret_cast<char*>(raw_leaves.data()),
-                 static_cast<std::streamsize>(raw_leaves.size() * sizeof(RawLeaveOnDisk)))) {
+    leaves_.resize(static_cast<std::size_t>(level_sizes_.back()));
+    if (!in.read(reinterpret_cast<char*>(leaves_.data()),
+                 static_cast<std::streamsize>(leaves_.size() * sizeof(RawLeaf)))) {
         return false;
-    }
-    leaves_.resize(leaf_total);
-    for (std::size_t i = 0; i < leaf_total; ++i) {
-        leaves_[i].id = raw_leaves[i].id;
-        leaves_[i].pr = static_cast<double>(raw_leaves[i].pr);
-
     }
     return true;
 }
@@ -589,15 +561,15 @@ Tables BuildTables(const SimpleSlm& model) {
         const auto& nodes = model.Level(lvl);
         auto actual = model.ActualSize(lvl);
         for (std::size_t idx = 0; idx < actual; ++idx) {
-            CollectValue(static_cast<float>(nodes[idx].pr), use_log,
+            CollectValue(nodes[idx].pr, use_log,
                          EffectivePr, OriginalPr, pr_eff, pr_counts);
-            CollectValue(static_cast<float>(nodes[idx].bow), use_log,
+            CollectValue(nodes[idx].bow, use_log,
                          EffectiveBow, OriginalBow, bow_eff, bow_counts);
         }
     }
     const auto& leaves = model.Leaves();
     for (std::size_t idx = 0; idx < model.LeafCount(); ++idx) {
-        CollectValue(static_cast<float>(leaves[idx].pr), use_log,
+        CollectValue(leaves[idx].pr, use_log,
                      EffectivePr, OriginalPr, pr_eff, pr_counts);
     }
 
@@ -680,12 +652,12 @@ ThreadedModel BuildThreaded(const SimpleSlm& model, const Tables& tables) {
         for (std::size_t idx = 0; idx < actual; ++idx) {
             const auto& node = nodes[idx];
             const int pr_idx = LookupIndex(tables.pr_map,
-                                           static_cast<float>(node.pr),
+                                           node.pr,
                                            model.UseLog(),
                                            EffectivePr,
                                            OriginalPr);
             const int bow_idx = LookupIndex(tables.bow_map,
-                                            static_cast<float>(node.bow),
+                                            node.bow,
                                             model.UseLog(),
                                             EffectiveBow,
                                             OriginalBow);
@@ -724,7 +696,7 @@ ThreadedModel BuildThreaded(const SimpleSlm& model, const Tables& tables) {
     for (std::size_t idx = 0; idx < leaf_actual; ++idx) {
         const auto& leaf = leaves[idx];
         const int pr_idx = LookupIndex(tables.pr_map,
-                                       static_cast<float>(leaf.pr),
+                                       leaf.pr,
                                        model.UseLog(),
                                        EffectivePr,
                                        OriginalPr);
