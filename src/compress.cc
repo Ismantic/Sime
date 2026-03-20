@@ -5,7 +5,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <map>
@@ -35,10 +34,11 @@ struct HeapItem {
 using ArrayBuffer = std::vector<ArrayItem>;
 using HeapBuffer = std::vector<HeapItem>;
 
-void BubbleUpValue(HeapBuffer& heap, ArrayBuffer& arr, int index) {
+template <typename Cmp>
+void BubbleUp(HeapBuffer& heap, ArrayBuffer& arr, int index, Cmp cmp) {
     while (index > 0) {
         int parent = (index - 1) / 2;
-        if (heap[index] < heap[parent]) {
+        if (!cmp(heap[index], heap[parent])) {
             break;
         }
         for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
@@ -52,77 +52,43 @@ void BubbleUpValue(HeapBuffer& heap, ArrayBuffer& arr, int index) {
     }
 }
 
-void IronDownValue(HeapBuffer& heap, ArrayBuffer& arr, int index, int bottom) {
+template <typename Cmp>
+void SiftDown(HeapBuffer& heap, ArrayBuffer& arr, int index, int bottom, Cmp cmp) {
     int left = 0;
     while ((left = 2 * index + 1) < bottom) {
-        int max_index = index;
-        if (heap[max_index] < heap[left]) {
-            max_index = left;
+        int best = index;
+        if (cmp(heap[left], heap[best])) {
+            best = left;
         }
-        if (left + 1 < bottom && heap[max_index] < heap[left + 1]) {
-            max_index = left + 1;
+        if (left + 1 < bottom && cmp(heap[left + 1], heap[best])) {
+            best = left + 1;
         }
-        if (max_index == index) {
+        if (best == index) {
             break;
         }
         for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(max_index);
+            arr[h].heap_index = static_cast<unsigned>(best);
         }
-        for (unsigned h = heap[max_index].first; h < heap[max_index].last; ++h) {
+        for (unsigned h = heap[best].first; h < heap[best].last; ++h) {
             arr[h].heap_index = static_cast<unsigned>(index);
         }
-        std::swap(heap[max_index], heap[index]);
-        index = max_index;
+        std::swap(heap[best], heap[index]);
+        index = best;
     }
 }
 
-void BubbleUpDistance(HeapBuffer& heap, ArrayBuffer& arr, int index) {
-    while (index > 0) {
-        int parent = (index - 1) / 2;
-        if (heap[parent].distance <= heap[index].distance) {
-            break;
-        }
-        for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(parent);
-        }
-        for (unsigned h = heap[parent].first; h < heap[parent].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(index);
-        }
-        std::swap(heap[parent], heap[index]);
-        index = parent;
-    }
-}
+auto CmpByValue = [](const HeapItem& a, const HeapItem& b) {
+    return !(a < b);  // max-heap by approx
+};
 
-void IronDownDistance(HeapBuffer& heap, ArrayBuffer& arr, int index, int bottom) {
-    int left = 0;
-    while ((left = 2 * index + 1) < bottom) {
-        int min_index = index;
-        if (heap[left].distance < heap[min_index].distance) {
-            min_index = left;
-        }
-        if (left + 1 < bottom && heap[left + 1].distance < heap[min_index].distance) {
-            min_index = left + 1;
-        }
-        if (min_index == index) {
-            break;
-        }
-        for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(min_index);
-        }
-        for (unsigned h = heap[min_index].first; h < heap[min_index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(index);
-        }
-        std::swap(heap[min_index], heap[index]);
-        index = min_index;
-    }
-}
+auto CmpByDistance = [](const HeapItem& a, const HeapItem& b) {
+    return a.distance < b.distance;  // min-heap by distance
+};
 
-class ValueCompressor {
-public:
-    void Compress(std::map<float, int>& values,
-                  std::map<float, int>& mapping,
-                  std::vector<float>& table,
-                  unsigned limit) const {
+void CompressValues(std::map<float, int>& values,
+                    std::map<float, int>& mapping,
+                    std::vector<float>& table,
+                    unsigned limit) {
         ArrayBuffer arr;
         HeapBuffer heap;
         arr.reserve(values.size());
@@ -146,11 +112,11 @@ public:
             } else {
                 heap[i].distance = heap[i + 1].approx - heap[i].approx;
             }
-            BubbleUpDistance(heap, arr, i);
+            BubbleUp(heap, arr, i, CmpByDistance);
         }
         if (!heap.empty()) {
             heap.back().distance = std::numeric_limits<double>::max();
-            BubbleUpDistance(heap, arr, static_cast<int>(heap.size()) - 1);
+            BubbleUp(heap, arr, static_cast<int>(heap.size()) - 1, CmpByDistance);
         }
 
         while (static_cast<int>(heap.size()) > static_cast<int>(limit)) {
@@ -180,9 +146,9 @@ public:
                 std::swap(prev_index, next_index);
             }
 
-            IronDownDistance(heap, arr, next_index, static_cast<int>(heap.size()));
+            SiftDown(heap, arr, next_index, static_cast<int>(heap.size()), CmpByDistance);
             if (prev_index > 0) {
-                IronDownDistance(heap, arr, prev_index, static_cast<int>(heap.size()));
+                SiftDown(heap, arr, prev_index, static_cast<int>(heap.size()), CmpByDistance);
             }
 
             heap.front() = heap.back();
@@ -190,11 +156,11 @@ public:
                 arr[h].heap_index = 0U;
             }
             heap.pop_back();
-            IronDownDistance(heap, arr, 0, static_cast<int>(heap.size()));
+            SiftDown(heap, arr, 0, static_cast<int>(heap.size()), CmpByDistance);
         }
 
         for (int i = 1; i < static_cast<int>(heap.size()); ++i) {
-            BubbleUpValue(heap, arr, i);
+            BubbleUp(heap, arr, i, CmpByValue);
         }
         for (int i = static_cast<int>(heap.size()) - 1; i > 0; --i) {
             for (unsigned h = heap[0].first; h < heap[0].last; ++h) {
@@ -204,7 +170,7 @@ public:
                 arr[h].heap_index = 0U;
             }
             std::swap(heap[0], heap[i]);
-            IronDownValue(heap, arr, 0, i);
+            SiftDown(heap, arr, 0, i, CmpByValue);
         }
 
         mapping.clear();
@@ -217,22 +183,21 @@ public:
         for (const auto& bucket : heap) {
             table.push_back(static_cast<float>(bucket.approx));
         }
-    }
+}
 
-    void CompressWithReverse(std::map<float, float>& effective_to_real,
-                             std::map<float, int>& values,
-                             std::map<float, int>& mapping,
-                             std::vector<float>& table,
-                             unsigned limit) const {
-        std::map<float, int> temp;
-        Compress(values, temp, table, limit);
+void CompressWithReverse(std::map<float, float>& effective_to_real,
+                         std::map<float, int>& values,
+                         std::map<float, int>& mapping,
+                         std::vector<float>& table,
+                         unsigned limit) {
+    std::map<float, int> temp;
+    CompressValues(values, temp, table, limit);
 
-        mapping.clear();
-        for (const auto& [eff_value, index] : temp) {
-            mapping[effective_to_real[eff_value]] = index;
-        }
+    mapping.clear();
+    for (const auto& [eff_value, index] : temp) {
+        mapping[effective_to_real[eff_value]] = index;
     }
-};
+}
 
 constexpr std::uint32_t kBitsBow = 14;
 constexpr std::uint32_t kBitsPr = 16;
@@ -256,14 +221,12 @@ struct RawLeaveOnDisk {
 struct RawNode {
     TokenID id = 0;
     std::uint32_t child = 0;
-    double freq = 0.0;
     double pr = 0.0;
     double bow = 0.0;
 };
 
 struct RawLeaf {
     TokenID id = 0;
-    double freq = 0.0;
     double pr = 0.0;
 };
 
@@ -392,7 +355,7 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
             nodes[i].child = static_cast<std::uint32_t>(raw[i].child);
             nodes[i].pr = static_cast<double>(raw[i].pr);
             nodes[i].bow = static_cast<double>(raw[i].bow);
-            nodes[i].freq = 0.0;
+
         }
     }
 
@@ -406,7 +369,7 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
     for (std::size_t i = 0; i < leaf_total; ++i) {
         leaves_[i].id = raw_leaves[i].id;
         leaves_[i].pr = static_cast<double>(raw_leaves[i].pr);
-        leaves_[i].freq = 0.0;
+
     }
     return true;
 }
@@ -474,9 +437,6 @@ void SimpleSlm::FillHistory(int level, int index, std::vector<TokenID>& out) con
         return;
     }
     if (level == order_) {
-        if (level == 0) {
-            return;
-        }
         int current = index;
         out.back() = leaves_.at(static_cast<std::size_t>(current)).id;
         int parent_idx = leaf_parents_.at(static_cast<std::size_t>(current));
@@ -588,47 +548,57 @@ void SimpleSlm::FindBackoffState(int length,
     }
 }
 
+using EffFn = float(*)(bool, float);
+
+void CollectValue(float value, bool use_log, EffFn eff_fn, EffFn orig_fn,
+                  std::map<float, float>& eff_map, std::map<float, int>& counts) {
+    float eff = eff_fn(use_log, value);
+    if (eff_map.find(eff) == eff_map.end()) {
+        eff_map[eff] = value;
+    } else {
+        eff_map[eff] = orig_fn(use_log, eff);
+    }
+    ++counts[eff];
+}
+
+template <std::size_t N>
+void AddMilestones(const float (&milestones)[N], bool use_log, EffFn eff_fn, EffFn orig_fn,
+                   std::map<float, float>& eff_map, std::map<float, int>& counts) {
+    for (float milestone : milestones) {
+        float real = use_log ? -std::log(milestone) : milestone;
+        float eff = eff_fn(use_log, real);
+        if (eff_map.find(eff) == eff_map.end()) {
+            eff_map[eff] = real;
+        } else {
+            eff_map[eff] = orig_fn(use_log, eff);
+        }
+        counts[eff] = 0;
+    }
+}
+
 Tables BuildTables(const SimpleSlm& model) {
     Tables tables;
-    ValueCompressor compressor;
+    bool use_log = model.UseLog();
+
     std::map<float, float> pr_eff;
     std::map<float, int> pr_counts;
     std::map<float, float> bow_eff;
     std::map<float, int> bow_counts;
 
-    auto add_pr = [&](float value) {
-        float eff = EffectivePr(model.UseLog(), value);
-        auto it = pr_eff.find(eff);
-        if (it == pr_eff.end()) {
-            pr_eff[eff] = value;
-        } else {
-            pr_eff[eff] = OriginalPr(model.UseLog(), eff);
-        }
-        ++pr_counts[eff];
-    };
-
-    auto add_bow = [&](float value) {
-        float eff = EffectiveBow(model.UseLog(), value);
-        auto it = bow_eff.find(eff);
-        if (it == bow_eff.end()) {
-            bow_eff[eff] = value;
-        } else {
-            bow_eff[eff] = OriginalBow(model.UseLog(), eff);
-        }
-        ++bow_counts[eff];
-    };
-
     for (int lvl = 0; lvl < model.Order(); ++lvl) {
         const auto& nodes = model.Level(lvl);
         auto actual = model.ActualSize(lvl);
         for (std::size_t idx = 0; idx < actual; ++idx) {
-            add_pr(static_cast<float>(nodes[idx].pr));
-            add_bow(static_cast<float>(nodes[idx].bow));
+            CollectValue(static_cast<float>(nodes[idx].pr), use_log,
+                         EffectivePr, OriginalPr, pr_eff, pr_counts);
+            CollectValue(static_cast<float>(nodes[idx].bow), use_log,
+                         EffectiveBow, OriginalBow, bow_eff, bow_counts);
         }
     }
     const auto& leaves = model.Leaves();
     for (std::size_t idx = 0; idx < model.LeafCount(); ++idx) {
-        add_pr(static_cast<float>(leaves[idx].pr));
+        CollectValue(static_cast<float>(leaves[idx].pr), use_log,
+                     EffectivePr, OriginalPr, pr_eff, pr_counts);
     }
 
     static constexpr float kMilestonesPr[] = {
@@ -637,48 +607,22 @@ Tables BuildTables(const SimpleSlm& model) {
         1.0F / 256.0F, 1.0F / 512.0F, 1.0F / 1024.0F, 1.0F / 2048.0F,
         1.0F / 4096.0F, 1.0F / 8192.0F, 1.0F / 16384.0F, 1.0F / 32768.0F,
         1.0F / 65536.0F};
-    for (float milestone : kMilestonesPr) {
-        float real = model.UseLog() ? -std::log(milestone) : milestone;
-        float eff = EffectivePr(model.UseLog(), real);
-        if (pr_eff.find(eff) == pr_eff.end()) {
-            pr_eff[eff] = real;
-        } else {
-            pr_eff[eff] = OriginalPr(model.UseLog(), eff);
-        }
-        pr_counts[eff] = 0;
-    }
+    AddMilestones(kMilestonesPr, use_log, EffectivePr, OriginalPr, pr_eff, pr_counts);
 
     static constexpr float kMilestonesBow[] = {
         1.0F,  0.9F,  0.8F,   0.7F,    0.6F,     0.5F,     0.4F,     0.3F,
         0.2F,  0.1F,  0.05F,  0.01F,   0.005F,   0.001F,   0.0005F,  0.0001F,
         0.00005F, 0.00001F, 0.000005F, 0.000001F, 0.0000005F, 0.0000001F};
-    for (float milestone : kMilestonesBow) {
-        float real = model.UseLog() ? -std::log(milestone) : milestone;
-        float eff = EffectiveBow(model.UseLog(), real);
-        if (bow_eff.find(eff) == bow_eff.end()) {
-            bow_eff[eff] = real;
-        } else {
-            bow_eff[eff] = OriginalBow(model.UseLog(), eff);
-        }
-        bow_counts[eff] = 0;
-    }
+    AddMilestones(kMilestonesBow, use_log, EffectiveBow, OriginalBow, bow_eff, bow_counts);
 
-    compressor.CompressWithReverse(pr_eff,
-                                   pr_counts,
-                                   tables.pr_map,
-                                   tables.pr_table,
-                                   1U << kBitsPr);
+    CompressWithReverse(pr_eff, pr_counts, tables.pr_map, tables.pr_table, 1U << kBitsPr);
     for (auto& value : tables.pr_table) {
-        value = OriginalPr(model.UseLog(), value);
+        value = OriginalPr(use_log, value);
     }
 
-    compressor.CompressWithReverse(bow_eff,
-                                   bow_counts,
-                                   tables.bow_map,
-                                   tables.bow_table,
-                                   1U << kBitsBow);
+    CompressWithReverse(bow_eff, bow_counts, tables.bow_map, tables.bow_table, 1U << kBitsBow);
     for (auto& value : tables.bow_table) {
-        value = OriginalBow(model.UseLog(), value);
+        value = OriginalBow(use_log, value);
     }
     return tables;
 }
