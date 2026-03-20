@@ -58,9 +58,7 @@ struct ConstructorOptions {
     bool use_log_pr = false;
     std::string output_path;
     std::vector<std::uint32_t> cutoffs; // size = order
-    std::vector<std::unique_ptr<Discounter>> discounters; // size = order 
-    std::vector<TokenID> breakers;
-    std::vector<TokenID> excludes;
+    std::vector<std::unique_ptr<Discounter>> discounters; // size = order
     std::uint32_t token_count = 0;
 };
 
@@ -98,9 +96,7 @@ private:
     using NodeLevel = std::vector<Node>;
     using LeaveLevel = std::vector<Leave>;
 
-    void EnsureCapacity();
     bool IsBreaker(TokenID i) const;
-    bool IsExcluded(TokenID i) const;
 
     template <typename Level>
     std::size_t CutLevelByMark(std::vector<Node>& parents, Level& current, double mark_value);
@@ -137,8 +133,6 @@ private:
     std::vector<int> prune_sizes_;
     std::vector<int> prune_cutoffs_;
     std::vector<Discounter*> discounters_;
-    std::vector<TokenID> breakers_;
-    std::vector<TokenID> excludes_;
 
     mutable int prune_cache_level_ = -1;
     mutable int prune_cache_index_ = -1;
@@ -154,8 +148,6 @@ struct ConstructOptions {
     std::uint32_t token_count = 0;
     std::vector<std::uint32_t> cutoffs;
     std::vector<std::unique_ptr<Discounter>> discounters;
-    std::vector<TokenID> break_ids;
-    std::vector<TokenID> exclude_ids;
     std::vector<int> prune_cutoffs;
     std::vector<int> prune_reserves;
 };

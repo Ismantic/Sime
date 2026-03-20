@@ -95,20 +95,10 @@ Constructor::Constructor(ConstructorOptions opts) : opts_(std::move(opts)) {
         discounter_storage_.push_back(opts_.discounters[i]->Clone());
         discounters_[i + 1] = discounter_storage_.back().get();
     }
-
-    breakers_ = opts_.breakers;
-    excludes_ = opts_.excludes;
-    excludes_.insert(excludes_.end(), breakers_.begin(), breakers_.end());
-    EnsureSortedUnique(breakers_);
-    EnsureSortedUnique(excludes_);
 }
 
 bool Constructor::IsBreaker(TokenID i) const {
-    return std::binary_search(breakers_.begin(), breakers_.end(), i);
-}
-
-bool Constructor::IsExcluded(TokenID i) const {
-    return std::binary_search(excludes_.begin(), excludes_.end(), i);
+    return i == kSentenceToken;
 }
 
 template <typename Level>
@@ -147,7 +137,7 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
     if (static_cast<int>(ids.size()) != opts_.num) {
         throw std::invalid_argument("ngram length mismatch");
     }
-    bool breaker = IsExcluded(ids[0]);
+    bool breaker = IsBreaker(ids[0]);
     if (!breaker) {
         node_levels_[0][0].freq += freq;
     }
@@ -173,7 +163,7 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
         }
 
         branch = need_new;
-        breaker = (lvl > 1 && IsBreaker(ids[lvl - 1])) || IsExcluded(ids[lvl]);
+        breaker = (lvl > 1 && IsBreaker(ids[lvl - 1])) || IsBreaker(ids[lvl]);
     }
 
     if (!breaker) {
@@ -647,8 +637,6 @@ void RunConstruct(const ConstructOptions& options) {
     builder_opts.output_path = options.output.string();
     builder_opts.cutoffs = options.cutoffs;
     builder_opts.token_count = options.token_count;
-    builder_opts.breakers = options.break_ids;
-    builder_opts.excludes = options.exclude_ids;
     builder_opts.discounters.reserve(options.discounters.size());
     for (const auto& disc : options.discounters) {
         builder_opts.discounters.push_back(disc->Clone());
