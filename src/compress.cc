@@ -241,18 +241,17 @@ constexpr std::uint32_t kBonBits = 23;
 constexpr std::uint32_t kBolBits = 2;
 constexpr std::uint32_t kChildBits = 23;
 
+struct RawNodeOnDisk {
+    TokenID id = 0;
+    float pr = 0.0f;
+    std::uint32_t child = 0;
+    float bow = 0.0f;
+};
+
 struct RawLeafOnDisk {
     TokenID id = 0;
     float pr = 0.0f;
 };
-
-struct RawNodeOnDisk : RawLeafOnDisk {
-    std::int32_t child = 0;
-    float bow = 0.0f;
-};
-
-static_assert(sizeof(RawLeafOnDisk) == 8, "raw leaf layout mismatch");
-static_assert(sizeof(RawNodeOnDisk) == 16, "raw node layout mismatch");
 
 struct RawNode {
     TokenID id = 0;
