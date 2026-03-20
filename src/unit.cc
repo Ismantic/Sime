@@ -27,7 +27,7 @@ const char* const kFinals[] = {"", "a", "o", "e", "ai", "ei", "ao", "ou", "an", 
 constexpr std::size_t kNumFinals = sizeof(kFinals) / sizeof(*kFinals);
 
 const UnitEntry kPinyinTable[] = {
-#include "data.inc"
+#include "dict.inc"
 };
 
 constexpr std::size_t kPinyinTableSize = sizeof(kPinyinTable) / sizeof(kPinyinTable[0]);
