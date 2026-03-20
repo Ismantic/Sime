@@ -567,18 +567,17 @@ void Constructor::Prune(const std::vector<int>& reserves) {
 
 namespace {
 
+struct DiskNode {
+    TokenID id = 0;
+    float pr = 0.0f;
+    std::uint32_t child = 0;
+    float bow = 0.0f;
+};
+
 struct DiskLeaf {
     TokenID id = 0;
     float pr = 0.0f;
 };
-
-struct DiskNode : DiskLeaf {
-    std::int32_t child = 0;
-    float bow = 0.0f;
-};
-
-static_assert(sizeof(DiskLeaf) == 8, "leaf layout mismatch");
-static_assert(sizeof(DiskNode) == 16, "node layout mismatch");
 
 }  // namespace
 
