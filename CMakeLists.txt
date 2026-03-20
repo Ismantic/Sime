@@ -11,9 +11,7 @@ set(NEW_INC_DIR ${NEW_ROOT}/include)
 
 add_library(sime_core
     ${NEW_SRC_DIR}/ustr.cc
-    ${NEW_SRC_DIR}/sentence.cc
-    ${NEW_SRC_DIR}/dict.cc
-    ${NEW_SRC_DIR}/unit.cc
+${NEW_SRC_DIR}/unit.cc
     ${NEW_SRC_DIR}/count.cc
     ${NEW_SRC_DIR}/construct.cc
     ${NEW_SRC_DIR}/convert.cc
