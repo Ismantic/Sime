@@ -70,7 +70,7 @@ bool Constructor::NodeInfo::operator<(const NodeInfo& other) const {
     return !has_child && other.has_child;
 }
 
-Constructor::Constructor(ConstructorOptions opts) : opts_(std::move(opts)) {
+Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
     if (opts_.num <= 0) {
         throw std::invalid_argument("order must be positive");
     }
@@ -630,25 +630,20 @@ void Constructor::Write(FILE* out) const {
 }
 
 
-void RunConstruct(const ConstructOptions& options) {
-    ConstructorOptions builder_opts;
-    builder_opts.num = options.num;
-    builder_opts.use_log_pr = options.use_log;
-    builder_opts.output_path = options.output.string();
-    builder_opts.cutoffs = options.cutoffs;
-    builder_opts.token_count = options.token_count;
-    builder_opts.discounters.reserve(options.discounters.size());
-    for (const auto& disc : options.discounters) {
-        builder_opts.discounters.push_back(disc->Clone());
-    }
+void RunConstruct(ConstructOptions options) {
+    auto input_path = options.input;
+    auto output_path = options.output;
+    int num = options.num;
+    auto prune_cutoffs = std::move(options.prune_cutoffs);
+    auto prune_reserves = std::move(options.prune_reserves);
 
-    Constructor builder(std::move(builder_opts));
+    Constructor builder(std::move(options));
 
-    std::ifstream input(options.input, std::ios::binary);
+    std::ifstream input(input_path, std::ios::binary);
     if (!input.is_open()) {
         throw std::runtime_error("Failed to open idngram file");
     }
-    std::vector<TokenID> ids(options.num);
+    std::vector<TokenID> ids(num);
     std::uint32_t freq = 0;
     while (input.read(reinterpret_cast<char*>(ids.data()),
                       static_cast<std::streamsize>(ids.size() * sizeof(TokenID)))) {
@@ -659,11 +654,11 @@ void RunConstruct(const ConstructOptions& options) {
         builder.InsertItem(ids, freq);
     }
     builder.Finalize();
-    if (!options.prune_cutoffs.empty() || !options.prune_reserves.empty()) {
-        builder.Prune(options.prune_cutoffs, options.prune_reserves);
+    if (!prune_cutoffs.empty() || !prune_reserves.empty()) {
+        builder.Prune(prune_cutoffs, prune_reserves);
     }
 
-    FILE* out = fopen(options.output.c_str(), "wb");
+    FILE* out = fopen(output_path.c_str(), "wb");
     if (!out) {
         throw std::runtime_error("Failed to open output file");
     }

@@ -95,7 +95,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             break;
         }
         case 'l':
-            opts.use_log = true;
+            opts.use_log_pr = true;
             break;
         default:
             throw std::runtime_error("Invalid arguments");
@@ -122,7 +122,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     try {
         auto opts = ParseArgs(argc, argv);
-        sime::RunConstruct(opts);
+        sime::RunConstruct(std::move(opts));
     } catch (const std::exception& ex) {
         std::cerr << "sime-construct failed: " << ex.what() << "\n";
         return 1;
