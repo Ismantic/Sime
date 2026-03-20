@@ -30,14 +30,13 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         {"cut", required_argument, nullptr, 'c'},
         {"discount", required_argument, nullptr, 'd'},
         {"wordcount", required_argument, nullptr, 'w'},
-        {"prune-cut", required_argument, nullptr, 'p'},
         {"prune-reserve", required_argument, nullptr, 'r'},
         {"log", no_argument, nullptr, 'l'},
         {nullptr, 0, nullptr, 0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "n:o:c:d:w:p:r:l", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:c:d:w:r:l", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -80,13 +79,6 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         case 'w':
             opts.token_count = static_cast<std::uint32_t>(std::stoul(optarg));
             break;
-        case 'p': {
-            auto parts = SplitList(optarg);
-            for (const auto& p : parts) {
-                opts.prune_cutoffs.push_back(static_cast<int>(std::stoul(p)));
-            }
-            break;
-        }
         case 'r': {
             auto parts = SplitList(optarg);
             for (const auto& p : parts) {
@@ -110,10 +102,6 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
     if (opts.num <= 0 || opts.output.empty() || opts.discounters.size() != static_cast<std::size_t>(opts.num)) {
         throw std::runtime_error("invalid arguments: check -n/-o/-d");
     }
-    if (!opts.prune_cutoffs.empty() && !opts.prune_reserves.empty()) {
-        throw std::runtime_error("prune-cut and prune-reserve cannot be used together");
-    }
-
     return opts;
 }
 

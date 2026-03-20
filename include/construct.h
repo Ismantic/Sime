@@ -58,7 +58,6 @@ struct ConstructOptions {
     std::uint32_t token_count = 0;
     std::vector<std::uint32_t> cutoffs;
     std::vector<std::unique_ptr<Discounter>> discounters;
-    std::vector<int> prune_cutoffs;
     std::vector<int> prune_reserves;
 };
 
@@ -67,7 +66,7 @@ public:
     explicit Constructor(ConstructOptions opts);
     void InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt);
     void Finalize();
-    void Prune(const std::vector<int>& cutoffs, const std::vector<int>& reserves);
+    void Prune(const std::vector<int>& reserves);
     void Write(FILE* out) const;
 
 
