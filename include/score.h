@@ -11,8 +11,8 @@ namespace sime {
 class Scorer {
 public:
     static constexpr std::uint32_t TokenBits = 18;
+    static constexpr std::uint32_t PrBits  = 16;
     static constexpr std::uint32_t BowBits = 14;
-    static constexpr std::uint32_t PrBits = 16;
     static constexpr std::uint32_t BonBits = 23;
     static constexpr std::uint32_t BoeBits = 2;
     static constexpr std::size_t PrTableSize = 1u << PrBits;
