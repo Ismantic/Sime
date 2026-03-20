@@ -33,14 +33,14 @@ void Trie::Clear() {
     token_strs_.clear();
 }
 
-uint32_t Trie::TokenCount() const {
+uint32_t Trie::NodeCount() const {
     if (blob_.size() < sizeof(std::uint32_t)) {
         return 0;
     }
     return *reinterpret_cast<const std::uint32_t*>(blob_.data());
 }
 
-uint32_t Trie::NodeCount() const {
+uint32_t Trie::TokenCount() const {
     if (blob_.size() < 2 * sizeof(std::uint32_t)) {
         return 0;
     }
