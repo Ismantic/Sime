@@ -2,9 +2,9 @@
 
 本文整理 `sime-construct` 背后的语言模型公式、`Constructor` 的构建流程，以及 `raw.slm` 的二进制格式。对应代码主要在：
 
-- [include/construct.h](/home/tfbao/Isma/Sime/include/construct.h)
-- [src/construct.cc](/home/tfbao/Isma/Sime/src/construct.cc)
-- [app/constructor.cc](/home/tfbao/Isma/Sime/app/constructor.cc)
+- [include/construct.h](../include/construct.h) — `ConstructOptions`、`Constructor` 声明
+- [src/construct.cc](../src/construct.cc) — 实现
+- [app/constructor.cc](../app/constructor.cc) — CLI 入口
 
 ## 1. 这部分代码要解决什么问题
 
@@ -203,10 +203,7 @@ builder.InsertItem(ids, freq);
 - 前缀不变时，复用上一条路径上的节点并累加频次
 - 前缀变化时，新建节点
 
-同时它还处理：
-
-- `breakers`：句边界 token
-- `excludes`：不参与高阶统计的 token
+同时它还处理句边界 token（`IsBreaker`）：遇到句边界时截断当前 n-gram，不跨句统计。
 
 ### 5.3 `CountCnt()`：统计 count-of-counts
 
@@ -262,7 +259,7 @@ bow(h) =
 
 ### 5.8 `Prune()`：可选熵剪枝
 
-如果指定了 `--prune-cut` 或 `--prune-reserve`，`Constructor` 会执行基于损失近似的剪枝：
+如果指定了 `--prune-reserve`，`Constructor` 会执行基于损失近似的剪枝：
 
 - 优先删除没有子节点的低价值显式项
 - 删除后重新计算 `bow`
@@ -379,7 +376,7 @@ idx 2: tail3
 [level_1 DiskNode array]
 ...
 [level_{order-1} DiskNode array]
-[level_order DiskLeaf array]
+[level_order DiskLeave array]
 ```
 
 ### 7.2 头部字段
@@ -404,7 +401,7 @@ idx 2: tail3
 每一层的元素个数：
 
 - 前 `order` 个是 `DiskNode` 层大小
-- 最后一个是 `DiskLeaf` 层大小
+- 最后一个是 `DiskLeave` 层大小
 
 注意：
 
@@ -413,25 +410,20 @@ idx 2: tail3
 ### 7.3 磁盘结构体
 
 ```cpp
-struct DiskLeaf {
+struct DiskNode {
     TokenID id = 0;
     float pr = 0.0f;
+    std::uint32_t child = 0;
+    float bow = 0.0f;
 };
 
-struct DiskNode : DiskLeaf {
-    std::int32_t child = 0;
-    float bow = 0.0f;
+struct DiskLeave {
+    TokenID id = 0;
+    float pr = 0.0f;
 };
 ```
 
 语义如下：
-
-#### `DiskLeaf`
-
-- `id`：当前词的 `TokenID`
-- `pr`：显式概率
-
-最高阶 n-gram 的最后一个词存在 leaf 层。
 
 #### `DiskNode`
 
@@ -439,6 +431,13 @@ struct DiskNode : DiskLeaf {
 - `pr`：显式概率
 - `child`：下一层孩子区间起始下标
 - `bow`：该 history 的回退权重
+
+#### `DiskLeave`
+
+- `id`：当前词的 `TokenID`
+- `pr`：显式概率
+
+最高阶 n-gram 的最后一个词存在 leaf 层。
 
 ### 7.4 trigram 文件布局示例
 
@@ -455,7 +454,7 @@ offset 20: uint32 size_3
 offset 24: size_0 * DiskNode
 offset ... size_1 * DiskNode
 offset ... size_2 * DiskNode
-offset ... size_3 * DiskLeaf
+offset ... size_3 * DiskLeave
 ```
 
 因此 trigram 的头部长度固定为：
@@ -510,7 +509,7 @@ offset ... size_3 * DiskLeaf
 而 `raw.slm` 的本质是：
 
 ```text
-文件头 + 各层大小 + 分层 DiskNode 数组 + 最后一层 DiskLeaf 数组
+文件头 + 各层大小 + 分层 DiskNode 数组 + 最后一层 DiskLeave 数组
 ```
 
 完整的 n-gram 不是通过单独编号表示，而是通过“层级 + 路径 + TokenID”共同确定。
