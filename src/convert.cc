@@ -259,8 +259,8 @@ bool TrieConverter::Write(const std::filesystem::path& output) {
     std::uint32_t token_offset =
         static_cast<std::uint32_t>(tree_size + 3 * sizeof(std::uint32_t));
     auto* header = reinterpret_cast<std::uint32_t*>(buffer.data());
-    header[0] = token_count;
-    header[1] = node_count;
+    header[0] = node_count;
+    header[1] = token_count;
     header[2] = token_offset;
 
     std::ofstream out(output, std::ios::binary | std::ios::trunc);
