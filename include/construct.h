@@ -69,7 +69,6 @@ public:
     void Prune(const std::vector<int>& reserves);
     void Write(FILE* out) const;
 
-
 private:
     struct Node {
         TokenID id = 0;
@@ -85,41 +84,29 @@ private:
         double pr = 0.0;
     };
 
-    struct NodeScore {
-        double score = 0.0;
-        std::uint32_t index = 0;
-        bool has_child = false;
-        bool operator<(const NodeScore& other) const;
-    };
-
     using NodeLevel = std::vector<Node>;
     using LeaveLevel = std::vector<Leave>;
 
     bool IsBreaker(TokenID i) const;
 
     template <typename Level>
-    std::size_t CutLevelByMark(std::vector<Node>& parents, Level& current, double mark_value);
-
-    template <typename Level>
     int CutLevel(NodeLevel& parent, Level& current, int threshold);
 
     void CountCnt();
     void Cut();
-    void PruneLevel(int level);
     void AppendTails();
     void Discount();
     void CalcBow();
     const void* FindChild(int level, const Node* node, TokenID i) const;
     double GetPr(int level, const TokenID* tokens) const;
-    double CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words);
 
     template <typename ChildLevel>
-    double CalcNodeBow(int level, 
+    double CalcNodeBow(int level,
                        TokenID* tokens,
                        const ChildLevel& child,
                        std::size_t begin,
                        std::size_t end) const;
-    
+
     template <typename ChildLevel>
     void DiscountLevel(NodeLevel& level, ChildLevel& child, Discounter& disc);
 
@@ -128,10 +115,24 @@ private:
     LeaveLevel leaves_;
     std::vector<std::vector<std::uint64_t>> nr_;
     std::vector<std::uint32_t> cutoffs_;
-    std::vector<int> prune_sizes_;
-    std::vector<int> prune_cutoffs_;
     std::vector<Discounter*> discounters_;
 
+    // Prune
+    struct NodeScore {
+        double score = 0.0;
+        std::uint32_t index = 0;
+        bool has_child = false;
+        bool operator<(const NodeScore& other) const;
+    };
+
+    template <typename Level>
+    std::size_t CutLevelByMark(std::vector<Node>& parents, Level& current, double mark_value);
+
+    void PruneLevel(int level);
+    double CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words);
+
+    std::vector<int> prune_sizes_;
+    std::vector<int> prune_cutoffs_;
     mutable int prune_cache_level_ = -1;
     mutable int prune_cache_index_ = -1;
     mutable double prune_cache_pa_ = 0.0;
