@@ -3,7 +3,6 @@
 #include "common.h"
 
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -67,7 +66,7 @@ public:
     void InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt);
     void Finalize();
     void Prune(const std::vector<int>& reserves);
-    void Write(FILE* out) const;
+    void Write(const std::filesystem::path& path) const;
 
 private:
     struct Node {

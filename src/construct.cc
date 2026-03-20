@@ -4,8 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -581,11 +579,15 @@ struct DiskLeave {
 
 }  // namespace
 
-void Constructor::Write(FILE* out) const {
+void Constructor::Write(const std::filesystem::path& path) const {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        throw std::runtime_error("Failed to open output file");
+    }
     int order = opts_.num;
-    fwrite(&order, sizeof(order), 1, out);
+    out.write(reinterpret_cast<const char*>(&order), sizeof(order));
     std::uint32_t flag = opts_.use_log_pr ? 1u : 0u;
-    fwrite(&flag, sizeof(flag), 1, out);
+    out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     for (int lvl = 0; lvl <= order; ++lvl) {
         std::uint32_t size = 0;
         if (lvl == order) {
@@ -593,7 +595,7 @@ void Constructor::Write(FILE* out) const {
         } else {
             size = static_cast<std::uint32_t>(node_levels_[lvl].size());
         }
-        fwrite(&size, sizeof(size), 1, out);
+        out.write(reinterpret_cast<const char*>(&size), sizeof(size));
     }
     for (int lvl = 0; lvl < order; ++lvl) {
         const auto& level = node_levels_[lvl];
@@ -601,16 +603,16 @@ void Constructor::Write(FILE* out) const {
             DiskNode raw;
             raw.id = node.id;
             raw.pr = static_cast<float>(node.pr);
-            raw.child = static_cast<std::int32_t>(node.child);
+            raw.child = node.child;
             raw.bow = static_cast<float>(node.bow);
-            fwrite(&raw, sizeof(raw), 1, out);
+            out.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
         }
     }
     for (const auto& leaf : leaves_) {
         DiskLeave raw;
         raw.id = leaf.id;
         raw.pr = static_cast<float>(leaf.pr);
-        fwrite(&raw, sizeof(raw), 1, out);
+        out.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
     }
 }
 
@@ -642,12 +644,7 @@ void RunConstruct(ConstructOptions options) {
         builder.Prune(prune_reserves);
     }
 
-    FILE* out = fopen(output_path.c_str(), "wb");
-    if (!out) {
-        throw std::runtime_error("Failed to open output file");
-    }
-    builder.Write(out);
-    fclose(out);
+    builder.Write(output_path);
 }
 
 } // namespace sime
