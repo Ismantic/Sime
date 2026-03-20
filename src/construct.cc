@@ -543,13 +543,7 @@ void Constructor::Finalize() {
     CalcBow();
 }
 
-void Constructor::Prune(const std::vector<int>& cutoffs, const std::vector<int>& reserves) {
-    if (cutoffs.empty() && reserves.empty()) {
-        throw std::invalid_argument("cutoffs or reserves must be provided");
-    }
-    if (!cutoffs.empty() && !reserves.empty()) {
-        throw std::invalid_argument("cutoffs and reserves cannot both be provided");
-    }
+void Constructor::Prune(const std::vector<int>& reserves) {
     prune_sizes_.assign(opts_.num + 1, 0);
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
         prune_sizes_[lvl] = static_cast<int>(node_levels_[lvl].size());
@@ -557,19 +551,13 @@ void Constructor::Prune(const std::vector<int>& cutoffs, const std::vector<int>&
     prune_sizes_[opts_.num] = static_cast<int>(leaves_.size());
 
     prune_cutoffs_.assign(opts_.num + 1, 0);
-    if (!cutoffs.empty()) {
-        for (std::size_t i = 0; i < cutoffs.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
-            prune_cutoffs_[static_cast<int>(i + 1)] = cutoffs[i];
+    for (int lvl = 1; lvl <= opts_.num; ++lvl) {
+        int remaining = prune_sizes_[lvl] - 1;
+        int reserve = 0;
+        if (lvl <= static_cast<int>(reserves.size())) {
+            reserve = reserves[static_cast<std::size_t>(lvl - 1)];
         }
-    } else {
-        for (int lvl = 1; lvl <= opts_.num; ++lvl) {
-            int remaining = prune_sizes_[lvl] - 1;
-            int reserve = 0;
-            if (lvl <= static_cast<int>(reserves.size())) {
-                reserve = reserves[static_cast<std::size_t>(lvl - 1)];
-            }
-            prune_cutoffs_[lvl] = std::max(0, remaining - reserve);
-        }
+        prune_cutoffs_[lvl] = std::max(0, remaining - reserve);
     }
 
     for (int level = opts_.num; level > 0; --level) {
@@ -634,7 +622,6 @@ void RunConstruct(ConstructOptions options) {
     auto input_path = options.input;
     auto output_path = options.output;
     int num = options.num;
-    auto prune_cutoffs = std::move(options.prune_cutoffs);
     auto prune_reserves = std::move(options.prune_reserves);
 
     Constructor builder(std::move(options));
@@ -654,8 +641,8 @@ void RunConstruct(ConstructOptions options) {
         builder.InsertItem(ids, freq);
     }
     builder.Finalize();
-    if (!prune_cutoffs.empty() || !prune_reserves.empty()) {
-        builder.Prune(prune_cutoffs, prune_reserves);
+    if (!prune_reserves.empty()) {
+        builder.Prune(prune_reserves);
     }
 
     FILE* out = fopen(output_path.c_str(), "wb");
