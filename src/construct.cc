@@ -89,11 +89,9 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
         cutoffs_[i + 1] = opts_.cutoffs[i];
     }
 
-    discounter_storage_.reserve(opts_.discounters.size());
     discounters_.assign(opts_.num + 1, nullptr);
     for (std::size_t i = 0; i < opts_.discounters.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
-        discounter_storage_.push_back(opts_.discounters[i]->Clone());
-        discounters_[i + 1] = discounter_storage_.back().get();
+        discounters_[i + 1] = opts_.discounters[i].get();
     }
 }
 

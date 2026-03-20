@@ -124,7 +124,6 @@ private:
     void DiscountLevel(NodeLevel& level, ChildLevel& child, Discounter& disc);
 
     ConstructOptions opts_;
-    std::vector<std::unique_ptr<Discounter>> discounter_storage_;
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
     std::vector<std::vector<std::uint64_t>> nr_;
