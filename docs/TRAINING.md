@@ -59,7 +59,6 @@ sime-construct -n 3 \
     -o output/raw.slm \
     -d "ABS" -d "ABS" -d "ABS" \
     -w 84054 \
-    -b "10" \
     output/raw.3gram
 ```
 
@@ -69,7 +68,6 @@ sime-construct -n 3 \
 - `-d "ABS"`：每层折扣方法（Absolute Discounting），需指定 3 次对应 3 层
   - 可选：`LIN [d]`（Linear）
 - `-w 84054`：词汇表大小（freq_dict.txt 行数）
-- `-b "10"`：句子边界 token（kSentenceToken=10）
 - 末尾：输入 N-gram 文件
 
 产出 `raw.slm`，未压缩的语言模型二进制文件。
@@ -139,7 +137,7 @@ $SIME/sime-count -n 3 -d freq_dict.txt -s $OUT/swap.bin -o $OUT/raw.3gram corpus
 # 4. 构建语言模型
 $SIME/sime-construct -n 3 -o $OUT/raw.slm \
     -d "ABS" -d "ABS" -d "ABS" \
-    -w $VOCAB -b "10" \
+    -w $VOCAB \
     $OUT/raw.3gram
 
 # 5. 压缩

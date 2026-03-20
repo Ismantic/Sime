@@ -30,8 +30,6 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         {"cut", required_argument, nullptr, 'c'},
         {"discount", required_argument, nullptr, 'd'},
         {"wordcount", required_argument, nullptr, 'w'},
-        {"breakid", required_argument, nullptr, 'b'},
-        {"excludeid", required_argument, nullptr, 'e'},
         {"prune-cut", required_argument, nullptr, 'p'},
         {"prune-reserve", required_argument, nullptr, 'r'},
         {"log", no_argument, nullptr, 'l'},
@@ -39,7 +37,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "n:o:c:d:w:b:e:p:r:l", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:c:d:w:p:r:l", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -82,20 +80,6 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         case 'w':
             opts.token_count = static_cast<std::uint32_t>(std::stoul(optarg));
             break;
-        case 'b': {
-            auto parts = SplitList(optarg);
-            for (const auto& p : parts) {
-                opts.break_ids.push_back(static_cast<sime::TokenID>(std::stoul(p)));
-            }
-            break;
-        }
-        case 'e': {
-            auto parts = SplitList(optarg);
-            for (const auto& p : parts) {
-                opts.exclude_ids.push_back(static_cast<sime::TokenID>(std::stoul(p)));
-            }
-            break;
-        }
         case 'p': {
             auto parts = SplitList(optarg);
             for (const auto& p : parts) {
