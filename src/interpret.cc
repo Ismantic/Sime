@@ -150,7 +150,7 @@ void Interpreter::Process(std::vector<Column>& net) const {
 
 std::vector<Interpreter::Link> Interpreter::Backtrace(
     const State& tail_state,
-    std::size_t end_frame) {
+    std::size_t end) {
     std::vector<Link> path;
     const State* state = &tail_state;
     while (state != nullptr && state->backtrace_state != nullptr) {
@@ -160,7 +160,7 @@ std::vector<Interpreter::Link> Interpreter::Backtrace(
         state = prev;
     }
     std::reverse(path.begin(), path.end());
-    if (!path.empty() && path.back().end == end_frame) {
+    if (!path.empty() && path.back().end == end) {
         path.pop_back();
     }
     return path;
@@ -177,10 +177,10 @@ std::u32string Interpreter::ToText(const Link& n,
         std::string fallback = SliceToUnits(units, n.start, n.end);
         return ustr::ToU32("[" + fallback + "]");
     }
-    constexpr std::size_t kMaxWordLength = 64;
+    constexpr std::size_t MaxTokenSize = 64;
     std::u32string buffer;
     buffer.reserve(8);
-    for (std::size_t i = 0; i < kMaxWordLength; ++i) {
+    for (std::size_t i = 0; i < MaxTokenSize; ++i) {
         char32_t ch = chars[i];
         if (ch == 0) {
             break;
@@ -196,11 +196,11 @@ std::u32string Interpreter::ToText(const Link& n,
 
 std::string Interpreter::SliceToUnits(
     const std::vector<Unit>& units,
-    std::size_t left,
-    std::size_t right) {
+    std::size_t start,
+    std::size_t end) {
     std::string result;
-    for (std::size_t idx = left; idx < right && idx < units.size(); ++idx) {
-        const char* syl = UnitData::Decode(units[idx]);
+    for (std::size_t i = start; i < end && i < units.size(); ++i) {
+        const char* syl = UnitData::Decode(units[i]);
         if (!syl) {
             continue;
         }
