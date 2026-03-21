@@ -10,13 +10,13 @@
 
 namespace sime {
 
-using SentenceScore = double;
+using SentenceScore = float_t;
 
 struct State {
     SentenceScore score = 0.0;
     std::size_t frame_index = 0;
     const State* backtrace = nullptr;
-    Scorer::State scorer_state{};
+    Scorer::Pos scorer_pos{};
     TokenID backtrace_token = 0;
 
     State() = default;
@@ -24,7 +24,7 @@ struct State {
     State(SentenceScore s,
           std::size_t frame,
           const State* back,
-          Scorer::State sc,
+          Scorer::Pos sc,
           TokenID t);
 
     bool operator<(const State& r) const {
@@ -66,7 +66,7 @@ public:
     std::vector<State> GetSortedResult() const;
     std::vector<State> GetFilteredResult() const;
 
-    using StateMap = std::map<Scorer::State, TopStates>;
+    using StateMap = std::map<Scorer::Pos, TopStates>;
 
     class iterator {
     public:
@@ -90,7 +90,7 @@ public:
     iterator end();
 
 private:
-    void PushScoreHeap(SentenceScore score, const Scorer::State& state);
+    void PushScoreHeap(SentenceScore score, const Scorer::Pos& pos);
     void PopScoreHeap();
     void RefreshHeapIndex(std::size_t heap_index);
     void AdjustUp(std::size_t node);
@@ -98,16 +98,16 @@ private:
 
 private:
     static constexpr std::size_t BeamWidth = 48;
-    static constexpr double FilterRatioL1 = 0.12;
-    static constexpr double FilterRatioL2 = 0.02;
-    static constexpr double FilterThreshold = -40.0;
+    static constexpr float_t FilterRatioL1 = 0.12;
+    static constexpr float_t FilterRatioL2 = 0.02;
+    static constexpr float_t FilterThreshold = -40.0;
 
     StateMap state_map_;
     std::size_t size_ = 0;
     std::size_t max_best_ = 2;
 
-    std::map<Scorer::State, std::size_t> heap_index_;
-    std::vector<std::pair<SentenceScore, Scorer::State>> score_heap_;
+    std::map<Scorer::Pos, std::size_t> heap_index_;
+    std::vector<std::pair<SentenceScore, Scorer::Pos>> score_heap_;
 };
 
 } // namespace sime

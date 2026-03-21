@@ -26,7 +26,7 @@ void EnsureSortedUnique(std::vector<T>& values) {
 
 } // namespace
 
-AbsoluteDiscounter::AbsoluteDiscounter(std::optional<double> c) : user_c_(c) {}
+AbsoluteDiscounter::AbsoluteDiscounter(std::optional<float_t> c) : user_c_(c) {}
 
 void AbsoluteDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
     if (user_c_) {
@@ -35,17 +35,17 @@ void AbsoluteDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
         if (nr[1] == 0) {
             c_ = 0.5;
         } else {
-            c_ = static_cast<double>(nr[1]) /
-                 (static_cast<double>(nr[1]) + 2.0 * static_cast<double>(nr[2]));
+            c_ = static_cast<float_t>(nr[1]) /
+                 (static_cast<float_t>(nr[1]) + 2.0 * static_cast<float_t>(nr[2]));
         }
     }
 }
 
-double AbsoluteDiscounter::Discount(double freq) const {
+float_t AbsoluteDiscounter::Discount(float_t freq) const {
     return freq > 0.0 ? freq - c_ : 0.0;
 }
 
-LinearDiscounter::LinearDiscounter(std::optional<double> d) : user_d_(d) {}
+LinearDiscounter::LinearDiscounter(std::optional<float_t> d) : user_d_(d) {}
 
 void LinearDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
     if (user_d_) {
@@ -54,18 +54,18 @@ void LinearDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
         if (nr[0] == 0) {
             d_ = 0.5;
         } else {
-            d_ = 1.0 - static_cast<double>(nr[1]) / static_cast<double>(nr[0]);
+            d_ = 1.0 - static_cast<float_t>(nr[1]) / static_cast<float_t>(nr[0]);
         }
     }
 }
 
-double LinearDiscounter::Discount(double freq) const { return freq * d_; }
+float_t LinearDiscounter::Discount(float_t freq) const { return freq * d_; }
 
 bool Constructor::NodeScore::operator<(const NodeScore& other) const {
-    if (has_child == other.has_child) {
+    if (has_down == other.has_down) {
         return score < other.score;
     }
-    return !has_child && other.has_child;
+    return !has_down && other.has_down;
 }
 
 Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
@@ -94,11 +94,11 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
 }
 
 bool Constructor::IsBreaker(TokenID i) const {
-    return i == kSentenceToken;
+    return i == SentenceToken;
 }
 
 template <typename Level>
-std::size_t Constructor::CutLevelByMark(std::vector<Node>& parents, Level& current, double mark_value) {
+std::size_t Constructor::CutLevelByMark(std::vector<Node>& ups, Level& current, float_t mark_value) {
     if (current.empty()) {
         return 0;
     }
@@ -106,7 +106,7 @@ std::size_t Constructor::CutLevelByMark(std::vector<Node>& parents, Level& curre
     std::vector<std::size_t> removed_prefix(total + 1, 0);
     std::size_t new_size = 0;
     for (std::size_t idx = 0; idx < total; ++idx) {
-        bool keep = (current[idx].pr != mark_value) || (idx + 1 == total);
+        bool keep = (current[idx].pro != mark_value) || (idx + 1 == total);
         if (keep) {
             if (new_size != idx) {
                 current[new_size] = current[idx];
@@ -118,13 +118,13 @@ std::size_t Constructor::CutLevelByMark(std::vector<Node>& parents, Level& curre
         }
     }
 
-    for (auto& parent : parents) {
-        std::size_t child = parent.child;
-        if (child > total) {
-            child = total;
+    for (auto& up : ups) {
+        std::size_t down = up.down;
+        if (down > total) {
+            down = total;
         }
-        std::size_t removed = removed_prefix[child];
-        parent.child = static_cast<std::uint32_t>(child - removed);
+        std::size_t removed = removed_prefix[down];
+        up.down = static_cast<std::uint32_t>(down - removed);
     }
     return new_size;
 }
@@ -139,21 +139,21 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
     }
     bool branch = false;
     for (int lvl = 1; (!breaker && lvl < opts_.num); ++lvl) {
-        auto& parent_level = node_levels_[lvl - 1];
+        auto& up_level = node_levels_[lvl - 1];
         auto& current = node_levels_[lvl];
         bool need_new = branch || 
                         current.empty() || 
-                        parent_level.back().child >= static_cast<std::uint32_t>(current.size());
+                        up_level.back().down >= static_cast<std::uint32_t>(current.size());
         if (!need_new && current.back().id != ids[lvl-1]) {
             need_new = true;
         }
 
         if (need_new) {
-            std::uint32_t child =
+            std::uint32_t down =
                 (lvl == opts_.num - 1)
                     ? static_cast<std::uint32_t>(leaves_.size())
                     : static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
-            current.push_back(Node{ids[lvl - 1], child, static_cast<double>(freq), 0.0, 0.0});
+            current.push_back(Node{ids[lvl - 1], down, static_cast<float_t>(freq), 0.0, 0.0});
         } else {
             current.back().freq += freq;
         }
@@ -164,7 +164,7 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
 
     if (!breaker) {
         if (freq > cutoffs_[opts_.num]) {
-            leaves_.push_back(Leave{ids.back(), static_cast<double>(freq), 0.0});
+            leaves_.push_back(Leave{ids.back(), static_cast<float_t>(freq), 0.0});
         } else {
             nr_[opts_.num][0] += freq;
             if (freq < static_cast<std::uint32_t>(MaxR)) {
@@ -194,28 +194,28 @@ void Constructor::CountCnt() {
 }
 
 void Constructor::AppendTails() {
-    const double tail_pr = static_cast<double>(std::numeric_limits<float>::denorm_min());
+    const float_t tail_pro = static_cast<float_t>(std::numeric_limits<float>::denorm_min());
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
-        std::uint32_t child_count = 0;
+        std::uint32_t down_count = 0;
         if (lvl == opts_.num - 1) {
-            child_count = static_cast<std::uint32_t>(leaves_.size());
+            down_count = static_cast<std::uint32_t>(leaves_.size());
         } else {
-            child_count = static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
+            down_count = static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
         }
-        node_levels_[lvl].push_back(Node{TailMarker, child_count, 1.0, 0.0, 0.0});
-        node_levels_[lvl].back().pr = tail_pr;
+        node_levels_[lvl].push_back(Node{TailMarker, down_count, 1.0, 0.0, 0.0});
+        node_levels_[lvl].back().pro = tail_pro;
     }
-    leaves_.push_back(Leave{0, 1.0, tail_pr});
+    leaves_.push_back(Leave{0, 1.0, tail_pro});
 }
 
 template <typename Level>
-int Constructor::CutLevel(NodeLevel& parent, Level& current, int threshold) {
+int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold) {
     if (threshold <= 0) {
         return static_cast<int>(current.size());
     }
     int write = 0;
-    auto pfirst = parent.begin();
-    auto plast = parent.end();
+    auto up_it = up_level.begin();
+    auto up_last = up_level.end();
     for (int idx = 0; idx < static_cast<int>(current.size()); ++idx) {
         bool keep = false;
         if constexpr (std::is_same_v<Level, LeaveLevel>) {
@@ -224,16 +224,16 @@ int Constructor::CutLevel(NodeLevel& parent, Level& current, int threshold) {
         } else {
             keep = (static_cast<int>(current[idx].freq) > threshold) ||
                    (idx + 1 == static_cast<int>(current.size())) ||
-                   (current[idx + 1].child != current[idx].child);
+                   (current[idx + 1].down != current[idx].down);
         }
         if (keep) {
             if (write != idx) {
                 current[write] = current[idx];
             }
-            while (pfirst != plast &&
-                   pfirst->child <= static_cast<std::uint32_t>(idx)) {
-                pfirst->child = static_cast<std::uint32_t>(write);
-                ++pfirst;
+            while (up_it != up_last &&
+                   up_it->down <= static_cast<std::uint32_t>(idx)) {
+                up_it->down = static_cast<std::uint32_t>(write);
+                ++up_it;
             }
             ++write;
         }
@@ -246,83 +246,83 @@ void Constructor::Cut() {
         if (cutoffs_[lvl] <= 0) {
             continue;
         }
-        auto& parent = node_levels_[lvl - 1];
+        auto& up_level = node_levels_[lvl - 1];
         if (lvl == opts_.num) {
-            int new_size = CutLevel(parent, leaves_, cutoffs_[lvl]);
+            int new_size = CutLevel(up_level, leaves_, cutoffs_[lvl]);
             leaves_.resize(static_cast<std::size_t>(new_size));
         } else {
             auto& level = node_levels_[lvl];
-            int new_size = CutLevel(parent, level, cutoffs_[lvl]);
+            int new_size = CutLevel(up_level, level, cutoffs_[lvl]);
             level.resize(static_cast<std::size_t>(new_size));
         }
     }
 }
 
-template <typename ChildLevel>
-void Constructor::DiscountLevel(NodeLevel& level, 
-                            ChildLevel& child, 
-                            Discounter& disc) {
+template <typename DownLevel>
+void Constructor::DiscountLevel(NodeLevel& level,
+                                DownLevel& down_level,
+                                Discounter& disc) {
     for (std::size_t idx = 0; idx + 1 < level.size(); ++idx) {
         Node& node = level[idx];
         Node& next = level[idx + 1];
-        for (std::size_t child_idx = node.child; child_idx < next.child; ++child_idx) {
-            double discounted = disc.Discount(child[child_idx].freq);
-            double pr = discounted / node.freq;
-            pr = std::clamp(pr, 1e-12, 1.0 - 1e-9);
-            double encoded = opts_.use_log_pr ? -std::log(pr) : pr;
-            child[child_idx].pr = static_cast<float>(encoded);
+        for (std::size_t down_idx = node.down; down_idx < next.down; ++down_idx) {
+            float_t discounted = disc.Discount(down_level[down_idx].freq);
+            float_t pro = discounted / node.freq;
+            pro = std::clamp(pro, 1e-12, 1.0 - 1e-9);
+            float_t encoded = opts_.use_log_pro ? -std::log(pro) : pro;
+            down_level[down_idx].pro = static_cast<float>(encoded);
         }
     }
 }
 
-double Constructor::CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words) {
-    double ph = 1.0;
+float_t Constructor::CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words) {
+    float_t ph = 1.0;
     for (int i = 1; i < level; ++i) {
-        ph *= GetPr(i, words.data() + level - i + 1);
+        ph *= GetPro(i, words.data() + level - i + 1);
     }
-    const Node& parent = node_levels_[level - 1][indices[level - 1]];
-    double bow = opts_.use_log_pr ? std::exp(-parent.bow) : parent.bow;
-    double phw = 0.0;
+    const Node& up = node_levels_[level - 1][indices[level - 1]];
+    float_t bow = opts_.use_log_pro ? std::exp(-up.bow) : up.bow;
+    float_t phw = 0.0;
     if (level == opts_.num) {
         const Leave& leaf = leaves_[indices[level]];
-        phw = opts_.use_log_pr ? std::exp(-leaf.pr) : leaf.pr;
+        phw = opts_.use_log_pro ? std::exp(-leaf.pro) : leaf.pro;
     } else {
         const Node& node = node_levels_[level][indices[level]];
-        phw = opts_.use_log_pr ? std::exp(-node.pr) : node.pr;
+        phw = opts_.use_log_pro ? std::exp(-node.pro) : node.pro;
     }
-    double ph_w = GetPr(level - 1, words.data() + 2);
+    float_t ph_w = GetPro(level - 1, words.data() + 2);
     if (prune_cache_level_ != level - 1 || prune_cache_index_ != indices[level - 1]) {
         prune_cache_level_ = level - 1;
         prune_cache_index_ = indices[level - 1];
         prune_cache_pa_ = 1.0;
         prune_cache_pb_ = 1.0;
-        std::size_t begin = parent.child;
-        std::size_t end = node_levels_[level - 1][indices[level - 1] + 1].child;
-        for (std::size_t child_idx = begin; child_idx < end; ++child_idx) {
-            double pr = 0.0;
+        std::size_t begin = up.down;
+        std::size_t end = node_levels_[level - 1][indices[level - 1] + 1].down;
+        for (std::size_t down_idx = begin; down_idx < end; ++down_idx) {
+            float_t pro = 0.0;
             TokenID wid = 0;
             if (level == opts_.num) {
-                const Leave& leaf = leaves_[child_idx];
-                pr = opts_.use_log_pr ? std::exp(-leaf.pr) : leaf.pr;
+                const Leave& leaf = leaves_[down_idx];
+                pro = opts_.use_log_pro ? std::exp(-leaf.pro) : leaf.pro;
                 wid = leaf.id;
             } else {
-                const Node& node = node_levels_[level][child_idx];
-                pr = opts_.use_log_pr ? std::exp(-node.pr) : node.pr;
+                const Node& node = node_levels_[level][down_idx];
+                pro = opts_.use_log_pro ? std::exp(-node.pro) : node.pro;
                 wid = node.id;
             }
-            prune_cache_pa_ -= pr;
+            prune_cache_pa_ -= pro;
             words[level] = wid;
-            double pr_back = GetPr(level - 1, words.data() + 2);
-            prune_cache_pb_ -= pr_back;
+            float_t pro_back = GetPro(level - 1, words.data() + 2);
+            prune_cache_pb_ -= pro_back;
         }
     }
-    double pa = prune_cache_pa_;
-    double pb = prune_cache_pb_;
+    float_t pa = prune_cache_pa_;
+    float_t pb = prune_cache_pb_;
     if (pa <= 0.0 || pb <= 0.0) {
         return 0.0;
     }
-    double phw_backoff = bow * ph_w;
-    double score = phw * (std::log(phw) - std::log(phw_backoff));
+    float_t phw_backoff = bow * ph_w;
+    float_t score = phw * (std::log(phw) - std::log(phw_backoff));
     return std::max(score, 0.0);
 }
 
@@ -347,33 +347,33 @@ void Constructor::PruneLevel(int level) {
             words[level] = node_levels_[level][idx].id;
         }
         for (int j = level - 1; j >= 0; --j) {
-            int parent_idx = indices[j];
-            const Node* parent = &node_levels_[j][parent_idx];
-            while ((parent + 1)->child <= static_cast<std::uint32_t>(indices[j + 1])) {
-                ++parent;
+            int up_idx = indices[j];
+            const Node* up = &node_levels_[j][up_idx];
+            while ((up + 1)->down <= static_cast<std::uint32_t>(indices[j + 1])) {
+                ++up;
                 ++indices[j];
             }
-            words[j] = parent->id;
+            words[j] = up->id;
         }
-        bool has_child = false;
+        bool has_down = false;
         if (level != opts_.num) {
             const Node& node = node_levels_[level][idx];
-            has_child = ((node_levels_[level][idx + 1].child - node.child) > 0);
+            has_down = ((node_levels_[level][idx + 1].down - node.down) > 0);
         }
-        double dist = has_child ? 0.0 : CalcScore(level, indices, words);
-        candidates.push_back(NodeScore{dist, static_cast<std::uint32_t>(idx), has_child});
+        float_t dist = has_down ? 0.0 : CalcScore(level, indices, words);
+        candidates.push_back(NodeScore{dist, static_cast<std::uint32_t>(idx), has_down});
     }
     std::sort(candidates.begin(), candidates.end());
     int cuts = std::min(prune_cutoffs_[level], static_cast<int>(candidates.size()));
-    double mark = opts_.use_log_pr ? 0.0 : 1.0;
+    float_t mark = opts_.use_log_pro ? 0.0 : 1.0;
     for (int i = 0; i < cuts; ++i) {
-        if (candidates[i].has_child) {
+        if (candidates[i].has_down) {
             continue;
         }
         if (level == opts_.num) {
-            leaves_[candidates[i].index].pr = mark;
+            leaves_[candidates[i].index].pro = mark;
         } else {
-            node_levels_[level][candidates[i].index].pr = mark;
+            node_levels_[level][candidates[i].index].pro = mark;
         }
     }
     if (level == opts_.num) {
@@ -404,33 +404,33 @@ void Constructor::Discount() {
         }
     }
     Node& root = node_levels_[0][0];
-    double base = 1.0 / std::max<std::uint32_t>(opts_.token_count, 1);
-    root.pr = opts_.use_log_pr ? -std::log(base) : base;
-    root.pr = static_cast<float>(root.pr);
+    float_t base = 1.0 / std::max<std::uint32_t>(opts_.token_count, 1);
+    root.pro = opts_.use_log_pro ? -std::log(base) : base;
+    root.pro = static_cast<float>(root.pro);
 }
 
-template <typename ChildLevel>
-double Constructor::CalcNodeBow(int level, 
-                            TokenID* words,
-                            const ChildLevel& child, 
-                            std::size_t begin, 
-                            std::size_t end) const {
+template <typename DownLevel>
+float_t Constructor::CalcNodeBow(int level,
+                                 TokenID* words,
+                                 const DownLevel& down_level,
+                                 std::size_t begin,
+                                 std::size_t end) const {
     if (begin >= end) {
         return 1.0;
     }
-    double sum_child = 0.0;
-    double sum_backoff = 0.0;
+    float_t sum_down = 0.0;
+    float_t sum_backoff = 0.0;
     for (std::size_t idx = begin; idx < end; ++idx) {
-        double pr = opts_.use_log_pr ? std::exp(-child[idx].pr) : child[idx].pr;
-        sum_child += pr;
-        words[level + 1] = child[idx].id;
-        sum_backoff += GetPr(level, words + 2);
+        float_t pro = opts_.use_log_pro ? std::exp(-down_level[idx].pro) : down_level[idx].pro;
+        sum_down += pro;
+        words[level + 1] = down_level[idx].id;
+        sum_backoff += GetPro(level, words + 2);
     }
-    if (sum_child >= 1.0 || sum_backoff >= 1.0) {
-        double bow = std::max(sum_child, sum_backoff) + 0.0001;
-        return (bow - sum_child) / (bow - sum_backoff);
+    if (sum_down >= 1.0 || sum_backoff >= 1.0) {
+        float_t bow = std::max(sum_down, sum_backoff) + 0.0001;
+        return (bow - sum_down) / (bow - sum_backoff);
     }
-    return (1.0 - sum_child) / (1.0 - sum_backoff);
+    return (1.0 - sum_down) / (1.0 - sum_backoff);
 }
 
 
@@ -451,7 +451,7 @@ void Constructor::CalcBow() {
             words[lvl] = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)]].id;
             for (int k = lvl - 1; k >= 0; --k) {
                 Node* base = bases[static_cast<std::size_t>(k)];
-                while (base[idx[static_cast<std::size_t>(k)] + 1].child <=
+                while (base[idx[static_cast<std::size_t>(k)] + 1].down <=
                        static_cast<std::uint32_t>(idx[static_cast<std::size_t>(k + 1)])) {
                     ++idx[static_cast<std::size_t>(k)];
                 }
@@ -459,30 +459,30 @@ void Constructor::CalcBow() {
             }
             Node& node = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)]];
             Node& next = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)] + 1];
-            double bow = 1.0;
+            float_t bow = 1.0;
             if (lvl == opts_.num - 1) {
                 bow = CalcNodeBow(lvl,
                                     words.data(),
                                     leaves_,
-                                    node.child,
-                                    next.child);
+                                    node.down,
+                                    next.down);
             } else {
                 bow = CalcNodeBow(lvl,
                                     words.data(),
                                     node_levels_[lvl + 1],
-                                    node.child,
-                                    next.child);
+                                    node.down,
+                                    next.down);
             }
-            node.bow = opts_.use_log_pr ? -std::log(bow) : bow;
+            node.bow = opts_.use_log_pro ? -std::log(bow) : bow;
             node.bow = static_cast<float>(node.bow);
         }
     }
 }
 
 
-const void* Constructor::FindChild(int level, const Node* node, TokenID id) const {
-    std::uint32_t begin = node->child;
-    std::uint32_t end = (node + 1)->child;
+const void* Constructor::FindDown(int level, const Node* node, TokenID id) const {
+    std::uint32_t begin = node->down;
+    std::uint32_t end = (node + 1)->down;
     if (level == opts_.num - 1) {
         const Leave* base = leaves_.data();
         auto it = std::lower_bound(base + begin, base + end, id, [](const Leave& leaf, TokenID value) {
@@ -494,8 +494,8 @@ const void* Constructor::FindChild(int level, const Node* node, TokenID id) cons
         return nullptr;
     }
     const Node* base = node_levels_[level + 1].data();
-    auto it = std::lower_bound(base + begin, base + end, id, [](const Node& child, TokenID value) {
-        return child.id < value;
+    auto it = std::lower_bound(base + begin, base + end, id, [](const Node& down, TokenID value) {
+        return down.id < value;
     });
     if (it != base + end && it->id == id) {
         return it;
@@ -503,32 +503,32 @@ const void* Constructor::FindChild(int level, const Node* node, TokenID id) cons
     return nullptr;
 }
 
-double Constructor::GetPr(int n, const TokenID* words) const {
+float_t Constructor::GetPro(int n, const TokenID* words) const {
     const Node* root = node_levels_[0].data();
     if (n <= 0 || root == nullptr) {
-        return opts_.use_log_pr ? std::exp(-root->pr) : root->pr;
+        return opts_.use_log_pro ? std::exp(-root->pro) : root->pro;
     }
     const void* pnode = root;
     int lvl = 0;
-    double bow = 1.0;
+    float_t bow = 1.0;
     while (pnode != nullptr && lvl < n) {
         const Node* current = static_cast<const Node*>(pnode);
-        bow = opts_.use_log_pr ? std::exp(-current->bow) : current->bow;
-        pnode = FindChild(lvl, current, words[lvl]);
+        bow = opts_.use_log_pro ? std::exp(-current->bow) : current->bow;
+        pnode = FindDown(lvl, current, words[lvl]);
         ++lvl;
     }
     if (pnode != nullptr) {
         if (lvl == opts_.num) {
             const Leave* leaf = static_cast<const Leave*>(pnode);
-            return opts_.use_log_pr ? std::exp(-leaf->pr) : leaf->pr;
+            return opts_.use_log_pro ? std::exp(-leaf->pro) : leaf->pro;
         }
         const Node* node = static_cast<const Node*>(pnode);
-        return opts_.use_log_pr ? std::exp(-node->pr) : node->pr;
+        return opts_.use_log_pro ? std::exp(-node->pro) : node->pro;
     }
     if (n > 0 && lvl == n - 1) {
-        return bow * GetPr(n - 1, words + 1);
+        return bow * GetPro(n - 1, words + 1);
     }
-    return GetPr(n - 1, words + 1);
+    return GetPro(n - 1, words + 1);
 }
 
 void Constructor::Finalize() {
@@ -567,14 +567,14 @@ namespace {
 
 struct DiskNode {
     TokenID id = 0;
-    float pr = 0.0f;
-    std::uint32_t child = 0;
+    float pro = 0.0f;
+    std::uint32_t down = 0;
     float bow = 0.0f;
 };
 
 struct DiskLeave {
     TokenID id = 0;
-    float pr = 0.0f;
+    float pro = 0.0f;
 };
 
 }  // namespace
@@ -586,7 +586,7 @@ void Constructor::Write(const std::filesystem::path& path) const {
     }
     int order = opts_.num;
     out.write(reinterpret_cast<const char*>(&order), sizeof(order));
-    std::uint32_t flag = opts_.use_log_pr ? 1u : 0u;
+    std::uint32_t flag = opts_.use_log_pro ? 1u : 0u;
     out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     for (int lvl = 0; lvl <= order; ++lvl) {
         std::uint32_t size = 0;
@@ -602,8 +602,8 @@ void Constructor::Write(const std::filesystem::path& path) const {
         for (const auto& node : level) {
             DiskNode raw;
             raw.id = node.id;
-            raw.pr = static_cast<float>(node.pr);
-            raw.child = node.child;
+            raw.pro = static_cast<float>(node.pro);
+            raw.down = node.down;
             raw.bow = static_cast<float>(node.bow);
             out.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
         }
@@ -611,7 +611,7 @@ void Constructor::Write(const std::filesystem::path& path) const {
     for (const auto& leaf : leaves_) {
         DiskLeave raw;
         raw.id = leaf.id;
-        raw.pr = static_cast<float>(leaf.pr);
+        raw.pro = static_cast<float>(leaf.pro);
         out.write(reinterpret_cast<const char*>(&raw), sizeof(raw));
     }
 }

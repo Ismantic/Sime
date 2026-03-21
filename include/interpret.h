@@ -14,7 +14,7 @@ namespace sime {
 
 struct DecodeResult {
     std::u32string text;
-    double score = 0.0;   // larger is better (negative log probability negated)
+    float_t score = 0.0;   // larger is better (negative log probability negated)
     std::vector<TokenID> tokens;
 };
 
