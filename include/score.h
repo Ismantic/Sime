@@ -42,7 +42,7 @@ public:
 
 private:
     struct NodeEntry {
-        TokenID id = 0;
+        TokenID token = 0;
         std::uint32_t down = 0;
         std::uint32_t bow = 0;
         std::uint32_t pro = 0;
@@ -51,7 +51,7 @@ private:
     };
 
     struct LeaveEntry {
-        TokenID id = 0;
+        TokenID token = 0;
         std::uint32_t pro = 0;
         std::uint32_t bon = 0;
         std::uint32_t boe = 0;
@@ -63,7 +63,7 @@ private:
 
     int num_ = 0;
     bool log_ = false;
-    std::vector<int> level_sizes_;
+    std::vector<int> sizes_;
     std::vector<std::vector<NodeEntry>> node_levels_;
     std::vector<LeaveEntry> leave_level_;
     std::vector<float> pro_table_;
