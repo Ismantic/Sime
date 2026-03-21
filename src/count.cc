@@ -27,7 +27,7 @@ bool LoadTokenMap(const std::filesystem::path& path, TokenMap& token_map) {
     if (!in.is_open()) {
         return false;
     }
-    TokenID next_id = kRealTokenStart;
+    TokenID next_id = StartToken;
     std::string line;
     while (std::getline(in, line)) {
         if (line.empty()) {
@@ -136,13 +136,13 @@ void ProcessTextFile(const std::filesystem::path& path,
     bool first_line = true;
     while (std::getline(input, line)) {
         if (line.empty()) {
-            feed_ngram(kSentenceToken);
+            feed_ngram(SentenceToken);
             filled = 0;
             first_line = true;
             continue;
         }
         if (!first_line) {
-            feed_ngram(kSentenceToken);
+            feed_ngram(SentenceToken);
             filled = 0;
         }
         first_line = false;

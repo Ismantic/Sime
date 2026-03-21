@@ -8,12 +8,12 @@ namespace sime {
 State::State(SentenceScore s,
              std::size_t frame,
              const State* back,
-             Scorer::State sc,
+             Scorer::Pos sc,
              TokenID t)
     : score(s),
       frame_index(frame),
       backtrace(back),
-      scorer_state(sc),
+      scorer_pos(sc),
       backtrace_token(t) {}
 
 TopStates::TopStates(std::size_t threshold)
@@ -75,7 +75,7 @@ std::vector<State> NetStates::GetFilteredResult() const {
             break;
         }
         if (max_score != 0.0) {
-            double ratio = current / max_score;
+            float_t ratio = current / max_score;
             if (ratio < FilterRatioL2) {
                 break;
             }
@@ -89,17 +89,17 @@ std::vector<State> NetStates::GetFilteredResult() const {
 }
 
 void NetStates::Add(const State& state) {
-    auto it = state_map_.find(state.scorer_state);
+    auto it = state_map_.find(state.scorer_pos);
     bool inserted = false;
 
     if (it == state_map_.end()) {
         TopStates bucket(max_best_);
         inserted = bucket.Push(state);
-        state_map_.emplace(state.scorer_state, bucket);
-        PushScoreHeap(state.score, state.scorer_state);
+        state_map_.emplace(state.scorer_pos, bucket);
+        PushScoreHeap(state.score, state.scorer_pos);
     } else {
         inserted = it->second.Push(state);
-        auto heap_it = heap_index_.find(state.scorer_state);
+        auto heap_it = heap_index_.find(state.scorer_pos);
         if (heap_it != heap_index_.end() && heap_it->second < score_heap_.size()) {
             AdjustDown(heap_it->second);
         }
@@ -129,8 +129,8 @@ void NetStates::Add(const State& state) {
 }
 
 void NetStates::PushScoreHeap(SentenceScore score,
-                                  const Scorer::State& state) {
-    score_heap_.emplace_back(score, state);
+                              const Scorer::Pos& pos) {
+    score_heap_.emplace_back(score, pos);
     AdjustUp(score_heap_.size() - 1);
 }
 

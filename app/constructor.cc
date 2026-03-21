@@ -58,14 +58,14 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             }
             const auto& method = parts[0];
             if (method == "ABS") {
-                std::optional<double> cval;
+                std::optional<sime::float_t> cval;
                 if (parts.size() > 1) {
                     cval = std::stod(parts[1]);
                 }
                 opts.discounters.push_back(
                     std::make_unique<sime::AbsoluteDiscounter>(cval));
             } else if (method == "LIN") {
-                std::optional<double> dval;
+                std::optional<sime::float_t> dval;
                 if (parts.size() > 1) {
                     dval = std::stod(parts[1]);
                 }
@@ -87,7 +87,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             break;
         }
         case 'l':
-            opts.use_log_pr = true;
+            opts.use_log_pro = true;
             break;
         default:
             throw std::runtime_error("Invalid arguments");

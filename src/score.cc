@@ -9,11 +9,11 @@ namespace sime {
 namespace {
 constexpr std::uint32_t TokenMask = (1U << Scorer::TokenBits) - 1U;
 constexpr std::uint32_t BowMask = (1U << Scorer::BowBits) - 1U;
-constexpr std::uint32_t PrMask = (1U << Scorer::PrBits) - 1U;
+constexpr std::uint32_t ProMask = (1U << Scorer::ProBits) - 1U;
 constexpr std::uint32_t BonMask = (1U << Scorer::BonBits) - 1U;
 constexpr std::uint32_t BoeMask = (1U << Scorer::BoeBits) - 1U;
 
-constexpr TokenID ScoreNotToken = kRealTokenStart - 1;
+constexpr TokenID ScoreNotToken = StartToken - 1;
 
 } // namespace
 
@@ -24,11 +24,11 @@ bool Scorer::Load(const std::filesystem::path& path) {
         return false;
     }
 
-    if (!in.read(reinterpret_cast<char*>(&order_), sizeof(order_))) {
+    if (!in.read(reinterpret_cast<char*>(&num_), sizeof(num_))) {
         Reset();
         return false;
     }
-    if (order_ <= 0) {
+    if (num_ <= 0) {
         Reset();
         return false;
     }
@@ -37,18 +37,18 @@ bool Scorer::Load(const std::filesystem::path& path) {
         Reset();
         return false;
     }
-    use_log_ = (flag != 0);
+    log_ = (flag != 0);
 
-    level_sizes_.assign(static_cast<std::size_t>(order_) + 1, 0);
+    level_sizes_.assign(static_cast<std::size_t>(num_) + 1, 0);
     if (!in.read(reinterpret_cast<char*>(level_sizes_.data()),
                  static_cast<std::streamsize>(level_sizes_.size() * sizeof(int)))) {
         Reset();
         return false;
     }
 
-    pr_table_.resize(PrTableSize);
-    if (!in.read(reinterpret_cast<char*>(pr_table_.data()),
-                 static_cast<std::streamsize>(pr_table_.size() * sizeof(float)))) {
+    pro_table_.resize(ProTableSize);
+    if (!in.read(reinterpret_cast<char*>(pro_table_.data()),
+                 static_cast<std::streamsize>(pro_table_.size() * sizeof(float)))) {
         Reset();
         return false;
     }
@@ -60,8 +60,8 @@ bool Scorer::Load(const std::filesystem::path& path) {
         return false;
     }
 
-    node_levels_.resize(static_cast<std::size_t>(order_));
-    for (int lvl = 0; lvl < order_; ++lvl) {
+    node_levels_.resize(static_cast<std::size_t>(num_));
+    for (int lvl = 0; lvl < num_; ++lvl) {
         int size = level_sizes_[static_cast<std::size_t>(lvl)];
         if (size <= 0) {
             Reset();
@@ -82,9 +82,9 @@ bool Scorer::Load(const std::filesystem::path& path) {
             NodeEntry entry;
             entry.id = static_cast<TokenID>(w0 & TokenMask);
             entry.bow = (w0 >> TokenBits) & BowMask;
-            entry.pr = w1 & PrMask;
-            entry.child = (w1 >> 16U) & 0xFFFFU;
-            entry.child |= ((w2 >> (BonBits + BoeBits)) & 0x7FU) << 16U;
+            entry.pro = w1 & ProMask;
+            entry.down = (w1 >> 16U) & 0xFFFFU;
+            entry.down |= ((w2 >> (BonBits + BoeBits)) & 0x7FU) << 16U;
             entry.bon = w2 & BonMask;
             entry.boe = (w2 >> BonBits) & BoeMask;
             nodes[static_cast<std::size_t>(idx)] = entry;
@@ -107,9 +107,9 @@ bool Scorer::Load(const std::filesystem::path& path) {
         }
         LeaveEntry entry;
         entry.id = static_cast<TokenID>(w0 & TokenMask);
-        std::uint32_t pr_low = (w0 >> TokenBits) & 0x3FFFU;
-        std::uint32_t pr_high = (w1 >> (BonBits + BoeBits)) & 0x3U;
-        entry.pr = (pr_high << 14U) | pr_low;
+        std::uint32_t pro_low = (w0 >> TokenBits) & 0x3FFFU;
+        std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & 0x3U;
+        entry.pro = (pro_high << 14U) | pro_low;
         entry.bon = w1 & BonMask;
         entry.boe = (w1 >> BonBits) & BoeMask;
         leave_level_[static_cast<std::size_t>(idx)] = entry;
@@ -118,58 +118,58 @@ bool Scorer::Load(const std::filesystem::path& path) {
 }
 
 void Scorer::Reset() {
-    order_ = 0;
-    use_log_ = false;
+    num_ = 0;
+    log_ = false;
     level_sizes_.clear();
     node_levels_.clear();
     leave_level_.clear();
-    pr_table_.clear();
+    pro_table_.clear();
     bow_table_.clear();
 }
 
-void Scorer::Back(State& state) const {
-    if (state.level >= static_cast<std::uint32_t>(order_)) {
-        if (state.index < leave_level_.size()) {
-            const auto& leaf = leave_level_[state.index];
-            state.level = leaf.boe;
-            state.index = leaf.bon;
+void Scorer::Back(Pos& pos) const {
+    if (pos.level >= static_cast<std::uint32_t>(num_)) {
+        if (pos.index < leave_level_.size()) {
+            const auto& leaf = leave_level_[pos.index];
+            pos.level = leaf.boe;
+            pos.index = leaf.bon;
         }
         return;
     }
-    const auto& nodes = node_levels_[state.level];
-    if (state.index + 1 >= nodes.size()) {
+    const auto& nodes = node_levels_[pos.level];
+    if (pos.index + 1 >= nodes.size()) {
         return;
     }
-    const auto& node = nodes[state.index];
-    const auto& next = nodes[state.index + 1];
-    if (node.child == next.child) {
-        state.level = node.boe;
-        state.index = node.bon;
+    const auto& node = nodes[pos.index];
+    const auto& next = nodes[pos.index + 1];
+    if (node.down == next.down) {
+        pos.level = node.boe;
+        pos.index = node.bon;
     }
 }
 
-double Scorer::ScoreMove(State s, TokenID w, State& r) const {
-    double value = RawMove(s, w, r);
-    if (use_log_) {
+float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
+    float_t value = RawMove(s, w, r);
+    if (log_) {
         return value;
     }
     if (value <= 0.0) {
-        return std::numeric_limits<double>::infinity();
+        return std::numeric_limits<float_t>::infinity();
     }
     return -std::log(value);
 }
 
-double Scorer::RawMove(State s, TokenID w, State& r) const {
+float_t Scorer::RawMove(Pos s, TokenID w, Pos& r) const {
     std::uint32_t level = s.level;
     std::uint32_t index = s.index;
 
-    double cost = use_log_ ? 0.0 : 1.0;
+    float_t cost = log_ ? 0.0 : 1.0;
     if (w == ScoreNotToken) {
-        r = State{};
+        r = Pos{};
         return cost;
     }
 
-    while (level < static_cast<std::uint32_t>(order_)) {
+    while (level < static_cast<std::uint32_t>(num_)) {
         const auto& nodes = node_levels_[level];
         std::size_t node_index = (level == 0) ? 0 : index;
         if (node_index + 1 >= nodes.size()) {
@@ -177,28 +177,28 @@ double Scorer::RawMove(State s, TokenID w, State& r) const {
         }
         const auto& node = nodes[node_index];
         const auto& next = nodes[node_index + 1];
-        auto begin = node.child;
-        auto end = next.child;
-        if (level == static_cast<std::uint32_t>(order_ - 1)) {
-            auto child_idx = GetLeave(begin, end, w);
-            if (child_idx != end) {
-                r.level = static_cast<std::uint32_t>(order_);
-                r.index = static_cast<std::uint32_t>(child_idx);
-                double pr = pr_table_[leave_level_[child_idx].pr];
-                return use_log_ ? cost + pr : cost * pr;
+        auto begin = node.down;
+        auto end = next.down;
+        if (level == static_cast<std::uint32_t>(num_ - 1)) {
+            auto down_idx = GetLeave(begin, end, w);
+            if (down_idx != end) {
+                r.level = static_cast<std::uint32_t>(num_);
+                r.index = static_cast<std::uint32_t>(down_idx);
+                float_t pro = pro_table_[leave_level_[down_idx].pro];
+                return log_ ? cost + pro : cost * pro;
             }
         } else {
-            auto child_idx = GetNode(static_cast<int>(level + 1), begin, end, w);
-            if (child_idx != end) {
+            auto down_idx = GetNode(static_cast<int>(level + 1), begin, end, w);
+            if (down_idx != end) {
                 r.level = level + 1;
-                r.index = static_cast<std::uint32_t>(child_idx);
-                double pr = pr_table_[node_levels_[level + 1][child_idx].pr];
-                return use_log_ ? cost + pr : cost * pr;
+                r.index = static_cast<std::uint32_t>(down_idx);
+                float_t pro = pro_table_[node_levels_[level + 1][down_idx].pro];
+                return log_ ? cost + pro : cost * pro;
             }
         }
 
-        double bow = bow_table_[node.bow];
-        cost = use_log_ ? (cost + bow) : (cost * bow);
+        float_t bow = bow_table_[node.bow];
+        cost = log_ ? (cost + bow) : (cost * bow);
         if (level == 0) {
             break;
         }
@@ -206,9 +206,9 @@ double Scorer::RawMove(State s, TokenID w, State& r) const {
         index = node.bon;
     }
 
-    r = State{};
-    double root_pr = pr_table_[node_levels_[0][0].pr];
-    return use_log_ ? (cost + root_pr) : (cost * root_pr);
+    r = Pos{};
+    float_t root_pro = pro_table_[node_levels_[0][0].pro];
+    return log_ ? (cost + root_pro) : (cost * root_pro);
 }
 
 std::size_t Scorer::GetNode(int level,

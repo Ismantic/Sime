@@ -66,7 +66,7 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     for (auto& column : lattice) {
         column.states.SetMaxBest(max_best);
     }
-    State init_state(0.0, 0, nullptr, Scorer::State{}, 0);
+    State init_state(0.0, 0, nullptr, Scorer::Pos{}, 0);
     lattice[0].states.Add(init_state);
 
     Process(lattice);
@@ -117,9 +117,9 @@ void Interpreter::InitLattice(const std::vector<Unit>& units,
                 break;
             }
             std::uint32_t count = 0;
-            const Entry* entries = trie_.GetEntry(node, count);
+            const std::uint32_t* tokens = trie_.GetToken(node, count);
             for (std::uint32_t idx = 0; idx < count; ++idx) {
-                TokenID wid = static_cast<TokenID>(entries[idx].i);
+                TokenID wid = static_cast<TokenID>(tokens[idx]);
                 bucket.push_back({start, pos, wid});
             }
             if (count > 0) {
@@ -132,7 +132,7 @@ void Interpreter::InitLattice(const std::vector<Unit>& units,
     }
 
     lattice[units.size()].vecs.push_back(
-        {units.size(), units.size() + 1, kSentenceToken});
+        {units.size(), units.size() + 1, SentenceToken});
 }
 
 void Interpreter::Process(std::vector<Column>& lattice) const {
@@ -141,11 +141,11 @@ void Interpreter::Process(std::vector<Column>& lattice) const {
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
             const auto& value = *it;
             for (const auto& word : column.vecs) {
-                Scorer::State next_state{};
-                double step = scorer_.ScoreMove(value.scorer_state, word.id, next_state);
-                scorer_.Back(next_state);
-                double next_cost = value.score + step;
-                State next(next_cost, word.right, &value, next_state, word.id);
+                Scorer::Pos next_pos{};
+                float_t step = scorer_.ScoreMove(value.scorer_pos, word.id, next_pos);
+                scorer_.Back(next_pos);
+                float_t next_cost = value.score + step;
+                State next(next_cost, word.right, &value, next_pos, word.id);
                 lattice[word.right].states.Add(next);
             }
         }
@@ -172,7 +172,7 @@ std::vector<Interpreter::Lattice> Interpreter::Backtrace(
 
 std::u32string Interpreter::ToText(const Lattice& n,
                                    const std::vector<Unit>& units) const {
-    if (n.id == kScoreNotToken || n.id == kNotToken) {
+    if (n.id == kScoreNotToken || n.id == NotToken) {
         std::string fallback = SliceToUnits(units, n.left, n.right);
         return ustr::ToU32("[" + fallback + "]");
     }

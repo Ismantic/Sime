@@ -21,7 +21,7 @@ struct TrieNodeHeader {
 };
 
 struct TrieMove {
-    std::uint32_t i = 0;
+    std::uint32_t next = 0;
     std::uint32_t unit = 0;
 };
 
@@ -52,7 +52,7 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 
     std::string line;
     std::string token;
-    std::uint32_t next_id = kRealTokenStart;
+    std::uint32_t next_id = StartToken;
     std::vector<std::string> unit_strs;
     while (std::getline(in, line)) {
         bool s = ParseLine(line, token, unit_strs);
@@ -217,9 +217,9 @@ void TrieConverter::SerializeNode(const Node* node,
 
     auto* moves = reinterpret_cast<TrieMove*>(base + 1);
     std::size_t idx = 0;
-    for (const auto& [unit, child] : node->moves) {
+    for (const auto& [unit, down] : node->moves) {
         moves[idx].unit = unit;
-        moves[idx].i = metrics_.at(child).i;
+        moves[idx].next = metrics_.at(down).i;
         ++idx;
     }
 
