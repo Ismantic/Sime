@@ -5,25 +5,25 @@
 
 namespace sime {
 
-State::State(SentenceScore s,
-             std::size_t frame,
-             const State* back,
-             Scorer::Pos sc,
-             TokenID t)
-    : score(s),
-      frame_index(frame),
-      backtrace(back),
-      scorer_pos(sc),
-      backtrace_token(t) {}
+State::State(float_t score,
+             std::size_t now,
+             Scorer::Pos pos,
+             const State* backtrace_state,
+             TokenID backtrace_token)
+    : score(score),
+      now(now),
+      pos(pos),
+      backtrace_state(backtrace_state),
+      backtrace_token(backtrace_token) {}
 
-TopStates::TopStates(std::size_t threshold)
-    : threshold_(threshold) {}
+TopStates::TopStates(std::size_t size)
+    : size_(size) {}
 
 bool TopStates::Push(const State& state) {
-    if (threshold_ == 0) {
+    if (size_ == 0) {
         return false;
     }
-    if (heap_.size() >= threshold_) {
+    if (heap_.size() >= size_) {
         if (heap_.front() < state) {
             return false;
         }
@@ -46,40 +46,43 @@ void TopStates::Pop() {
 NetStates::NetStates() = default;
 
 void NetStates::Clear() {
-    state_map_.clear();
-    heap_index_.clear();
-    score_heap_.clear();
-    size_ = 0;
+    pos_map_.clear();
+    top_index_.clear();
+    top_score_.clear();
+    state_size_ = 0;
 }
 
-std::vector<State> NetStates::GetSortedResult() const {
+std::vector<State> NetStates::_GetStates() const {
     std::vector<State> result;
-    for (const auto& pair : state_map_) {
+    for (const auto& pair : pos_map_) {
         result.insert(result.end(), pair.second.begin(), pair.second.end());
     }
     std::sort(result.begin(), result.end());
     return result;
 }
 
-std::vector<State> NetStates::GetFilteredResult() const {
-    std::vector<State> sorted = GetSortedResult();
+std::vector<State> NetStates::GetStates() const {
+    std::vector<State> sorted = _GetStates();
     std::vector<State> filtered;
     if (sorted.empty()) {
         return filtered;
     }
+    // TODO: Revisit these score filters. The current comparisons may not
+    // match the "smaller score is better" interpretation, and may also
+    // interact with Scorer::log_ semantics.
     filtered.push_back(sorted[0]);
-    SentenceScore max_score = sorted[0].score;
+    float_t top_score = sorted[0].score;
     for (std::size_t i = 1; i < sorted.size(); ++i) {
-        SentenceScore current = sorted[i].score;
-        if (current < FilterThreshold) {
+        float_t current = sorted[i].score;
+        if (current < ScoreMin) {
             break;
         }
-        if (max_score != 0.0) {
-            float_t ratio = current / max_score;
-            if (ratio < FilterRatioL2) {
+        if (top_score != 0.0) {
+            float_t ratio = current / top_score;
+            if (ratio < ScoreRatioL2) {
                 break;
             }
-            if (ratio < FilterRatioL1 && current < max_score) {
+            if (ratio < ScoreRatioL1 && current < top_score) {
                 break;
             }
         }
@@ -88,119 +91,119 @@ std::vector<State> NetStates::GetFilteredResult() const {
     return filtered;
 }
 
-void NetStates::Add(const State& state) {
-    auto it = state_map_.find(state.scorer_pos);
+void NetStates::Insert(const State& state) {
+    auto it = pos_map_.find(state.pos);
     bool inserted = false;
 
-    if (it == state_map_.end()) {
-        TopStates bucket(max_best_);
+    if (it == pos_map_.end()) {
+        TopStates bucket(max_top_);
         inserted = bucket.Push(state);
-        state_map_.emplace(state.scorer_pos, bucket);
-        PushScoreHeap(state.score, state.scorer_pos);
+        pos_map_.emplace(state.pos, bucket);
+        PushScoreHeap(state.score, state.pos);
     } else {
         inserted = it->second.Push(state);
-        auto heap_it = heap_index_.find(state.scorer_pos);
-        if (heap_it != heap_index_.end() && heap_it->second < score_heap_.size()) {
+        auto heap_it = top_index_.find(state.pos);
+        if (heap_it != top_index_.end() && heap_it->second < top_score_.size()) {
             AdjustDown(heap_it->second);
         }
     }
 
     if (inserted) {
-        ++size_;
+        ++state_size_;
     }
 
-    while (size_ > BeamWidth && !score_heap_.empty()) {
-        const auto& best = score_heap_.front().second;
-        auto bucket_it = state_map_.find(best);
-        if (bucket_it == state_map_.end()) {
+    while (state_size_ > BeamSize && !top_score_.empty()) {
+        const auto& top = top_score_.front().second;
+        auto bucket_it = pos_map_.find(top);
+        if (bucket_it == pos_map_.end()) {
             PopScoreHeap();
             continue;
         }
         bucket_it->second.Pop();
         if (bucket_it->second.Size() == 0) {
-            state_map_.erase(bucket_it);
+            pos_map_.erase(bucket_it);
             PopScoreHeap();
         } else {
-            score_heap_.front().first = bucket_it->second.Top().score;
+            top_score_.front().first = bucket_it->second.Top().score;
             AdjustDown(0);
         }
-        --size_;
+        --state_size_;
     }
 }
 
-void NetStates::PushScoreHeap(SentenceScore score,
+void NetStates::PushScoreHeap(float_t score,
                               const Scorer::Pos& pos) {
-    score_heap_.emplace_back(score, pos);
-    AdjustUp(score_heap_.size() - 1);
+    top_score_.emplace_back(score, pos);
+    AdjustUp(top_score_.size() - 1);
 }
 
 void NetStates::PopScoreHeap() {
-    if (score_heap_.empty()) {
+    if (top_score_.empty()) {
         return;
     }
-    heap_index_.erase(score_heap_.front().second);
-    score_heap_.front() = score_heap_.back();
-    score_heap_.pop_back();
-    if (!score_heap_.empty()) {
-        RefreshHeapIndex(0);
+    top_index_.erase(top_score_.front().second);
+    top_score_.front() = top_score_.back();
+    top_score_.pop_back();
+    if (!top_score_.empty()) {
+        RefreshTopIndex(0);
         AdjustDown(0);
     }
 }
 
-void NetStates::RefreshHeapIndex(std::size_t heap_index) {
-    if (heap_index >= score_heap_.size()) {
+void NetStates::RefreshTopIndex(std::size_t index) {
+    if (index >= top_score_.size()) {
         return;
     }
-    heap_index_[score_heap_[heap_index].second] = heap_index;
+    top_index_[top_score_[index].second] = index;
 }
 
 void NetStates::AdjustUp(std::size_t node) {
     while (node > 0) {
         std::size_t parent = (node - 1) / 2;
-        if (score_heap_[parent].first < score_heap_[node].first) {
-            std::swap(score_heap_[parent], score_heap_[node]);
-            RefreshHeapIndex(parent);
+        if (top_score_[parent].first < top_score_[node].first) {
+            std::swap(top_score_[parent], top_score_[node]);
+            RefreshTopIndex(parent);
             node = parent;
         } else {
             break;
         }
     }
-    RefreshHeapIndex(node);
+    RefreshTopIndex(node);
 }
 
 void NetStates::AdjustDown(std::size_t node) {
     std::size_t left = node * 2 + 1;
-    while (left < score_heap_.size()) {
+    while (left < top_score_.size()) {
         std::size_t child = node;
-        if (score_heap_[child].first < score_heap_[left].first) {
+        if (top_score_[child].first < top_score_[left].first) {
             child = left;
         }
         std::size_t right = left + 1;
-        if (right < score_heap_.size() &&
-            score_heap_[child].first < score_heap_[right].first) {
+        if (right < top_score_.size() &&
+            top_score_[child].first < top_score_[right].first) {
             child = right;
         }
         if (child == node) {
             break;
         }
-        std::swap(score_heap_[node], score_heap_[child]);
-        RefreshHeapIndex(child);
+        std::swap(top_score_[node], top_score_[child]);
+        RefreshTopIndex(child);
         node = child;
         left = node * 2 + 1;
     }
-    RefreshHeapIndex(node);
+    RefreshTopIndex(node);
 }
 
 NetStates::iterator NetStates::begin() {
-    return iterator(state_map_.begin(), state_map_.end());
+    return iterator(pos_map_.begin(), pos_map_.end());
 }
 
 NetStates::iterator NetStates::end() {
-    return iterator(state_map_.end(), state_map_.end());
+    return iterator(pos_map_.end(), pos_map_.end());
 }
 
-NetStates::iterator::iterator(StateMap::iterator outer,
-                              StateMap::iterator outer_end)
+NetStates::iterator::iterator(PosMap::iterator outer,
+                              PosMap::iterator outer_end)
     : outer_(outer), outer_end_(outer_end) {
     if (outer_ != outer_end_) {
         inner_ = outer_->second.begin();
