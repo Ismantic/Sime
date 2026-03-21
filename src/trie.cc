@@ -19,11 +19,11 @@ const Move* Node::GetMove() const {
     return reinterpret_cast<const Move*>(p);
 }
 
-const Entry* Node::GetEntry() const {
+const std::uint32_t* Node::GetToken() const {
     const char* p = 
         reinterpret_cast<const char*>(this + 1) + 
         sizeof(Move) * move_count;
-    return reinterpret_cast<const Entry*>(p);
+    return reinterpret_cast<const std::uint32_t*>(p);
 }
 
 Trie::~Trie() { Clear(); }
@@ -117,16 +117,16 @@ const Node* Trie::DoMove(const Node* node, Unit u) const {
     if (it == end || it->unit.value != u.value) {
         return nullptr;
     }
-    return NodeFrom(it->i);
+    return NodeFrom(it->next);
 }
 
-const Entry* Trie::GetEntry(const Node* node, uint32_t& count) const {
+const std::uint32_t* Trie::GetToken(const Node* node, uint32_t& count) const {
     if (node == nullptr) {
         count = 0;
         return nullptr;
     } 
     count = node->count;
-    return node->GetEntry();
+    return node->GetToken();
 }
 
 const char32_t* Trie::TokenAt(uint32_t i) const {
