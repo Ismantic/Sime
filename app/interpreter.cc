@@ -10,24 +10,24 @@
 namespace {
 
 struct Options {
-    std::filesystem::path pydict;
-    std::filesystem::path lm;
-    std::size_t nbest = 5;
+    std::filesystem::path trie;
+    std::filesystem::path model;
+    std::size_t num = 5;
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --pydict <pydict_sc.ime.bin> --lm <lm_sc.t3g> [--nbest N]\n";
+    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--num N]\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if ((arg == "--pydict" || arg == "-d") && i + 1 < argc) {
-            opts.pydict = argv[++i];
-        } else if ((arg == "--lm" || arg == "-l") && i + 1 < argc) {
-            opts.lm = argv[++i];
-        } else if (arg == "--nbest" && i + 1 < argc) {
-            opts.nbest = static_cast<std::size_t>(std::stoul(argv[++i]));
+        if ((arg == "--trie" || arg == "-t") && i + 1 < argc) {
+            opts.trie = argv[++i];
+        } else if ((arg == "--model" || arg == "-m") && i + 1 < argc) {
+            opts.model = argv[++i];
+        } else if (arg == "--num" && i + 1 < argc) {
+            opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -37,12 +37,12 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    if (opts.pydict.empty() || opts.lm.empty()) {
+    if (opts.trie.empty() || opts.model.empty()) {
         PrintUsage();
         return false;
     }
-    if (opts.nbest == 0) {
-        opts.nbest = 1;
+    if (opts.num == 0) {
+        opts.num = 1;
     }
     return true;
 }
@@ -56,13 +56,13 @@ int main(int argc, char** argv) {
     }
 
     sime::Interpreter interpreter;
-    if (!interpreter.LoadResources(opts.pydict, opts.lm)) {
-        std::cerr << "Load failed: " << opts.pydict << ", " << opts.lm << "\n";
+    if (!interpreter.LoadResources(opts.trie, opts.model)) {
+        std::cerr << "Load failed: " << opts.trie << ", " << opts.model << "\n";
         return 1;
     }
 
-    std::cout << "Dict: " << opts.pydict << "\n"
-              << "LanguageModel: " << opts.lm << "\n"
+    std::cout << "Dict: " << opts.trie << "\n"
+              << "LanguageModel: " << opts.model << "\n"
               << "输入拼音，使用 :quit 退出。\n";
 
     std::string line;
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
         if (line.empty()) {
             continue;
         }
-        auto results = interpreter.DecodeText(line, opts.nbest);
+        auto results = interpreter.DecodeText(line, opts.num);
         if (results.empty()) {
             std::cout << "  (没有候选)\n";
             continue;
