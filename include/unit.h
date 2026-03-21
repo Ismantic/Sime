@@ -58,7 +58,7 @@ public:
 
 class UnitParser {
 public:
-    bool ParseToken(std::string_view token, std::vector<Unit>& units) const;
+    bool ParseStr(std::string_view token, std::vector<Unit>& units) const;
     bool ParseUnits(std::string_view input, std::vector<Unit>& units) const;
 
     static bool IsDelimiter(char ch);

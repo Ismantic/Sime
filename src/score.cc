@@ -14,8 +14,6 @@ constexpr std::uint32_t ProMask = (1U << Scorer::ProBits) - 1U;
 constexpr std::uint32_t BonMask = (1U << Scorer::BonBits) - 1U;
 constexpr std::uint32_t BoeMask = (1U << Scorer::BoeBits) - 1U;
 
-constexpr TokenID ScoreNotToken = StartToken - 1;
-
 } // namespace
 
 bool Scorer::Load(const std::filesystem::path& path) {
