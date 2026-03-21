@@ -1,5 +1,6 @@
 #include "score.h"
 
+#include <cassert>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -39,9 +40,9 @@ bool Scorer::Load(const std::filesystem::path& path) {
     }
     log_ = (flag != 0);
 
-    level_sizes_.assign(static_cast<std::size_t>(num_) + 1, 0);
-    if (!in.read(reinterpret_cast<char*>(level_sizes_.data()),
-                 static_cast<std::streamsize>(level_sizes_.size() * sizeof(int)))) {
+    sizes_.assign(static_cast<std::size_t>(num_) + 1, 0);
+    if (!in.read(reinterpret_cast<char*>(sizes_.data()),
+                 static_cast<std::streamsize>(sizes_.size() * sizeof(int)))) {
         Reset();
         return false;
     }
@@ -62,7 +63,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
 
     node_levels_.resize(static_cast<std::size_t>(num_));
     for (int lvl = 0; lvl < num_; ++lvl) {
-        int size = level_sizes_[static_cast<std::size_t>(lvl)];
+        int size = sizes_[static_cast<std::size_t>(lvl)];
         if (size <= 0) {
             Reset();
             return false;
@@ -80,7 +81,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
                 return false;
             }
             NodeEntry entry;
-            entry.id = static_cast<TokenID>(w0 & TokenMask);
+            entry.token = static_cast<TokenID>(w0 & TokenMask);
             entry.bow = (w0 >> TokenBits) & BowMask;
             entry.pro = w1 & ProMask;
             entry.down = (w1 >> 16U) & 0xFFFFU;
@@ -91,7 +92,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
         }
     }
 
-    int leave_size = level_sizes_.back();
+    int leave_size = sizes_.back();
     if (leave_size <= 0) {
         Reset();
         return false;
@@ -106,7 +107,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
             return false;
         }
         LeaveEntry entry;
-        entry.id = static_cast<TokenID>(w0 & TokenMask);
+        entry.token = static_cast<TokenID>(w0 & TokenMask);
         std::uint32_t pro_low = (w0 >> TokenBits) & 0x3FFFU;
         std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & 0x3U;
         entry.pro = (pro_high << 14U) | pro_low;
@@ -120,7 +121,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
 void Scorer::Reset() {
     num_ = 0;
     log_ = false;
-    level_sizes_.clear();
+    sizes_.clear();
     node_levels_.clear();
     leave_level_.clear();
     pro_table_.clear();
@@ -130,16 +131,14 @@ void Scorer::Reset() {
 void Scorer::Back(Pos& pos) const {
     if (pos.level >= static_cast<std::uint32_t>(num_)) {
         if (pos.index < leave_level_.size()) {
-            const auto& leaf = leave_level_[pos.index];
-            pos.level = leaf.boe;
-            pos.index = leaf.bon;
+            const auto& e = leave_level_[pos.index];
+            pos.level = e.boe;
+            pos.index = e.bon;
         }
         return;
     }
     const auto& nodes = node_levels_[pos.level];
-    if (pos.index + 1 >= nodes.size()) {
-        return;
-    }
+    assert(pos.index + 1 < nodes.size());
     const auto& node = nodes[pos.index];
     const auto& next = nodes[pos.index + 1];
     if (node.down == next.down) {
@@ -218,10 +217,10 @@ std::size_t Scorer::GetNode(int level,
     const auto& nodes = node_levels_[static_cast<std::size_t>(level)];
     auto first = nodes.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = nodes.begin() + static_cast<std::ptrdiff_t>(end);
-    auto it = std::lower_bound(first, last, w, [](const NodeEntry& node, TokenID id) {
-        return node.id < id;
+    auto it = std::lower_bound(first, last, w, [](const NodeEntry& node, TokenID token) {
+        return node.token < token;
     });
-    if (it == last || it->id != w) {
+    if (it == last || it->token != w) {
         return end;
     }
     return static_cast<std::size_t>(std::distance(nodes.begin(), it));
@@ -232,10 +231,10 @@ std::size_t Scorer::GetLeave(std::size_t begin,
                              TokenID w) const {
     auto first = leave_level_.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = leave_level_.begin() + static_cast<std::ptrdiff_t>(end);
-    auto it = std::lower_bound(first, last, w, [](const LeaveEntry& leaf, TokenID id) {
-        return leaf.id < id;
+    auto it = std::lower_bound(first, last, w, [](const LeaveEntry& leaf, TokenID token) {
+        return leaf.token < token;
     });
-    if (it == last || it->id != w) {
+    if (it == last || it->token != w) {
         return end;
     }
     return static_cast<std::size_t>(std::distance(leave_level_.begin(), it));
