@@ -48,13 +48,13 @@ private:
                  std::vector<Column>& net) const;
     void Process(std::vector<Column>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
-                                       std::size_t end_frame);
+                                       std::size_t end);
     std::u32string ToText(const Link& n,
                           const std::vector<Unit>& units) const;
     static std::string SliceToUnits(
         const std::vector<Unit>& units,
-        std::size_t left,
-        std::size_t right);
+        std::size_t start,
+        std::size_t end);
 
 private:
     Trie trie_;
