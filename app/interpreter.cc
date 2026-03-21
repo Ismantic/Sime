@@ -65,9 +65,6 @@ int main(int argc, char** argv) {
               << "LanguageModel: " << opts.lm << "\n"
               << "输入拼音，使用 :quit 退出。\n";
 
-    sime::DecodeOptions decode_opts;
-    decode_opts.num = opts.nbest;
-
     std::string line;
     while (true) {
         std::cout << "> " << std::flush;
@@ -80,7 +77,7 @@ int main(int argc, char** argv) {
         if (line.empty()) {
             continue;
         }
-        auto results = interpreter.DecodeText(line, decode_opts);
+        auto results = interpreter.DecodeText(line, opts.nbest);
         if (results.empty()) {
             std::cout << "  (没有候选)\n";
             continue;

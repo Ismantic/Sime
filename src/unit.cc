@@ -114,8 +114,8 @@ bool UnitParser::IsDelimiter(char ch) {
     }
 }
 
-bool UnitParser::ParseToken(std::string_view token,
-                            std::vector<Unit>& units) const {
+bool UnitParser::ParseStr(std::string_view token,
+                          std::vector<Unit>& units) const {
     units.clear();
     if (token.empty()) {
         return true;
