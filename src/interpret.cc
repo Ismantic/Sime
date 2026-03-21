@@ -64,14 +64,14 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
 
     const std::size_t max_best = options.num == 0 ? 1 : options.num;
     for (auto& column : lattice) {
-        column.states.SetMaxBest(max_best);
+        column.states.SetMaxTop(max_best);
     }
-    State init_state(0.0, 0, nullptr, Scorer::Pos{}, 0);
-    lattice[0].states.Add(init_state);
+    State init_state(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    lattice[0].states.Insert(init_state);
 
     Process(lattice);
 
-    const auto tail_states = lattice.back().states.GetFilteredResult();
+    const auto tail_states = lattice.back().states.GetStates();
     if (tail_states.empty()) {
         return results;
     }
@@ -142,11 +142,11 @@ void Interpreter::Process(std::vector<Column>& lattice) const {
             const auto& value = *it;
             for (const auto& word : column.vecs) {
                 Scorer::Pos next_pos{};
-                float_t step = scorer_.ScoreMove(value.scorer_pos, word.id, next_pos);
+                float_t step = scorer_.ScoreMove(value.pos, word.id, next_pos);
                 scorer_.Back(next_pos);
                 float_t next_cost = value.score + step;
-                State next(next_cost, word.right, &value, next_pos, word.id);
-                lattice[word.right].states.Add(next);
+                State next(next_cost, word.right, next_pos, &value, word.id);
+                lattice[word.right].states.Insert(next);
             }
         }
     }
@@ -157,9 +157,9 @@ std::vector<Interpreter::Lattice> Interpreter::Backtrace(
     std::size_t end_frame) {
     std::vector<Lattice> path;
     const State* state = &tail_state;
-    while (state != nullptr && state->backtrace != nullptr) {
-        const State* prev = state->backtrace;
-        path.push_back({prev->frame_index, state->frame_index,
+    while (state != nullptr && state->backtrace_state != nullptr) {
+        const State* prev = state->backtrace_state;
+        path.push_back({prev->now, state->now,
                         state->backtrace_token});
         state = prev;
     }

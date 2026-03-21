@@ -10,22 +10,20 @@
 
 namespace sime {
 
-using SentenceScore = float_t;
-
 struct State {
-    SentenceScore score = 0.0;
-    std::size_t frame_index = 0;
-    const State* backtrace = nullptr;
-    Scorer::Pos scorer_pos{};
+    float_t score = 0.0;
+    std::size_t now = 0;
+    Scorer::Pos pos{};
+    const State* backtrace_state = nullptr;
     TokenID backtrace_token = 0;
 
     State() = default;
 
-    State(SentenceScore s,
-          std::size_t frame,
-          const State* back,
-          Scorer::Pos sc,
-          TokenID t);
+    State(float_t score,
+          std::size_t now,
+          Scorer::Pos pos,
+          const State* backtrace_state,
+          TokenID backtrace_token);
 
     bool operator<(const State& r) const {
         return score < r.score;
@@ -52,26 +50,25 @@ public:
 
 private:
     std::vector<State> heap_;
-    std::size_t threshold_;
+    std::size_t size_;
 };
 
 class NetStates {
 public:
     NetStates();
 
-    void SetMaxBest(std::size_t max_best) { max_best_ = max_best; }
+    void SetMaxTop(std::size_t max_top) { max_top_ = max_top; }
     void Clear();
-    void Add(const State& state);
+    void Insert(const State& state);
 
-    std::vector<State> GetSortedResult() const;
-    std::vector<State> GetFilteredResult() const;
+    std::vector<State> GetStates() const;
 
-    using StateMap = std::map<Scorer::Pos, TopStates>;
+    using PosMap = std::map<Scorer::Pos, TopStates>;
 
     class iterator {
     public:
         iterator() = default;
-        iterator(StateMap::iterator outer, StateMap::iterator outer_end);
+        iterator(PosMap::iterator outer, PosMap::iterator outer_end);
 
         iterator& operator++();
         bool operator!=(const iterator& rhs) const;
@@ -79,8 +76,8 @@ public:
         State* operator->() const;
 
     private:
-        StateMap::iterator outer_{};
-        StateMap::iterator outer_end_{};
+        PosMap::iterator outer_{};
+        PosMap::iterator outer_end_{};
         TopStates::iterator inner_{};
 
         void SkipEmpty();
@@ -90,24 +87,25 @@ public:
     iterator end();
 
 private:
-    void PushScoreHeap(SentenceScore score, const Scorer::Pos& pos);
+    std::vector<State> _GetStates() const;
+    void PushScoreHeap(float_t score, const Scorer::Pos& pos);
     void PopScoreHeap();
-    void RefreshHeapIndex(std::size_t heap_index);
+    void RefreshTopIndex(std::size_t index);
     void AdjustUp(std::size_t node);
     void AdjustDown(std::size_t node);
 
 private:
-    static constexpr std::size_t BeamWidth = 48;
-    static constexpr float_t FilterRatioL1 = 0.12;
-    static constexpr float_t FilterRatioL2 = 0.02;
-    static constexpr float_t FilterThreshold = -40.0;
+    static constexpr std::size_t BeamSize = 48;
+    static constexpr float_t ScoreRatioL1 = 0.12;
+    static constexpr float_t ScoreRatioL2 = 0.02;
+    static constexpr float_t ScoreMin = -40.0;
 
-    StateMap state_map_;
-    std::size_t size_ = 0;
-    std::size_t max_best_ = 2;
+    PosMap pos_map_;
+    std::size_t state_size_ = 0;
+    std::size_t max_top_ = 2;
 
-    std::map<Scorer::Pos, std::size_t> heap_index_;
-    std::vector<std::pair<SentenceScore, Scorer::Pos>> score_heap_;
+    std::map<Scorer::Pos, std::size_t> top_index_;
+    std::vector<std::pair<float_t, Scorer::Pos>> top_score_;
 };
 
 } // namespace sime
