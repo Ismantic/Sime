@@ -9,12 +9,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    sime::CompactOptions opts;
-    opts.input = argv[1];
-    opts.output = argv[2];
-
     try {
-        sime::CompactRun(opts);
+        sime::RunCompact(argv[1], argv[2]);
     } catch (const std::exception& ex) {
         std::cerr << "sime-compact failed: " << ex.what() << "\n";
         return 1;
