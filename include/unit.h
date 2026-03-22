@@ -41,7 +41,7 @@ struct Unit {
 
 struct UnitEntry {
     const char* text;
-    std::uint32_t i;
+    std::uint32_t value;
 };
 
 class UnitData {
@@ -51,9 +51,9 @@ public:
                               const char** i = nullptr,
                               const char** a = nullptr);
 
-    static const char* const* Is(std::size_t& count);
-    static const char* const* As(std::size_t& count);
-    static const UnitEntry* GetTable(std::size_t& count);
+    static const char* const* GetIs(std::size_t& count);
+    static const char* const* GetAs(std::size_t& count);
+    static const UnitEntry* GetDict(std::size_t& count);
 };
 
 class UnitParser {
@@ -65,7 +65,7 @@ public:
 
 private:
     static const std::unordered_map<std::string, Unit>& UnitLookup();
-    static std::size_t MaxUnitLength();
+    static std::size_t MaxUnitSize();
 };
 
 } // namespace sime
