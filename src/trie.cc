@@ -14,15 +14,15 @@
 
 namespace sime {
 
-const Move* Node::GetMove() const {
+const Trie::Move* Trie::Node::GetMove() const {
     const char* p = reinterpret_cast<const char*>(this + 1);
-    return reinterpret_cast<const Move*>(p);
+    return reinterpret_cast<const Trie::Move*>(p);
 }
 
-const std::uint32_t* Node::GetToken() const {
+const std::uint32_t* Trie::Node::GetToken() const {
     const char* p = 
         reinterpret_cast<const char*>(this + 1) + 
-        sizeof(Move) * move_count;
+        sizeof(Trie::Move) * move_count;
     return reinterpret_cast<const std::uint32_t*>(p);
 }
 
@@ -58,15 +58,15 @@ std::uint32_t Trie::RootIndex() const {
     return 3U * static_cast<std::uint32_t>(sizeof(std::uint32_t));
 }
 
-const Node* Trie::NodeFrom(std::uint32_t i) const {
+const Trie::Node* Trie::NodeFrom(std::uint32_t i) const {
     if (blob_.empty() || i < RootIndex() || i >= blob_.size()) {
         return nullptr;
     }
     const char* p = blob_.data() + i;
-    return reinterpret_cast<const Node*>(p);
+    return reinterpret_cast<const Trie::Node*>(p);
 }
 
-const Node* Trie::Root() const {
+const Trie::Node* Trie::Root() const {
     return NodeFrom(RootIndex());
 }
 
@@ -101,7 +101,7 @@ bool Trie::Load(const std::filesystem::path& path) {
     return true;
 }
 
-const Node* Trie::DoMove(const Node* node, Unit u) const {
+const Trie::Node* Trie::DoMove(const Trie::Node* node, Unit u) const {
     if (node == nullptr || node->move_count == 0) {
         return nullptr;
     }
@@ -111,7 +111,7 @@ const Node* Trie::DoMove(const Node* node, Unit u) const {
         begin,
         end,
         u.value,
-        [](const Move& move, std::uint32_t value) {
+        [](const Trie::Move& move, std::uint32_t value) {
             return move.unit.value < value;
         });
     if (it == end || it->unit.value != u.value) {
@@ -120,7 +120,7 @@ const Node* Trie::DoMove(const Node* node, Unit u) const {
     return NodeFrom(it->next);
 }
 
-const std::uint32_t* Trie::GetToken(const Node* node, uint32_t& count) const {
+const std::uint32_t* Trie::GetToken(const Trie::Node* node, uint32_t& count) const {
     if (node == nullptr) {
         count = 0;
         return nullptr;
