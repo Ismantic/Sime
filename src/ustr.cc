@@ -7,7 +7,7 @@
 namespace sime::ustr {
 namespace {
 
-char32_t DecodeSequence(const std::string_view input, std::size_t& idx) {
+char32_t DecodeUTF8(const std::string_view input, std::size_t& idx) {
     unsigned char lead = static_cast<unsigned char>(input[idx]);
     if (lead < 0x80) {
         ++idx;
@@ -57,7 +57,7 @@ std::u32string ToU32(std::string_view input) {
     std::u32string result;
     result.reserve(input.size());
     for (std::size_t idx = 0; idx < input.size();) {
-        result.push_back(DecodeSequence(input, idx));
+        result.push_back(DecodeUTF8(input, idx));
     }
     return result;
 }
@@ -108,7 +108,7 @@ std::optional<char32_t> StreamDecoder::Next() {
         return std::nullopt;
     }
     std::size_t idx = 0;
-    return DecodeSequence(buffer, idx);
+    return DecodeUTF8(buffer, idx);
 }
 
 } // namespace sime::ustr

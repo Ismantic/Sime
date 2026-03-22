@@ -20,26 +20,26 @@ constexpr int CompareEntry(const char* key, const UnitEntry& entry) {
     return std::strcmp(key, entry.text);
 }
 
-const char* const kInitials[] = {"", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h", "j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w", "hm"};
-constexpr std::size_t kNumInitials = sizeof(kInitials) / sizeof(*kInitials);
+const char* const Is[] = {"", "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h", "j", "q", "x", "zh", "ch", "sh", "r", "z", "c", "s", "y", "w", "hm"};
+constexpr std::size_t NumIs = sizeof(Is) / sizeof(*Is);
 
-const char* const kFinals[] = {"", "a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "er", "i", "ia", "ie", "iao", "iu", "ian", "in", "iang", "ing", "u", "ua", "uo", "uai", "ui", "uan", "un", "uang", "ong", "v", "ve", "ue", "iong", "ng"};
-constexpr std::size_t kNumFinals = sizeof(kFinals) / sizeof(*kFinals);
+const char* const As[] = {"", "a", "o", "e", "ai", "ei", "ao", "ou", "an", "en", "ang", "eng", "er", "i", "ia", "ie", "iao", "iu", "ian", "in", "iang", "ing", "u", "ua", "uo", "uai", "ui", "uan", "un", "uang", "ong", "v", "ve", "ue", "iong", "ng"};
+constexpr std::size_t NumAs = sizeof(As) / sizeof(*As);
 
-const UnitEntry kPinyinTable[] = {
+const UnitEntry Dict[] = {
 #include "dict.inc"
 };
 
-constexpr std::size_t kPinyinTableSize = sizeof(kPinyinTable) / sizeof(kPinyinTable[0]);
+constexpr std::size_t DictSize = sizeof(Dict) / sizeof(Dict[0]);
 
 const UnitEntry* GetEntry(const char* text) {
     std::size_t left = 0;
-    std::size_t right = kPinyinTableSize;
+    std::size_t right = DictSize;
     while (left < right) {
         std::size_t mid = left + (right - left) / 2;
-        int cmp = CompareEntry(text, kPinyinTable[mid]);
+        int cmp = CompareEntry(text, Dict[mid]);
         if (cmp == 0) {
-            return &kPinyinTable[mid];
+            return &Dict[mid];
         }
         if (cmp > 0) {
             left = mid + 1;
@@ -61,41 +61,41 @@ Unit UnitData::Encode(const char* text) {
         return Unit{};
     }
     if (const UnitEntry* entry = GetEntry(text)) {
-        return Unit(entry->i);
+        return Unit(entry->value);
     }
     return Unit{};
 }
 
-const char* UnitData::Decode(Unit syllable,
-                             const char** initial,
-                             const char** final) {
-    if (initial) {
-        *initial = kInitials[syllable.I()];
+const char* UnitData::Decode(Unit unit,
+                             const char** i,
+                             const char** a) {
+    if (i) {
+        *i = Is[unit.I()];
     }
-    if (final) {
-        *final = kFinals[syllable.A()];
+    if (a) {
+        *a = As[unit.A()];
     }
     static char buffer[128];
-    Compose(kInitials[syllable.I()], kFinals[syllable.A()], buffer, sizeof(buffer));
+    Compose(Is[unit.I()], As[unit.A()], buffer, sizeof(buffer));
     if (const UnitEntry* entry = GetEntry(buffer)) {
         return entry->text;
     }
     return buffer;
 }
 
-const char* const* UnitData::Is(std::size_t& count) {
-    count = kNumInitials;
-    return kInitials;
+const char* const* UnitData::GetIs(std::size_t& count) {
+    count = NumIs;
+    return Is;
 }
 
-const char* const* UnitData::As(std::size_t& count) {
-    count = kNumFinals;
-    return kFinals;
+const char* const* UnitData::GetAs(std::size_t& count) {
+    count = NumAs;
+    return As;
 }
 
-const UnitEntry* UnitData::GetTable(std::size_t& count) {
-    count = kPinyinTableSize;
-    return kPinyinTable;
+const UnitEntry* UnitData::GetDict(std::size_t& count) {
+    count = DictSize;
+    return Dict;
 }
 
 bool UnitParser::IsDelimiter(char ch) {
@@ -133,7 +133,7 @@ bool UnitParser::ParseStr(std::string_view token,
     }
 
     const auto& lookup = UnitLookup();
-    std::size_t max_len = MaxUnitLength();
+    std::size_t max_len = MaxUnitSize();
     const std::size_t n = normalized.size();
     std::vector<int> back(n + 1, -1);
     std::vector<Unit> matched(n + 1);
@@ -205,27 +205,27 @@ bool UnitParser::ParseUnits(std::string_view input,
 
 const std::unordered_map<std::string, Unit>& UnitParser::UnitLookup() {
     static const std::unordered_map<std::string, Unit> lookup = [] {
-        std::unordered_map<std::string, Unit> table;
+        std::unordered_map<std::string, Unit> dict;
         std::size_t count = 0;
-        const UnitEntry* entries = UnitData::GetTable(count);
-        table.reserve(count);
+        const UnitEntry* entries = UnitData::GetDict(count);
+        dict.reserve(count);
         for (std::size_t i = 0; i < count; ++i) {
             std::string key(entries[i].text);
             for (char& ch : key) {
                 ch = static_cast<char>(
                     std::tolower(static_cast<unsigned char>(ch)));
             }
-            table.emplace(std::move(key), Unit(entries[i].i));
+            dict.emplace(std::move(key), Unit(entries[i].value));
         }
-        return table;
+        return dict;
     }();
     return lookup;
 }
 
-std::size_t UnitParser::MaxUnitLength() {
-    static const std::size_t max_len = [] {
+std::size_t UnitParser::MaxUnitSize() {
+    static const std::size_t max_size = [] {
         std::size_t count = 0;
-        const UnitEntry* entries = UnitData::GetTable(count);
+        const UnitEntry* entries = UnitData::GetDict(count);
         std::size_t max_value = 0;
         for (std::size_t i = 0; i < count; ++i) {
             max_value = std::max<std::size_t>(max_value,
@@ -233,7 +233,7 @@ std::size_t UnitParser::MaxUnitLength() {
         }
         return max_value;
     }();
-    return max_len;
+    return max_size;
 }
 
 } // namespace sime
