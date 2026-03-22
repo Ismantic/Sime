@@ -39,14 +39,14 @@ private:
         TokenID id = 0;
     };
 
-    struct Column {
+    struct Node {
         std::vector<Link> es;
         NetStates states;
     };
 
     void InitNet(const std::vector<Unit>& units,
-                 std::vector<Column>& net) const;
-    void Process(std::vector<Column>& net) const;
+                 std::vector<Node>& net) const;
+    void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
     std::u32string ToText(const Link& n,

@@ -10,21 +10,21 @@
 
 namespace sime {
 
-struct Move {
-    Unit unit{};
-    std::uint32_t next = 0;
-};
-
-struct Node {
-    std::uint16_t move_count = 0;
-    std::uint16_t count = 0;
-
-    const Move* GetMove() const;
-    const std::uint32_t* GetToken() const;
-};
-
 class Trie {
 public:
+    struct Move {
+        Unit unit{};
+        std::uint32_t next = 0;
+    };
+
+    struct Node {
+        std::uint16_t move_count = 0;
+        std::uint16_t count = 0;
+
+        const Move* GetMove() const;
+        const std::uint32_t* GetToken() const;
+    };
+
     Trie() = default;
     ~Trie();
 

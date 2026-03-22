@@ -55,7 +55,7 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
         return results;
     }
 
-    std::vector<Column> net;
+    std::vector<Node> net;
     InitNet(units, net);
 
     const std::size_t max_top = num == 0 ? 1 : num;
@@ -97,23 +97,23 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
 }
 
 void Interpreter::InitNet(const std::vector<Unit>& units,
-                          std::vector<Column>& net) const {
+                          std::vector<Node>& net) const {
     net.clear();
     net.resize(units.size() + 2);
 
     for (std::size_t start = 0; start < units.size(); ++start) {
         auto& bucket = net[start].es;
         bool inserted = false;
-        const Node* node = trie_.Root();
+        const Trie::Node* trie_node = trie_.Root();
         std::size_t pos = start;
-        while (node && pos < units.size()) {
-            node = trie_.DoMove(node, units[pos]);
+        while (trie_node && pos < units.size()) {
+            trie_node = trie_.DoMove(trie_node, units[pos]);
             ++pos;
-            if (!node) {
+            if (!trie_node) {
                 break;
             }
             std::uint32_t count = 0;
-            const std::uint32_t* tokens = trie_.GetToken(node, count);
+            const std::uint32_t* tokens = trie_.GetToken(trie_node, count);
             for (std::uint32_t idx = 0; idx < count; ++idx) {
                 TokenID wid = static_cast<TokenID>(tokens[idx]);
                 bucket.push_back({start, pos, wid});
@@ -131,7 +131,7 @@ void Interpreter::InitNet(const std::vector<Unit>& units,
         {units.size(), units.size() + 1, SentenceToken});
 }
 
-void Interpreter::Process(std::vector<Column>& net) const {
+void Interpreter::Process(std::vector<Node>& net) const {
     for (std::size_t col = 0; col < net.size(); ++col) {
         auto& column = net[col];
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
