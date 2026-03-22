@@ -82,9 +82,9 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
 
     nr_.assign(opts_.num + 1, std::vector<std::uint64_t>(MaxR, 0));
 
-    cutoffs_.assign(opts_.num + 1, 0);
+    cuts_.assign(opts_.num + 1, 0);
     for (std::size_t i = 0; i < opts_.cutoffs.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
-        cutoffs_[i + 1] = opts_.cutoffs[i];
+        cuts_[i + 1] = opts_.cutoffs[i];
     }
 
     discounters_.assign(opts_.num + 1, nullptr);
@@ -163,7 +163,7 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
     }
 
     if (!breaker) {
-        if (freq > cutoffs_[opts_.num]) {
+        if (freq > cuts_[opts_.num]) {
             leaves_.push_back(Leave{ids.back(), static_cast<float_t>(freq), 0.0});
         } else {
             nr_[opts_.num][0] += freq;
@@ -243,16 +243,16 @@ int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold) {
 
 void Constructor::Cut() {
     for (int lvl = opts_.num; lvl > 0; --lvl) {
-        if (cutoffs_[lvl] <= 0) {
+        if (cuts_[lvl] <= 0) {
             continue;
         }
         auto& up_level = node_levels_[lvl - 1];
         if (lvl == opts_.num) {
-            int new_size = CutLevel(up_level, leaves_, cutoffs_[lvl]);
+            int new_size = CutLevel(up_level, leaves_, cuts_[lvl]);
             leaves_.resize(static_cast<std::size_t>(new_size));
         } else {
             auto& level = node_levels_[lvl];
-            int new_size = CutLevel(up_level, level, cutoffs_[lvl]);
+            int new_size = CutLevel(up_level, level, cuts_[lvl]);
             level.resize(static_cast<std::size_t>(new_size));
         }
     }

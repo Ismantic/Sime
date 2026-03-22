@@ -113,7 +113,7 @@ private:
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
     std::vector<std::vector<std::uint64_t>> nr_;
-    std::vector<std::uint32_t> cutoffs_;
+    std::vector<std::uint32_t> cuts_;
     std::vector<Discounter*> discounters_;
 
     // Prune
