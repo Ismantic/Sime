@@ -17,13 +17,13 @@ namespace {
 
 struct ArrayItem {
     float value = 0.0F;
-    unsigned heap_index = 0;
+    std::uint32_t heap_index = 0;
 };
 
 struct HeapItem {
-    unsigned first = 0;
-    unsigned last = 0;
-    unsigned count = 0;
+    std::uint32_t first = 0;
+    std::uint32_t last = 0;
+    std::uint32_t count = 0;
     float_t approx = 0.0;
     float_t sum = 0.0;
     float_t distance = 0.0;
@@ -41,11 +41,11 @@ void BubbleUp(HeapBuffer& heap, ArrayBuffer& arr, int index, Cmp cmp) {
         if (!cmp(heap[index], heap[parent])) {
             break;
         }
-        for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(parent);
+        for (std::uint32_t h = heap[index].first; h < heap[index].last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(parent);
         }
-        for (unsigned h = heap[parent].first; h < heap[parent].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(index);
+        for (std::uint32_t h = heap[parent].first; h < heap[parent].last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(index);
         }
         std::swap(heap[parent], heap[index]);
         index = parent;
@@ -66,11 +66,11 @@ void SiftDown(HeapBuffer& heap, ArrayBuffer& arr, int index, int bottom, Cmp cmp
         if (best == index) {
             break;
         }
-        for (unsigned h = heap[index].first; h < heap[index].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(best);
+        for (std::uint32_t h = heap[index].first; h < heap[index].last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(best);
         }
-        for (unsigned h = heap[best].first; h < heap[best].last; ++h) {
-            arr[h].heap_index = static_cast<unsigned>(index);
+        for (std::uint32_t h = heap[best].first; h < heap[best].last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(index);
         }
         std::swap(heap[best], heap[index]);
         index = best;
@@ -88,21 +88,21 @@ auto CmpByDistance = [](const HeapItem& a, const HeapItem& b) {
 void CompressValues(std::map<float, int>& values,
                     std::map<float, int>& mapping,
                     std::vector<float>& table,
-                    unsigned limit) {
+                    std::uint32_t limit) {
         ArrayBuffer arr;
         HeapBuffer heap;
         arr.reserve(values.size());
         heap.reserve(values.size());
 
         for (const auto& [val, freq] : values) {
-            unsigned idx = static_cast<unsigned>(arr.size());
+            std::uint32_t idx = static_cast<std::uint32_t>(arr.size());
             arr.push_back(ArrayItem{val, idx});
             float_t sum = static_cast<float_t>(val);
             if (freq > 0) {
                 sum *= static_cast<float_t>(freq);
             }
             heap.push_back(
-                HeapItem{idx, idx + 1, static_cast<unsigned>(freq), val, sum, 0.0});
+                HeapItem{idx, idx + 1, static_cast<std::uint32_t>(freq), val, sum, 0.0});
         }
 
         const int heap_size = static_cast<int>(heap.size());
@@ -127,8 +127,8 @@ void CompressValues(std::map<float, int>& values,
                                  : static_cast<int>(arr[current_first - 1].heap_index);
             int next_index = static_cast<int>(arr[current_last].heap_index);
 
-            for (unsigned h = current_first; h < current_last; ++h) {
-                arr[h].heap_index = static_cast<unsigned>(next_index);
+            for (std::uint32_t h = current_first; h < current_last; ++h) {
+                arr[h].heap_index = static_cast<std::uint32_t>(next_index);
             }
 
             const float_t merged_val = (heap.front().sum + heap[next_index].sum) /
@@ -152,7 +152,7 @@ void CompressValues(std::map<float, int>& values,
             }
 
             heap.front() = heap.back();
-            for (unsigned h = heap.front().first; h < heap.front().last; ++h) {
+            for (std::uint32_t h = heap.front().first; h < heap.front().last; ++h) {
                 arr[h].heap_index = 0U;
             }
             heap.pop_back();
@@ -163,10 +163,10 @@ void CompressValues(std::map<float, int>& values,
             BubbleUp(heap, arr, i, CmpByValue);
         }
         for (int i = static_cast<int>(heap.size()) - 1; i > 0; --i) {
-            for (unsigned h = heap[0].first; h < heap[0].last; ++h) {
-                arr[h].heap_index = static_cast<unsigned>(i);
+            for (std::uint32_t h = heap[0].first; h < heap[0].last; ++h) {
+                arr[h].heap_index = static_cast<std::uint32_t>(i);
             }
-            for (unsigned h = heap[i].first; h < heap[i].last; ++h) {
+            for (std::uint32_t h = heap[i].first; h < heap[i].last; ++h) {
                 arr[h].heap_index = 0U;
             }
             std::swap(heap[0], heap[i]);
@@ -189,7 +189,7 @@ void CompressWithReverse(std::map<float, float>& effective_to_real,
                          std::map<float, int>& values,
                          std::map<float, int>& mapping,
                          std::vector<float>& table,
-                         unsigned limit) {
+                         std::uint32_t limit) {
     std::map<float, int> temp;
     CompressValues(values, temp, table, limit);
 
@@ -199,12 +199,12 @@ void CompressWithReverse(std::map<float, float>& effective_to_real,
     }
 }
 
-constexpr std::uint32_t kBitsBow = 14;
-constexpr std::uint32_t kBitsPro = 16;
-constexpr std::uint32_t kWordBits = 18;
-constexpr std::uint32_t kBonBits = 23;
-constexpr std::uint32_t kBolBits = 2;
-constexpr std::uint32_t kChildBits = 23;
+constexpr std::uint32_t BowBits = 14;
+constexpr std::uint32_t ProBits = 16;
+constexpr std::uint32_t TokenBits = 18;
+constexpr std::uint32_t BonBits = 23;
+constexpr std::uint32_t BolBits = 2;
+constexpr std::uint32_t DownBits = 23;
 
 struct RawNode {
     TokenID id = 0;
@@ -213,51 +213,54 @@ struct RawNode {
     float bow = 0.0f;
 };
 
-struct RawLeaf {
+struct RawLeave {
     TokenID id = 0;
     float pro = 0.0f;
 };
 
-class SimpleSlm {
+class RawModel {
 public:
     bool Load(const std::filesystem::path& path);
-    void BuildLinks();
+    void LinkUps();
 
-    int Order() const { return order_; }
+    int Num() const { return num_; }
     bool UseLog() const { return use_log_pro_; }
     const std::vector<int>& LevelSizes() const { return level_sizes_; }
     const std::vector<RawNode>& Level(int idx) const { return levels_.at(idx); }
-    const std::vector<RawLeaf>& Leaves() const { return leaves_; }
+    const std::vector<RawLeave>& Leaves() const { return leaves_; }
 
-    std::size_t ActualSize(int level) const;
-    std::size_t LeafCount() const;
+    std::size_t LevelCount(int level) const;
+    std::size_t LeaveCount() const;
 
-    void FillHistory(int level, int index, std::vector<TokenID>& out) const;
-    int FindState(int length, const TokenID* seq) const;
+    void GetTokens(int level, int index, std::vector<TokenID>& out) const;
+    int GetIndex(int length, const TokenID* seq) const;
     bool HasDown(int level, int index) const;
-    void FindBackoffState(int length, const TokenID* seq, unsigned& bol, unsigned& bon) const;
+    void GetBack(int length,
+                 const TokenID* seq,
+                 std::uint32_t& boe,
+                 std::uint32_t& bon) const;
 
 private:
     std::pair<std::size_t, std::size_t> DownRange(int level, int index) const;
 
-    int order_ = 0;
+    int num_ = 0;
     bool use_log_pro_ = false;
     std::vector<int> level_sizes_;
     std::vector<std::vector<RawNode>> levels_;
-    std::vector<RawLeaf> leaves_;
-    std::vector<std::vector<int>> up_links_;
-    std::vector<int> leaf_ups_;
+    std::vector<RawLeave> leaves_;
+    std::vector<std::vector<int>> node_ups_;
+    std::vector<int> leave_ups_;
 };
 
-struct PackedNode {
-    std::uint32_t word0 = 0;
-    std::uint32_t word1 = 0;
-    std::uint32_t word2 = 0;
+struct CompactNode {
+    std::uint32_t w0 = 0;
+    std::uint32_t w1 = 0;
+    std::uint32_t w2 = 0;
 };
 
-struct PackedLeaf {
-    std::uint32_t word0 = 0;
-    std::uint32_t word1 = 0;
+struct CompactLeave {
+    std::uint32_t w0 = 0;
+    std::uint32_t w1 = 0;
 };
 
 float EffectivePro(bool use_log, float value) {
@@ -303,17 +306,17 @@ struct Tables {
     std::vector<float> bow_table;
 };
 
-struct ThreadedModel {
-    std::vector<std::vector<PackedNode>> nodes;
-    std::vector<PackedLeaf> leaves;
+struct CompactModel {
+    std::vector<std::vector<CompactNode>> nodes;
+    std::vector<CompactLeave> leaves;
 };
 
-bool SimpleSlm::Load(const std::filesystem::path& path) {
+bool RawModel::Load(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         return false;
     }
-    if (!in.read(reinterpret_cast<char*>(&order_), sizeof(order_))) {
+    if (!in.read(reinterpret_cast<char*>(&num_), sizeof(num_))) {
         return false;
     }
     std::uint32_t flag = 0;
@@ -322,14 +325,14 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
     }
     use_log_pro_ = (flag != 0);
 
-    level_sizes_.assign(order_ + 1, 0);
+    level_sizes_.assign(num_ + 1, 0);
     if (!in.read(reinterpret_cast<char*>(level_sizes_.data()),
                  static_cast<std::streamsize>(level_sizes_.size() * sizeof(int)))) {
         return false;
     }
 
-    levels_.resize(order_);
-    for (int lvl = 0; lvl < order_; ++lvl) {
+    levels_.resize(num_);
+    for (int lvl = 0; lvl < num_; ++lvl) {
         auto& nodes = levels_[lvl];
         nodes.resize(static_cast<std::size_t>(level_sizes_[lvl]));
         if (!in.read(reinterpret_cast<char*>(nodes.data()),
@@ -340,18 +343,18 @@ bool SimpleSlm::Load(const std::filesystem::path& path) {
 
     leaves_.resize(static_cast<std::size_t>(level_sizes_.back()));
     if (!in.read(reinterpret_cast<char*>(leaves_.data()),
-                 static_cast<std::streamsize>(leaves_.size() * sizeof(RawLeaf)))) {
+                 static_cast<std::streamsize>(leaves_.size() * sizeof(RawLeave)))) {
         return false;
     }
     return true;
 }
 
-void SimpleSlm::BuildLinks() {
-    up_links_.clear();
-    up_links_.resize(static_cast<std::size_t>(order_));
-    for (int level = 1; level < order_; ++level) {
-        auto actual = ActualSize(level);
-        up_links_[static_cast<std::size_t>(level)].resize(actual);
+void RawModel::LinkUps() {
+    node_ups_.clear();
+    node_ups_.resize(static_cast<std::size_t>(num_));
+    for (int level = 1; level < num_; ++level) {
+        auto actual = LevelCount(level);
+        node_ups_[static_cast<std::size_t>(level)].resize(actual);
         const auto& ups = levels_[static_cast<std::size_t>(level - 1)];
         std::size_t up = 0;
         for (std::size_t idx = 0; idx < actual; ++idx) {
@@ -359,28 +362,28 @@ void SimpleSlm::BuildLinks() {
                    ups[up + 1].down <= idx) {
                 ++up;
             }
-            up_links_[static_cast<std::size_t>(level)][idx] = static_cast<int>(up);
+            node_ups_[static_cast<std::size_t>(level)][idx] = static_cast<int>(up);
         }
     }
 
-    leaf_ups_.clear();
-    if (order_ == 0) {
+    leave_ups_.clear();
+    if (num_ == 0) {
         return;
     }
-    auto total_leaves = LeafCount();
-    leaf_ups_.resize(total_leaves);
-    const auto& ups = levels_[static_cast<std::size_t>(order_ - 1)];
+    auto total_leaves = LeaveCount();
+    leave_ups_.resize(total_leaves);
+    const auto& ups = levels_[static_cast<std::size_t>(num_ - 1)];
     std::size_t up = 0;
     for (std::size_t idx = 0; idx < total_leaves; ++idx) {
         while (up + 1 < ups.size() &&
                ups[up + 1].down <= idx) {
             ++up;
         }
-        leaf_ups_[idx] = static_cast<int>(up);
+        leave_ups_[idx] = static_cast<int>(up);
     }
 }
 
-std::size_t SimpleSlm::ActualSize(int level) const {
+std::size_t RawModel::LevelCount(int level) const {
     if (level_sizes_.empty()) {
         return 0;
     }
@@ -388,7 +391,7 @@ std::size_t SimpleSlm::ActualSize(int level) const {
     return (size == 0) ? 0 : static_cast<std::size_t>(size - 1);
 }
 
-std::size_t SimpleSlm::LeafCount() const {
+std::size_t RawModel::LeaveCount() const {
     if (level_sizes_.empty()) {
         return 0;
     }
@@ -396,23 +399,23 @@ std::size_t SimpleSlm::LeafCount() const {
     return (size == 0) ? 0 : static_cast<std::size_t>(size - 1);
 }
 
-std::pair<std::size_t, std::size_t> SimpleSlm::DownRange(int level, int index) const {
+std::pair<std::size_t, std::size_t> RawModel::DownRange(int level, int index) const {
     const auto& nodes = levels_.at(static_cast<std::size_t>(level));
     std::size_t begin = nodes.at(static_cast<std::size_t>(index)).down;
     std::size_t end = nodes.at(static_cast<std::size_t>(index + 1)).down;
     return {begin, end};
 }
 
-void SimpleSlm::FillHistory(int level, int index, std::vector<TokenID>& out) const {
+void RawModel::GetTokens(int level, int index, std::vector<TokenID>& out) const {
     out.assign(static_cast<std::size_t>(level), TokenID{0});
     if (level == 0) {
         return;
     }
-    if (level == order_) {
+    if (level == num_) {
         int current = index;
         out.back() = leaves_.at(static_cast<std::size_t>(current)).id;
-        int up_idx = leaf_ups_.at(static_cast<std::size_t>(current));
-        int current_level = order_ - 1;
+        int up_idx = leave_ups_.at(static_cast<std::size_t>(current));
+        int current_level = num_ - 1;
         for (int pos = level - 1; pos > 0; --pos) {
             const auto& nodes = levels_.at(static_cast<std::size_t>(current_level));
             out[static_cast<std::size_t>(pos - 1)] =
@@ -420,7 +423,7 @@ void SimpleSlm::FillHistory(int level, int index, std::vector<TokenID>& out) con
             if (pos - 1 == 0) {
                 break;
             }
-            up_idx = up_links_.at(static_cast<std::size_t>(current_level))
+            up_idx = node_ups_.at(static_cast<std::size_t>(current_level))
                          .at(static_cast<std::size_t>(up_idx));
             --current_level;
         }
@@ -436,19 +439,19 @@ void SimpleSlm::FillHistory(int level, int index, std::vector<TokenID>& out) con
         if (pos - 1 == 0) {
             break;
         }
-        current_idx = up_links_.at(static_cast<std::size_t>(current_level))
+        current_idx = node_ups_.at(static_cast<std::size_t>(current_level))
                           .at(static_cast<std::size_t>(current_idx));
         --current_level;
     }
 }
 
-int SimpleSlm::FindState(int length, const TokenID* seq) const {
+int RawModel::GetIndex(int length, const TokenID* seq) const {
     if (length == 0) {
         return 0;
     }
     const TokenID* hw = seq;
     int n = length;
-    while (n > order_) {
+    while (n > num_) {
         --n;
         ++hw;
     }
@@ -459,12 +462,12 @@ int SimpleSlm::FindState(int length, const TokenID* seq) const {
         if (begin >= end) {
             return -1;
         }
-        if (lvl + 1 == order_) {
+        if (lvl + 1 == num_) {
             const auto it = std::lower_bound(
                 leaves_.begin() + static_cast<std::ptrdiff_t>(begin),
                 leaves_.begin() + static_cast<std::ptrdiff_t>(end),
                 hw[lvl],
-                [](const RawLeaf& leaf, TokenID id) { return leaf.id < id; });
+                [](const RawLeave& leaf, TokenID id) { return leaf.id < id; });
             if (it == leaves_.begin() + static_cast<std::ptrdiff_t>(end) ||
                 it->id != hw[lvl]) {
                 return -1;
@@ -487,8 +490,8 @@ int SimpleSlm::FindState(int length, const TokenID* seq) const {
     return node_index;
 }
 
-bool SimpleSlm::HasDown(int level, int index) const {
-    if (level >= order_) {
+bool RawModel::HasDown(int level, int index) const {
+    if (level >= num_) {
         return false;
     }
     const auto& nodes = levels_.at(static_cast<std::size_t>(level));
@@ -497,11 +500,11 @@ bool SimpleSlm::HasDown(int level, int index) const {
     return end > begin;
 }
 
-void SimpleSlm::FindBackoffState(int length,
-                                 const TokenID* seq,
-                                 unsigned& bol,
-                                 unsigned& bon) const {
-    bol = 0;
+void RawModel::GetBack(int length,
+                       const TokenID* seq,
+                       std::uint32_t& boe,
+                       std::uint32_t& bon) const {
+    boe = 0;
     bon = 0;
     if (length <= 1 || seq == nullptr) {
         return;
@@ -511,10 +514,10 @@ void SimpleSlm::FindBackoffState(int length,
     while (n > 1) {
         --n;
         ++hw;
-        int idx = FindState(n, hw);
+        int idx = GetIndex(n, hw);
         if (idx >= 0 && HasDown(n, idx)) {
-            bol = static_cast<unsigned>(n);
-            bon = static_cast<unsigned>(idx);
+            boe = static_cast<std::uint32_t>(n);
+            bon = static_cast<std::uint32_t>(idx);
             return;
         }
     }
@@ -548,7 +551,7 @@ void AddMilestones(const float (&milestones)[N], bool use_log, EffFn eff_fn, Eff
     }
 }
 
-Tables BuildTables(const SimpleSlm& model) {
+Tables Compress(const RawModel& model) {
     Tables tables;
     bool use_log = model.UseLog();
 
@@ -557,9 +560,9 @@ Tables BuildTables(const SimpleSlm& model) {
     std::map<float, float> bow_eff;
     std::map<float, int> bow_counts;
 
-    for (int lvl = 0; lvl < model.Order(); ++lvl) {
+    for (int lvl = 0; lvl < model.Num(); ++lvl) {
         const auto& nodes = model.Level(lvl);
-        auto actual = model.ActualSize(lvl);
+        auto actual = model.LevelCount(lvl);
         for (std::size_t idx = 0; idx < actual; ++idx) {
             CollectValue(nodes[idx].pro, use_log,
                          EffectivePro, OriginalPro, pro_eff, pro_counts);
@@ -568,7 +571,7 @@ Tables BuildTables(const SimpleSlm& model) {
         }
     }
     const auto& leaves = model.Leaves();
-    for (std::size_t idx = 0; idx < model.LeafCount(); ++idx) {
+    for (std::size_t idx = 0; idx < model.LeaveCount(); ++idx) {
         CollectValue(leaves[idx].pro, use_log,
                      EffectivePro, OriginalPro, pro_eff, pro_counts);
     }
@@ -587,67 +590,67 @@ Tables BuildTables(const SimpleSlm& model) {
         0.00005F, 0.00001F, 0.000005F, 0.000001F, 0.0000005F, 0.0000001F};
     AddMilestones(kMilestonesBow, use_log, EffectiveBow, OriginalBow, bow_eff, bow_counts);
 
-    CompressWithReverse(pro_eff, pro_counts, tables.pro_map, tables.pro_table, 1U << kBitsPro);
+    CompressWithReverse(pro_eff, pro_counts, tables.pro_map, tables.pro_table, 1U << ProBits);
     for (auto& value : tables.pro_table) {
         value = OriginalPro(use_log, value);
     }
 
-    CompressWithReverse(bow_eff, bow_counts, tables.bow_map, tables.bow_table, 1U << kBitsBow);
+    CompressWithReverse(bow_eff, bow_counts, tables.bow_map, tables.bow_table, 1U << BowBits);
     for (auto& value : tables.bow_table) {
         value = OriginalBow(use_log, value);
     }
     return tables;
 }
 
-PackedNode DoPackNode(TokenID wid,
-                      std::uint32_t bow_index,
-                      std::uint32_t pro_index,
-                      std::uint32_t down_index,
-                      std::uint32_t bon,
-                      std::uint32_t bol) {
-    if (wid >= (1U << kWordBits) || bow_index >= (1U << kBitsBow) ||
-        pro_index >= (1U << kBitsPro) || down_index >= (1U << kChildBits) ||
-        bon >= (1U << kBonBits) || bol >= (1U << kBolBits)) {
-        throw std::runtime_error("slmthread: value exceeds bit-field limit");
+CompactNode DoPackNode(TokenID wid,
+                       std::uint32_t bow_index,
+                       std::uint32_t pro_index,
+                       std::uint32_t down_index,
+                       std::uint32_t bon,
+                       std::uint32_t boe) {
+    if (wid >= (1U << TokenBits) || bow_index >= (1U << BowBits) ||
+        pro_index >= (1U << ProBits) || down_index >= (1U << DownBits) ||
+        bon >= (1U << BonBits) || boe >= (1U << BolBits)) {
+        throw std::runtime_error("compact: value exceeds bit-field limit");
     }
 
-    PackedNode node;
-    node.word0 = (wid & ((1U << kWordBits) - 1U)) |
-                 ((bow_index & ((1U << kBitsBow) - 1U)) << kWordBits);
-    node.word1 = (pro_index & 0xFFFFU) | ((down_index & 0xFFFFU) << 16U);
-    node.word2 = (bon & ((1U << kBonBits) - 1U)) |
-                 ((bol & ((1U << kBolBits) - 1U)) << kBonBits) |
-                 (((down_index >> 16U) & 0x7FU) << (kBonBits + kBolBits));
+    CompactNode node;
+    node.w0 = (wid & ((1U << TokenBits) - 1U)) |
+                 ((bow_index & ((1U << BowBits) - 1U)) << TokenBits);
+    node.w1 = (pro_index & 0xFFFFU) | ((down_index & 0xFFFFU) << 16U);
+    node.w2 = (bon & ((1U << BonBits) - 1U)) |
+                 ((boe & ((1U << BolBits) - 1U)) << BonBits) |
+                 (((down_index >> 16U) & 0x7FU) << (BonBits + BolBits));
     return node;
 }
 
-PackedLeaf DoPackLeaf(TokenID wid,
-                      std::uint32_t pro_index,
-                      std::uint32_t bon,
-                      std::uint32_t bol) {
-    if (wid >= (1U << kWordBits) || pro_index >= (1U << kBitsPro) ||
-        bon >= (1U << kBonBits) || bol >= (1U << kBolBits)) {
-        throw std::runtime_error("slmthread: leaf value exceeds limit");
+CompactLeave DoPackLeave(TokenID wid,
+                         std::uint32_t pro_index,
+                         std::uint32_t bon,
+                         std::uint32_t boe) {
+    if (wid >= (1U << TokenBits) || pro_index >= (1U << ProBits) ||
+        bon >= (1U << BonBits) || boe >= (1U << BolBits)) {
+        throw std::runtime_error("compact: leave value exceeds limit");
     }
-    PackedLeaf leaf;
-    leaf.word0 = (wid & ((1U << kWordBits) - 1U)) |
-                 ((pro_index & 0x3FFFU) << kWordBits);
-    leaf.word1 = (bon & ((1U << kBonBits) - 1U)) |
-                 ((bol & ((1U << kBolBits) - 1U)) << kBonBits) |
-                 (((pro_index >> 14U) & 0x3U) << (kBonBits + kBolBits));
+    CompactLeave leaf;
+    leaf.w0 = (wid & ((1U << TokenBits) - 1U)) |
+                 ((pro_index & 0x3FFFU) << TokenBits);
+    leaf.w1 = (bon & ((1U << BonBits) - 1U)) |
+                 ((boe & ((1U << BolBits) - 1U)) << BonBits) |
+                 (((pro_index >> 14U) & 0x3U) << (BonBits + BolBits));
     return leaf;
 }
 
-ThreadedModel BuildThreaded(const SimpleSlm& model, const Tables& tables) {
-    ThreadedModel threaded;
-    threaded.nodes.resize(static_cast<std::size_t>(model.Order()));
+CompactModel Compact(const RawModel& model, const Tables& tables) {
+    CompactModel pact;
+    pact.nodes.resize(static_cast<std::size_t>(model.Num()));
     std::vector<TokenID> history;
-    history.reserve(static_cast<std::size_t>(model.Order()));
+    history.reserve(static_cast<std::size_t>(model.Num()));
 
-    for (int lvl = 0; lvl < model.Order(); ++lvl) {
+    for (int lvl = 0; lvl < model.Num(); ++lvl) {
         const auto level_size = static_cast<std::size_t>(model.LevelSizes()[lvl]);
-        const auto actual = model.ActualSize(lvl);
-        threaded.nodes[static_cast<std::size_t>(lvl)].resize(level_size);
+        const auto actual = model.LevelCount(lvl);
+        pact.nodes[static_cast<std::size_t>(lvl)].resize(level_size);
         const auto& nodes = model.Level(lvl);
         for (std::size_t idx = 0; idx < actual; ++idx) {
             const auto& node = nodes[idx];
@@ -662,36 +665,36 @@ ThreadedModel BuildThreaded(const SimpleSlm& model, const Tables& tables) {
                                             EffectiveBow,
                                             OriginalBow);
 
-            unsigned bol = 0;
-            unsigned bon = 0;
+            std::uint32_t boe = 0;
+            std::uint32_t bon = 0;
             if (lvl == 0) {
-                model.FindBackoffState(0, nullptr, bol, bon);
+                model.GetBack(0, nullptr, boe, bon);
             } else {
-                model.FillHistory(lvl, static_cast<int>(idx), history);
-                model.FindBackoffState(lvl,
-                                       history.empty() ? nullptr : history.data(),
-                                       bol,
-                                       bon);
+                model.GetTokens(lvl, static_cast<int>(idx), history);
+                model.GetBack(lvl,
+                              history.empty() ? nullptr : history.data(),
+                              boe,
+                              bon);
             }
 
-            threaded.nodes[static_cast<std::size_t>(lvl)][idx] =
+            pact.nodes[static_cast<std::size_t>(lvl)][idx] =
                 DoPackNode(node.id,
                            static_cast<std::uint32_t>(bow_idx),
                            static_cast<std::uint32_t>(pro_idx),
                            node.down,
                            bon,
-                           bol);
+                           boe);
         }
 
         const auto& sentinel = nodes.back();
-        threaded
+        pact
             .nodes[static_cast<std::size_t>(lvl)][level_size - 1U] =
             DoPackNode(0, 0, 0, sentinel.down, 0, 0);
     }
 
     const auto leaf_size = static_cast<std::size_t>(model.LevelSizes().back());
-    const auto leaf_actual = model.LeafCount();
-    threaded.leaves.resize(leaf_size);
+    const auto leaf_actual = model.LeaveCount();
+    pact.leaves.resize(leaf_size);
     const auto& leaves = model.Leaves();
     for (std::size_t idx = 0; idx < leaf_actual; ++idx) {
         const auto& leaf = leaves[idx];
@@ -700,36 +703,36 @@ ThreadedModel BuildThreaded(const SimpleSlm& model, const Tables& tables) {
                                        model.UseLog(),
                                        EffectivePro,
                                        OriginalPro);
-        unsigned bol = 0;
-        unsigned bon = 0;
-        model.FillHistory(model.Order(), static_cast<int>(idx), history);
-        model.FindBackoffState(model.Order(), history.data(), bol, bon);
-        threaded.leaves[idx] = DoPackLeaf(leaf.id,
-                                          static_cast<std::uint32_t>(pro_idx),
-                                          bon,
-                                          bol);
+        std::uint32_t boe = 0;
+        std::uint32_t bon = 0;
+        model.GetTokens(model.Num(), static_cast<int>(idx), history);
+        model.GetBack(model.Num(), history.data(), boe, bon);
+        pact.leaves[idx] = DoPackLeave(leaf.id,
+                                       static_cast<std::uint32_t>(pro_idx),
+                                       bon,
+                                       boe);
     }
-    threaded.leaves[leaf_size - 1U] = PackedLeaf{};
-    return threaded;
+    pact.leaves[leaf_size - 1U] = CompactLeave{};
+    return pact;
 }
 
-void WriteModel(const SimpleSlm& model,
-                const Tables& tables,
-                const ThreadedModel& threaded,
-                const std::filesystem::path& output) {
+void Save(const RawModel& model,
+          const Tables& tables,
+          const CompactModel& pact,
+          const std::filesystem::path& output) {
     std::ofstream out(output, std::ios::binary | std::ios::trunc);
     if (!out) {
         throw std::runtime_error("failed to open output slm file");
     }
 
-    int order = model.Order();
-    out.write(reinterpret_cast<const char*>(&order), sizeof(order));
+    int num = model.Num();
+    out.write(reinterpret_cast<const char*>(&num), sizeof(num));
     std::uint32_t flag = model.UseLog() ? 1U : 0U;
     out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     out.write(reinterpret_cast<const char*>(model.LevelSizes().data()),
               static_cast<std::streamsize>(model.LevelSizes().size() * sizeof(int)));
 
-    const std::size_t pro_limit = 1U << kBitsPro;
+    const std::size_t pro_limit = 1U << ProBits;
     if (tables.pro_table.size() > pro_limit) {
         throw std::runtime_error("pro table exceeds allocated size");
     }
@@ -740,7 +743,7 @@ void WriteModel(const SimpleSlm& model,
         out.write(reinterpret_cast<const char*>(&zero), sizeof(float));
     }
 
-    const std::size_t bow_limit = 1U << kBitsBow;
+    const std::size_t bow_limit = 1U << BowBits;
     if (tables.bow_table.size() > bow_limit) {
         throw std::runtime_error("bow table exceeds allocated size");
     }
@@ -750,26 +753,27 @@ void WriteModel(const SimpleSlm& model,
         out.write(reinterpret_cast<const char*>(&zero), sizeof(float));
     }
 
-    for (int lvl = 0; lvl < model.Order(); ++lvl) {
-        const auto& nodes = threaded.nodes[static_cast<std::size_t>(lvl)];
+    for (int lvl = 0; lvl < model.Num(); ++lvl) {
+        const auto& nodes = pact.nodes[static_cast<std::size_t>(lvl)];
         out.write(reinterpret_cast<const char*>(nodes.data()),
-                  static_cast<std::streamsize>(nodes.size() * sizeof(PackedNode)));
+                  static_cast<std::streamsize>(nodes.size() * sizeof(CompactNode)));
     }
-    out.write(reinterpret_cast<const char*>(threaded.leaves.data()),
-              static_cast<std::streamsize>(threaded.leaves.size() * sizeof(PackedLeaf)));
+    out.write(reinterpret_cast<const char*>(pact.leaves.data()),
+              static_cast<std::streamsize>(pact.leaves.size() * sizeof(CompactLeave)));
 }
 
 } // namespace
 
-void CompactRun(const CompactOptions& options) {
-    SimpleSlm model;
-    if (!model.Load(options.input)) {
+void RunCompact(const std::filesystem::path& input,
+                const std::filesystem::path& output) {
+    RawModel model;
+    if (!model.Load(input)) {
         throw std::runtime_error("failed to load primitive slm");
     }
-    model.BuildLinks();
-    auto tables = BuildTables(model);
-    auto threaded = BuildThreaded(model, tables);
-    WriteModel(model, tables, threaded, options.output);
+    model.LinkUps();
+    auto tables = Compress(model);
+    auto pact = Compact(model, tables);
+    Save(model, tables, pact, output);
 }
 
 } // namespace sime

@@ -4,11 +4,7 @@
 
 namespace sime {
 
-struct CompactOptions {
-    std::filesystem::path input;
-    std::filesystem::path output;
-};
-
-void CompactRun(const CompactOptions& options);
+void RunCompact(const std::filesystem::path& input,
+                const std::filesystem::path& output);
 
 } // namespace sime
