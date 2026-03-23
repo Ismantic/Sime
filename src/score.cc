@@ -31,12 +31,6 @@ bool Scorer::Load(const std::filesystem::path& path) {
         Reset();
         return false;
     }
-    std::uint32_t flag = 0;
-    if (!in.read(reinterpret_cast<char*>(&flag), sizeof(flag))) {
-        Reset();
-        return false;
-    }
-    // flag is reserved (always 1 = log mode)
 
     sizes_.assign(static_cast<std::size_t>(num_) + 1, 0);
     if (!in.read(reinterpret_cast<char*>(sizes_.data()),

@@ -586,8 +586,6 @@ void Constructor::Write(const std::filesystem::path& path) const {
     }
     int order = opts_.num;
     out.write(reinterpret_cast<const char*>(&order), sizeof(order));
-    std::uint32_t flag = 1u;
-    out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     for (int lvl = 0; lvl <= order; ++lvl) {
         std::uint32_t size = 0;
         if (lvl == order) {
