@@ -69,14 +69,21 @@ Unit UnitData::Encode(const char* text) {
 const char* UnitData::Decode(Unit unit,
                              const char** i,
                              const char** a) {
+    int ii = unit.I();
+    int ai = unit.A();
+    if (static_cast<std::size_t>(ii) >= NumIs || static_cast<std::size_t>(ai) >= NumAs) {
+        if (i) { *i = ""; }
+        if (a) { *a = ""; }
+        return "";
+    }
     if (i) {
-        *i = Is[unit.I()];
+        *i = Is[ii];
     }
     if (a) {
-        *a = As[unit.A()];
+        *a = As[ai];
     }
     static char buffer[128];
-    Compose(Is[unit.I()], As[unit.A()], buffer, sizeof(buffer));
+    Compose(Is[ii], As[ai], buffer, sizeof(buffer));
     if (const UnitEntry* entry = GetEntry(buffer)) {
         return entry->text;
     }

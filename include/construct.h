@@ -2,16 +2,16 @@
 
 #include "common.h"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
-#include <memory>
 #include <vector>
 
 namespace sime {
 
 class NeyDiscounter {
 public:
-    void Init(int max_r, const std::vector<std::uint64_t>& nr);
+    void Init(std::uint64_t n1, std::uint64_t n2, std::uint64_t n3, std::uint64_t n4);
     float_t Discount(float_t cnt) const;
 
 private:
@@ -85,7 +85,7 @@ private:
     ConstructOptions opts_;
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
-    std::vector<std::vector<std::uint64_t>> nr_;
+    std::vector<std::array<std::uint64_t, 5>> nt_;
     std::vector<std::uint32_t> cuts_;
     std::vector<NeyDiscounter> discounters_;
 
