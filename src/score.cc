@@ -8,11 +8,11 @@
 
 namespace sime {
 namespace {
-constexpr std::uint32_t TokenMask = (1U << Scorer::TokenBits) - 1U;
-constexpr std::uint32_t BowMask = (1U << Scorer::BowBits) - 1U;
-constexpr std::uint32_t ProMask = (1U << Scorer::ProBits) - 1U;
-constexpr std::uint32_t BonMask = (1U << Scorer::BonBits) - 1U;
-constexpr std::uint32_t BoeMask = (1U << Scorer::BoeBits) - 1U;
+constexpr std::uint32_t TokenMask = (1U << TokenBits) - 1U;
+constexpr std::uint32_t BowMask = (1U << BowBits) - 1U;
+constexpr std::uint32_t ProMask = (1U << ProBits) - 1U;
+constexpr std::uint32_t BonMask = (1U << BonBits) - 1U;
+constexpr std::uint32_t BoeMask = (1U << BoeBits) - 1U;
 
 } // namespace
 

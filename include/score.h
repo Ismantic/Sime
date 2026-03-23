@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "compact.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -10,11 +11,6 @@ namespace sime {
 
 class Scorer {
 public:
-    static constexpr std::uint32_t TokenBits = 18;
-    static constexpr std::uint32_t ProBits = 16;
-    static constexpr std::uint32_t BowBits = 14;
-    static constexpr std::uint32_t BonBits = 23;
-    static constexpr std::uint32_t BoeBits = 2;
     static constexpr std::size_t ProTableSize = 1u << ProBits;
     static constexpr std::size_t BowTableSize = 1u << BowBits;
 
