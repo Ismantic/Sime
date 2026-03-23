@@ -36,7 +36,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
         Reset();
         return false;
     }
-    log_ = (flag != 0);
+    // flag is reserved (always 1 = log mode)
 
     sizes_.assign(static_cast<std::size_t>(num_) + 1, 0);
     if (!in.read(reinterpret_cast<char*>(sizes_.data()),
@@ -118,7 +118,6 @@ bool Scorer::Load(const std::filesystem::path& path) {
 
 void Scorer::Reset() {
     num_ = 0;
-    log_ = false;
     sizes_.clear();
     node_levels_.clear();
     leave_level_.clear();
@@ -146,21 +145,14 @@ void Scorer::Back(Pos& pos) const {
 }
 
 float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
-    float_t value = RawMove(s, w, r);
-    if (log_) {
-        return value;
-    }
-    if (value <= 0.0) {
-        return std::numeric_limits<float_t>::infinity();
-    }
-    return -std::log(value);
+    return RawMove(s, w, r);
 }
 
 float_t Scorer::RawMove(Pos s, TokenID w, Pos& r) const {
     std::uint32_t level = s.level;
     std::uint32_t index = s.index;
 
-    float_t cost = log_ ? 0.0 : 1.0;
+    float_t cost = 0.0;
     if (w == ScoreNotToken) {
         r = Pos{};
         return cost;
@@ -181,21 +173,18 @@ float_t Scorer::RawMove(Pos s, TokenID w, Pos& r) const {
             if (down_idx != end) {
                 r.level = static_cast<std::uint32_t>(num_);
                 r.index = static_cast<std::uint32_t>(down_idx);
-                float_t pro = pro_table_[leave_level_[down_idx].pro];
-                return log_ ? cost + pro : cost * pro;
+                return cost + pro_table_[leave_level_[down_idx].pro];
             }
         } else {
             auto down_idx = GetNode(static_cast<int>(level + 1), begin, end, w);
             if (down_idx != end) {
                 r.level = level + 1;
                 r.index = static_cast<std::uint32_t>(down_idx);
-                float_t pro = pro_table_[node_levels_[level + 1][down_idx].pro];
-                return log_ ? cost + pro : cost * pro;
+                return cost + pro_table_[node_levels_[level + 1][down_idx].pro];
             }
         }
 
-        float_t bow = bow_table_[node.bow];
-        cost = log_ ? (cost + bow) : (cost * bow);
+        cost += bow_table_[node.bow];
         if (level == 0) {
             break;
         }
@@ -204,8 +193,7 @@ float_t Scorer::RawMove(Pos s, TokenID w, Pos& r) const {
     }
 
     r = Pos{};
-    float_t root_pro = pro_table_[node_levels_[0][0].pro];
-    return log_ ? (cost + root_pro) : (cost * root_pro);
+    return cost + pro_table_[node_levels_[0][0].pro];
 }
 
 std::size_t Scorer::GetNode(int level,

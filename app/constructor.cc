@@ -31,12 +31,11 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         {"discount", required_argument, nullptr, 'd'},
         {"wordcount", required_argument, nullptr, 'w'},
         {"prune-reserve", required_argument, nullptr, 'r'},
-        {"log", no_argument, nullptr, 'l'},
         {nullptr, 0, nullptr, 0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "n:o:c:d:w:r:l", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:c:d:w:r:", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -86,9 +85,6 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             }
             break;
         }
-        case 'l':
-            opts.use_log_pro = true;
-            break;
         default:
             throw std::runtime_error("Invalid arguments");
         }

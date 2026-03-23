@@ -269,7 +269,7 @@ void Constructor::DiscountLevel(NodeLevel& level,
             float_t discounted = disc.Discount(down_level[down_idx].freq);
             float_t pro = discounted / node.freq;
             pro = std::clamp(pro, 1e-12, 1.0 - 1e-9);
-            float_t encoded = opts_.use_log_pro ? -std::log(pro) : pro;
+            float_t encoded = -std::log(pro);
             down_level[down_idx].pro = static_cast<float>(encoded);
         }
     }
@@ -281,14 +281,14 @@ float_t Constructor::CalcScore(int level, std::vector<int>& indices, std::vector
         ph *= GetPro(i, words.data() + level - i + 1);
     }
     const Node& up = node_levels_[level - 1][indices[level - 1]];
-    float_t bow = opts_.use_log_pro ? std::exp(-up.bow) : up.bow;
+    float_t bow = std::exp(-up.bow);
     float_t phw = 0.0;
     if (level == opts_.num) {
         const Leave& leaf = leaves_[indices[level]];
-        phw = opts_.use_log_pro ? std::exp(-leaf.pro) : leaf.pro;
+        phw = std::exp(-leaf.pro);
     } else {
         const Node& node = node_levels_[level][indices[level]];
-        phw = opts_.use_log_pro ? std::exp(-node.pro) : node.pro;
+        phw = std::exp(-node.pro);
     }
     float_t ph_w = GetPro(level - 1, words.data() + 2);
     if (prune_cache_level_ != level - 1 || prune_cache_index_ != indices[level - 1]) {
@@ -303,11 +303,11 @@ float_t Constructor::CalcScore(int level, std::vector<int>& indices, std::vector
             TokenID wid = 0;
             if (level == opts_.num) {
                 const Leave& leaf = leaves_[down_idx];
-                pro = opts_.use_log_pro ? std::exp(-leaf.pro) : leaf.pro;
+                pro = std::exp(-leaf.pro);
                 wid = leaf.id;
             } else {
                 const Node& node = node_levels_[level][down_idx];
-                pro = opts_.use_log_pro ? std::exp(-node.pro) : node.pro;
+                pro = std::exp(-node.pro);
                 wid = node.id;
             }
             prune_cache_pa_ -= pro;
@@ -365,7 +365,7 @@ void Constructor::PruneLevel(int level) {
     }
     std::sort(candidates.begin(), candidates.end());
     int cuts = std::min(prune_cutoffs_[level], static_cast<int>(candidates.size()));
-    float_t mark = opts_.use_log_pro ? 0.0 : 1.0;
+    float_t mark = 0.0;
     for (int i = 0; i < cuts; ++i) {
         if (candidates[i].has_down) {
             continue;
@@ -405,7 +405,7 @@ void Constructor::Discount() {
     }
     Node& root = node_levels_[0][0];
     float_t base = 1.0 / std::max<std::uint32_t>(opts_.token_count, 1);
-    root.pro = opts_.use_log_pro ? -std::log(base) : base;
+    root.pro = -std::log(base);
     root.pro = static_cast<float>(root.pro);
 }
 
@@ -421,7 +421,7 @@ float_t Constructor::CalcNodeBow(int level,
     float_t sum_down = 0.0;
     float_t sum_backoff = 0.0;
     for (std::size_t idx = begin; idx < end; ++idx) {
-        float_t pro = opts_.use_log_pro ? std::exp(-down_level[idx].pro) : down_level[idx].pro;
+        float_t pro = std::exp(-down_level[idx].pro);
         sum_down += pro;
         words[level + 1] = down_level[idx].id;
         sum_backoff += GetPro(level, words + 2);
@@ -473,7 +473,7 @@ void Constructor::CalcBow() {
                                     node.down,
                                     next.down);
             }
-            node.bow = opts_.use_log_pro ? -std::log(bow) : bow;
+            node.bow = -std::log(bow);
             node.bow = static_cast<float>(node.bow);
         }
     }
@@ -506,24 +506,24 @@ const void* Constructor::FindDown(int level, const Node* node, TokenID id) const
 float_t Constructor::GetPro(int n, const TokenID* words) const {
     const Node* root = node_levels_[0].data();
     if (n <= 0 || root == nullptr) {
-        return opts_.use_log_pro ? std::exp(-root->pro) : root->pro;
+        return std::exp(-root->pro);
     }
     const void* pnode = root;
     int lvl = 0;
     float_t bow = 1.0;
     while (pnode != nullptr && lvl < n) {
         const Node* current = static_cast<const Node*>(pnode);
-        bow = opts_.use_log_pro ? std::exp(-current->bow) : current->bow;
+        bow = std::exp(-current->bow);
         pnode = FindDown(lvl, current, words[lvl]);
         ++lvl;
     }
     if (pnode != nullptr) {
         if (lvl == opts_.num) {
             const Leave* leaf = static_cast<const Leave*>(pnode);
-            return opts_.use_log_pro ? std::exp(-leaf->pro) : leaf->pro;
+            return std::exp(-leaf->pro);
         }
         const Node* node = static_cast<const Node*>(pnode);
-        return opts_.use_log_pro ? std::exp(-node->pro) : node->pro;
+        return std::exp(-node->pro);
     }
     if (n > 0 && lvl == n - 1) {
         return bow * GetPro(n - 1, words + 1);
@@ -586,7 +586,7 @@ void Constructor::Write(const std::filesystem::path& path) const {
     }
     int order = opts_.num;
     out.write(reinterpret_cast<const char*>(&order), sizeof(order));
-    std::uint32_t flag = opts_.use_log_pro ? 1u : 0u;
+    std::uint32_t flag = 1u;
     out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     for (int lvl = 0; lvl <= order; ++lvl) {
         std::uint32_t size = 0;

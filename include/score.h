@@ -62,7 +62,6 @@ private:
     std::size_t GetLeave(std::size_t b, std::size_t e, TokenID w) const;
 
     int num_ = 0;
-    bool log_ = false;
     std::vector<int> sizes_;
     std::vector<std::vector<NodeEntry>> node_levels_;
     std::vector<LeaveEntry> leave_level_;
