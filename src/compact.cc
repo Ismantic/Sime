@@ -1,5 +1,4 @@
 #include "compact.h"
-#include "common.h"
 
 #include <algorithm>
 #include <cmath>
@@ -89,100 +88,100 @@ void CompressValues(std::map<float, int>& values,
                     std::map<float, int>& mapping,
                     std::vector<float>& table,
                     std::uint32_t limit) {
-        ArrayBuffer arr;
-        HeapBuffer heap;
-        arr.reserve(values.size());
-        heap.reserve(values.size());
+    ArrayBuffer arr;
+    HeapBuffer heap;
+    arr.reserve(values.size());
+    heap.reserve(values.size());
 
-        for (const auto& [val, freq] : values) {
-            std::uint32_t idx = static_cast<std::uint32_t>(arr.size());
-            arr.push_back(ArrayItem{val, idx});
-            float_t sum = static_cast<float_t>(val);
-            if (freq > 0) {
-                sum *= static_cast<float_t>(freq);
-            }
-            heap.push_back(
-                HeapItem{idx, idx + 1, static_cast<std::uint32_t>(freq), val, sum, 0.0});
+    for (const auto& [val, freq] : values) {
+        std::uint32_t idx = static_cast<std::uint32_t>(arr.size());
+        arr.push_back(ArrayItem{val, idx});
+        float_t sum = static_cast<float_t>(val);
+        if (freq > 0) {
+            sum *= static_cast<float_t>(freq);
+        }
+        heap.push_back(
+            HeapItem{idx, idx + 1, static_cast<std::uint32_t>(freq), val, sum, 0.0});
+    }
+
+    const int heap_size = static_cast<int>(heap.size());
+    for (int i = 0; i < heap_size - 1; ++i) {
+        if (heap[i].count == 0 || heap[i + 1].count == 0) {
+            heap[i].distance = std::numeric_limits<float_t>::max();
+        } else {
+            heap[i].distance = heap[i + 1].approx - heap[i].approx;
+        }
+        BubbleUp(heap, arr, i, CmpByDistance);
+    }
+    if (!heap.empty()) {
+        heap.back().distance = std::numeric_limits<float_t>::max();
+        BubbleUp(heap, arr, static_cast<int>(heap.size()) - 1, CmpByDistance);
+    }
+
+    while (static_cast<int>(heap.size()) > static_cast<int>(limit)) {
+        const auto current_first = heap.front().first;
+        const auto current_last = heap.front().last;
+        int prev_index = (current_first == 0)
+                             ? -1
+                             : static_cast<int>(arr[current_first - 1].heap_index);
+        int next_index = static_cast<int>(arr[current_last].heap_index);
+
+        for (std::uint32_t h = current_first; h < current_last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(next_index);
         }
 
-        const int heap_size = static_cast<int>(heap.size());
-        for (int i = 0; i < heap_size - 1; ++i) {
-            if (heap[i].count == 0 || heap[i + 1].count == 0) {
-                heap[i].distance = std::numeric_limits<float_t>::max();
-            } else {
-                heap[i].distance = heap[i + 1].approx - heap[i].approx;
-            }
-            BubbleUp(heap, arr, i, CmpByDistance);
+        const float_t merged_val = (heap.front().sum + heap[next_index].sum) /
+                                   (heap.front().count + heap[next_index].count);
+        if (prev_index >= 0) {
+            heap[prev_index].distance += (merged_val - heap.front().approx);
         }
-        if (!heap.empty()) {
-            heap.back().distance = std::numeric_limits<float_t>::max();
-            BubbleUp(heap, arr, static_cast<int>(heap.size()) - 1, CmpByDistance);
-        }
+        heap[next_index].first = heap.front().first;
+        heap[next_index].count += heap.front().count;
+        heap[next_index].sum += heap.front().sum;
+        heap[next_index].distance += (heap[next_index].approx - merged_val);
+        heap[next_index].approx = merged_val;
 
-        while (static_cast<int>(heap.size()) > static_cast<int>(limit)) {
-            const auto current_first = heap.front().first;
-            const auto current_last = heap.front().last;
-            int prev_index = (current_first == 0)
-                                 ? -1
-                                 : static_cast<int>(arr[current_first - 1].heap_index);
-            int next_index = static_cast<int>(arr[current_last].heap_index);
-
-            for (std::uint32_t h = current_first; h < current_last; ++h) {
-                arr[h].heap_index = static_cast<std::uint32_t>(next_index);
-            }
-
-            const float_t merged_val = (heap.front().sum + heap[next_index].sum) /
-                                       (heap.front().count + heap[next_index].count);
-            if (prev_index >= 0) {
-                heap[prev_index].distance += (merged_val - heap.front().approx);
-            }
-            heap[next_index].first = heap.front().first;
-            heap[next_index].count += heap.front().count;
-            heap[next_index].sum += heap.front().sum;
-            heap[next_index].distance += (heap[next_index].approx - merged_val);
-            heap[next_index].approx = merged_val;
-
-            if (prev_index > next_index) {
-                std::swap(prev_index, next_index);
-            }
-
-            SiftDown(heap, arr, next_index, static_cast<int>(heap.size()), CmpByDistance);
-            if (prev_index > 0) {
-                SiftDown(heap, arr, prev_index, static_cast<int>(heap.size()), CmpByDistance);
-            }
-
-            heap.front() = heap.back();
-            for (std::uint32_t h = heap.front().first; h < heap.front().last; ++h) {
-                arr[h].heap_index = 0U;
-            }
-            heap.pop_back();
-            SiftDown(heap, arr, 0, static_cast<int>(heap.size()), CmpByDistance);
+        if (prev_index > next_index) {
+            std::swap(prev_index, next_index);
         }
 
-        for (int i = 1; i < static_cast<int>(heap.size()); ++i) {
-            BubbleUp(heap, arr, i, CmpByValue);
-        }
-        for (int i = static_cast<int>(heap.size()) - 1; i > 0; --i) {
-            for (std::uint32_t h = heap[0].first; h < heap[0].last; ++h) {
-                arr[h].heap_index = static_cast<std::uint32_t>(i);
-            }
-            for (std::uint32_t h = heap[i].first; h < heap[i].last; ++h) {
-                arr[h].heap_index = 0U;
-            }
-            std::swap(heap[0], heap[i]);
-            SiftDown(heap, arr, 0, i, CmpByValue);
+        SiftDown(heap, arr, next_index, static_cast<int>(heap.size()), CmpByDistance);
+        if (prev_index > 0) {
+            SiftDown(heap, arr, prev_index, static_cast<int>(heap.size()), CmpByDistance);
         }
 
-        mapping.clear();
-        for (const auto& item : arr) {
-            mapping[item.value] = static_cast<int>(item.heap_index);
+        heap.front() = heap.back();
+        for (std::uint32_t h = heap.front().first; h < heap.front().last; ++h) {
+            arr[h].heap_index = 0U;
         }
+        heap.pop_back();
+        SiftDown(heap, arr, 0, static_cast<int>(heap.size()), CmpByDistance);
+    }
 
-        table.clear();
-        table.reserve(heap.size());
-        for (const auto& bucket : heap) {
-            table.push_back(static_cast<float>(bucket.approx));
+    for (int i = 1; i < static_cast<int>(heap.size()); ++i) {
+        BubbleUp(heap, arr, i, CmpByValue);
+    }
+    for (int i = static_cast<int>(heap.size()) - 1; i > 0; --i) {
+        for (std::uint32_t h = heap[0].first; h < heap[0].last; ++h) {
+            arr[h].heap_index = static_cast<std::uint32_t>(i);
         }
+        for (std::uint32_t h = heap[i].first; h < heap[i].last; ++h) {
+            arr[h].heap_index = 0U;
+        }
+        std::swap(heap[0], heap[i]);
+        SiftDown(heap, arr, 0, i, CmpByValue);
+    }
+
+    mapping.clear();
+    for (const auto& item : arr) {
+        mapping[item.value] = static_cast<int>(item.heap_index);
+    }
+
+    table.clear();
+    table.reserve(heap.size());
+    for (const auto& bucket : heap) {
+        table.push_back(static_cast<float>(bucket.approx));
+    }
 }
 
 void CompressWithReverse(std::map<float, float>& effective_to_real,
@@ -199,106 +198,7 @@ void CompressWithReverse(std::map<float, float>& effective_to_real,
     }
 }
 
-constexpr std::uint32_t BowBits = 14;
-constexpr std::uint32_t ProBits = 16;
-constexpr std::uint32_t TokenBits = 18;
-constexpr std::uint32_t BonBits = 23;
-constexpr std::uint32_t BolBits = 2;
-constexpr std::uint32_t DownBits = 23;
-
-struct RawNode {
-    TokenID id = 0;
-    float pro = 0.0f;
-    std::uint32_t down = 0;
-    float bow = 0.0f;
-};
-
-struct RawLeave {
-    TokenID id = 0;
-    float pro = 0.0f;
-};
-
-class RawModel {
-public:
-    bool Load(const std::filesystem::path& path);
-    void LinkUps();
-
-    int Num() const { return num_; }
-    const std::vector<int>& LevelSizes() const { return level_sizes_; }
-    const std::vector<RawNode>& Level(int idx) const { return levels_.at(idx); }
-    const std::vector<RawLeave>& Leaves() const { return leaves_; }
-
-    std::size_t LevelCount(int level) const;
-    std::size_t LeaveCount() const;
-
-    void GetTokens(int level, int index, std::vector<TokenID>& out) const;
-    int GetIndex(int length, const TokenID* seq) const;
-    bool HasDown(int level, int index) const;
-    void GetBack(int length,
-                 const TokenID* seq,
-                 std::uint32_t& boe,
-                 std::uint32_t& bon) const;
-
-private:
-    std::pair<std::size_t, std::size_t> DownRange(int level, int index) const;
-
-    int num_ = 0;
-    std::vector<int> level_sizes_;
-    std::vector<std::vector<RawNode>> levels_;
-    std::vector<RawLeave> leaves_;
-    std::vector<std::vector<int>> node_ups_;
-    std::vector<int> leave_ups_;
-};
-
-struct CompactNode {
-    std::uint32_t w0 = 0;
-    std::uint32_t w1 = 0;
-    std::uint32_t w2 = 0;
-};
-
-struct CompactLeave {
-    std::uint32_t w0 = 0;
-    std::uint32_t w1 = 0;
-};
-
-constexpr float kLn2 = 0.6931471805599453F;
-
-auto EffectivePro = [](float v) -> float { return v / kLn2; };
-auto OriginalPro  = [](float v) -> float { return v * kLn2; };
-auto EffectiveBow = [](float v) -> float { return std::exp(-v); };
-auto OriginalBow  = [](float v) -> float { return -std::log(v); };
-
-using EffFn1 = float(*)(float);
-
-int LookupIndex(const std::map<float, int>& mapping,
-                float real_value,
-                EffFn1 eff_fn,
-                EffFn1 orig_fn) {
-    auto it = mapping.find(real_value);
-    if (it != mapping.end()) {
-        return it->second;
-    }
-
-    float effective = eff_fn(real_value);
-    float canonical = orig_fn(effective);
-    it = mapping.find(canonical);
-    if (it != mapping.end()) {
-        return it->second;
-    }
-    throw std::runtime_error("quantized value not found");
-}
-
-struct Tables {
-    std::map<float, int> pro_map;
-    std::map<float, int> bow_map;
-    std::vector<float> pro_table;
-    std::vector<float> bow_table;
-};
-
-struct CompactModel {
-    std::vector<std::vector<CompactNode>> nodes;
-    std::vector<CompactLeave> leaves;
-};
+} // namespace
 
 bool RawModel::Load(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
@@ -512,6 +412,35 @@ void RawModel::GetBack(int length,
     }
 }
 
+namespace {
+
+constexpr float kLn2 = 0.6931471805599453F;
+
+auto EffectivePro = [](float v) -> float { return v / kLn2; };
+auto OriginalPro  = [](float v) -> float { return v * kLn2; };
+auto EffectiveBow = [](float v) -> float { return std::exp(-v); };
+auto OriginalBow  = [](float v) -> float { return -std::log(v); };
+
+using EffFn1 = float(*)(float);
+
+int LookupIndex(const std::map<float, int>& mapping,
+                float real_value,
+                EffFn1 eff_fn,
+                EffFn1 orig_fn) {
+    auto it = mapping.find(real_value);
+    if (it != mapping.end()) {
+        return it->second;
+    }
+
+    float effective = eff_fn(real_value);
+    float canonical = orig_fn(effective);
+    it = mapping.find(canonical);
+    if (it != mapping.end()) {
+        return it->second;
+    }
+    throw std::runtime_error("quantized value not found");
+}
+
 void CollectValue(float value, EffFn1 eff_fn, EffFn1 orig_fn,
                   std::map<float, float>& eff_map, std::map<float, int>& counts) {
     float eff = eff_fn(value);
@@ -596,7 +525,7 @@ CompactNode DoPackNode(TokenID wid,
                        std::uint32_t boe) {
     if (wid >= (1U << TokenBits) || bow_index >= (1U << BowBits) ||
         pro_index >= (1U << ProBits) || down_index >= (1U << DownBits) ||
-        bon >= (1U << BonBits) || boe >= (1U << BolBits)) {
+        bon >= (1U << BonBits) || boe >= (1U << BoeBits)) {
         throw std::runtime_error("compact: value exceeds bit-field limit");
     }
 
@@ -605,8 +534,8 @@ CompactNode DoPackNode(TokenID wid,
                  ((bow_index & ((1U << BowBits) - 1U)) << TokenBits);
     node.w1 = (pro_index & 0xFFFFU) | ((down_index & 0xFFFFU) << 16U);
     node.w2 = (bon & ((1U << BonBits) - 1U)) |
-                 ((boe & ((1U << BolBits) - 1U)) << BonBits) |
-                 (((down_index >> 16U) & 0x7FU) << (BonBits + BolBits));
+                 ((boe & ((1U << BoeBits) - 1U)) << BonBits) |
+                 (((down_index >> 16U) & 0x7FU) << (BonBits + BoeBits));
     return node;
 }
 
@@ -615,15 +544,15 @@ CompactLeave DoPackLeave(TokenID wid,
                          std::uint32_t bon,
                          std::uint32_t boe) {
     if (wid >= (1U << TokenBits) || pro_index >= (1U << ProBits) ||
-        bon >= (1U << BonBits) || boe >= (1U << BolBits)) {
+        bon >= (1U << BonBits) || boe >= (1U << BoeBits)) {
         throw std::runtime_error("compact: leave value exceeds limit");
     }
     CompactLeave leaf;
     leaf.w0 = (wid & ((1U << TokenBits) - 1U)) |
                  ((pro_index & 0x3FFFU) << TokenBits);
     leaf.w1 = (bon & ((1U << BonBits) - 1U)) |
-                 ((boe & ((1U << BolBits) - 1U)) << BonBits) |
-                 (((pro_index >> 14U) & 0x3U) << (BonBits + BolBits));
+                 ((boe & ((1U << BoeBits) - 1U)) << BonBits) |
+                 (((pro_index >> 14U) & 0x3U) << (BonBits + BoeBits));
     return leaf;
 }
 
