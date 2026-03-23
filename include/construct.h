@@ -51,7 +51,6 @@ private:
 
 struct ConstructOptions {
     int num = 0;
-    bool use_log_pro = false;
     std::filesystem::path output;
     std::filesystem::path input;
     std::uint32_t token_count = 0;

@@ -224,7 +224,6 @@ public:
     void LinkUps();
 
     int Num() const { return num_; }
-    bool UseLog() const { return use_log_pro_; }
     const std::vector<int>& LevelSizes() const { return level_sizes_; }
     const std::vector<RawNode>& Level(int idx) const { return levels_.at(idx); }
     const std::vector<RawLeave>& Leaves() const { return leaves_; }
@@ -244,7 +243,6 @@ private:
     std::pair<std::size_t, std::size_t> DownRange(int level, int index) const;
 
     int num_ = 0;
-    bool use_log_pro_ = false;
     std::vector<int> level_sizes_;
     std::vector<std::vector<RawNode>> levels_;
     std::vector<RawLeave> leaves_;
@@ -263,35 +261,35 @@ struct CompactLeave {
     std::uint32_t w1 = 0;
 };
 
-float EffectivePro(bool use_log, float value) {
-    return use_log ? (value / std::log(2.0F)) : -std::log2(value);
+float EffectivePro(float value) {
+    return value / std::log(2.0F);
 }
 
-float OriginalPro(bool use_log, float effective) {
-    return use_log ? (effective * std::log(2.0F)) : std::exp2(-effective);
+float OriginalPro(float effective) {
+    return effective * std::log(2.0F);
 }
 
-float EffectiveBow(bool use_log, float value) {
-    return use_log ? std::exp(-value) : value;
+float EffectiveBow(float value) {
+    return std::exp(-value);
 }
 
-float OriginalBow(bool use_log, float effective) {
-    return use_log ? -std::log(effective) : effective;
+float OriginalBow(float effective) {
+    return -std::log(effective);
 }
 
-template <typename EffFn, typename OrigFn>
+using EffFn1 = float(*)(float);
+
 int LookupIndex(const std::map<float, int>& mapping,
                 float real_value,
-                bool use_log,
-                EffFn eff_fn,
-                OrigFn orig_fn) {
+                EffFn1 eff_fn,
+                EffFn1 orig_fn) {
     auto it = mapping.find(real_value);
     if (it != mapping.end()) {
         return it->second;
     }
 
-    float effective = eff_fn(use_log, real_value);
-    float canonical = orig_fn(use_log, effective);
+    float effective = eff_fn(real_value);
+    float canonical = orig_fn(effective);
     it = mapping.find(canonical);
     if (it != mapping.end()) {
         return it->second;
@@ -323,7 +321,7 @@ bool RawModel::Load(const std::filesystem::path& path) {
     if (!in.read(reinterpret_cast<char*>(&flag), sizeof(flag))) {
         return false;
     }
-    use_log_pro_ = (flag != 0);
+    // flag is reserved (always 1 = log mode)
 
     level_sizes_.assign(num_ + 1, 0);
     if (!in.read(reinterpret_cast<char*>(level_sizes_.data()),
@@ -523,29 +521,27 @@ void RawModel::GetBack(int length,
     }
 }
 
-using EffFn = float(*)(bool, float);
-
-void CollectValue(float value, bool use_log, EffFn eff_fn, EffFn orig_fn,
+void CollectValue(float value, EffFn1 eff_fn, EffFn1 orig_fn,
                   std::map<float, float>& eff_map, std::map<float, int>& counts) {
-    float eff = eff_fn(use_log, value);
+    float eff = eff_fn(value);
     if (eff_map.find(eff) == eff_map.end()) {
         eff_map[eff] = value;
     } else {
-        eff_map[eff] = orig_fn(use_log, eff);
+        eff_map[eff] = orig_fn(eff);
     }
     ++counts[eff];
 }
 
 template <std::size_t N>
-void AddMilestones(const float (&milestones)[N], bool use_log, EffFn eff_fn, EffFn orig_fn,
+void AddMilestones(const float (&milestones)[N], EffFn1 eff_fn, EffFn1 orig_fn,
                    std::map<float, float>& eff_map, std::map<float, int>& counts) {
     for (float milestone : milestones) {
-        float real = use_log ? -std::log(milestone) : milestone;
-        float eff = eff_fn(use_log, real);
+        float real = -std::log(milestone);
+        float eff = eff_fn(real);
         if (eff_map.find(eff) == eff_map.end()) {
             eff_map[eff] = real;
         } else {
-            eff_map[eff] = orig_fn(use_log, eff);
+            eff_map[eff] = orig_fn(eff);
         }
         counts[eff] = 0;
     }
@@ -553,7 +549,6 @@ void AddMilestones(const float (&milestones)[N], bool use_log, EffFn eff_fn, Eff
 
 Tables Compress(const RawModel& model) {
     Tables tables;
-    bool use_log = model.UseLog();
 
     std::map<float, float> pro_eff;
     std::map<float, int> pro_counts;
@@ -564,15 +559,15 @@ Tables Compress(const RawModel& model) {
         const auto& nodes = model.Level(lvl);
         auto actual = model.LevelCount(lvl);
         for (std::size_t idx = 0; idx < actual; ++idx) {
-            CollectValue(nodes[idx].pro, use_log,
+            CollectValue(nodes[idx].pro,
                          EffectivePro, OriginalPro, pro_eff, pro_counts);
-            CollectValue(nodes[idx].bow, use_log,
+            CollectValue(nodes[idx].bow,
                          EffectiveBow, OriginalBow, bow_eff, bow_counts);
         }
     }
     const auto& leaves = model.Leaves();
     for (std::size_t idx = 0; idx < model.LeaveCount(); ++idx) {
-        CollectValue(leaves[idx].pro, use_log,
+        CollectValue(leaves[idx].pro,
                      EffectivePro, OriginalPro, pro_eff, pro_counts);
     }
 
@@ -582,22 +577,22 @@ Tables Compress(const RawModel& model) {
         1.0F / 256.0F, 1.0F / 512.0F, 1.0F / 1024.0F, 1.0F / 2048.0F,
         1.0F / 4096.0F, 1.0F / 8192.0F, 1.0F / 16384.0F, 1.0F / 32768.0F,
         1.0F / 65536.0F};
-    AddMilestones(kMilestonesPro, use_log, EffectivePro, OriginalPro, pro_eff, pro_counts);
+    AddMilestones(kMilestonesPro, EffectivePro, OriginalPro, pro_eff, pro_counts);
 
     static constexpr float kMilestonesBow[] = {
         1.0F,  0.9F,  0.8F,   0.7F,    0.6F,     0.5F,     0.4F,     0.3F,
         0.2F,  0.1F,  0.05F,  0.01F,   0.005F,   0.001F,   0.0005F,  0.0001F,
         0.00005F, 0.00001F, 0.000005F, 0.000001F, 0.0000005F, 0.0000001F};
-    AddMilestones(kMilestonesBow, use_log, EffectiveBow, OriginalBow, bow_eff, bow_counts);
+    AddMilestones(kMilestonesBow, EffectiveBow, OriginalBow, bow_eff, bow_counts);
 
     CompressWithReverse(pro_eff, pro_counts, tables.pro_map, tables.pro_table, 1U << ProBits);
     for (auto& value : tables.pro_table) {
-        value = OriginalPro(use_log, value);
+        value = OriginalPro(value);
     }
 
     CompressWithReverse(bow_eff, bow_counts, tables.bow_map, tables.bow_table, 1U << BowBits);
     for (auto& value : tables.bow_table) {
-        value = OriginalBow(use_log, value);
+        value = OriginalBow(value);
     }
     return tables;
 }
@@ -656,12 +651,10 @@ CompactModel Compact(const RawModel& model, const Tables& tables) {
             const auto& node = nodes[idx];
             const int pro_idx = LookupIndex(tables.pro_map,
                                             node.pro,
-                                           model.UseLog(),
-                                           EffectivePro,
-                                           OriginalPro);
+                                            EffectivePro,
+                                            OriginalPro);
             const int bow_idx = LookupIndex(tables.bow_map,
                                             node.bow,
-                                            model.UseLog(),
                                             EffectiveBow,
                                             OriginalBow);
 
@@ -700,9 +693,8 @@ CompactModel Compact(const RawModel& model, const Tables& tables) {
         const auto& leaf = leaves[idx];
         const int pro_idx = LookupIndex(tables.pro_map,
                                         leaf.pro,
-                                       model.UseLog(),
-                                       EffectivePro,
-                                       OriginalPro);
+                                        EffectivePro,
+                                        OriginalPro);
         std::uint32_t boe = 0;
         std::uint32_t bon = 0;
         model.GetTokens(model.Num(), static_cast<int>(idx), history);
@@ -727,7 +719,7 @@ void Save(const RawModel& model,
 
     int num = model.Num();
     out.write(reinterpret_cast<const char*>(&num), sizeof(num));
-    std::uint32_t flag = model.UseLog() ? 1U : 0U;
+    std::uint32_t flag = 1U;
     out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     out.write(reinterpret_cast<const char*>(model.LevelSizes().data()),
               static_cast<std::streamsize>(model.LevelSizes().size() * sizeof(int)));
