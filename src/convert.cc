@@ -16,13 +16,13 @@ namespace sime {
 namespace {
 
 struct TrieNodeHeader {
-    std::uint16_t count = 0;
     std::uint16_t move_count = 0;
+    std::uint16_t count = 0;
 };
 
 struct TrieMove {
-    std::uint32_t next = 0;
     std::uint32_t unit = 0;
+    std::uint32_t next = 0;
 };
 
 
