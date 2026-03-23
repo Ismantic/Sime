@@ -205,11 +205,6 @@ bool RawModel::Load(const std::filesystem::path& path) {
     if (!in.read(reinterpret_cast<char*>(&num_), sizeof(num_))) {
         return false;
     }
-    std::uint32_t flag = 0;
-    if (!in.read(reinterpret_cast<char*>(&flag), sizeof(flag))) {
-        return false;
-    }
-    // flag is reserved (always 1 = log mode)
 
     level_sizes_.assign(num_ + 1, 0);
     if (!in.read(reinterpret_cast<char*>(level_sizes_.data()),
@@ -632,8 +627,6 @@ void Save(const RawModel& model,
 
     int num = model.Num();
     out.write(reinterpret_cast<const char*>(&num), sizeof(num));
-    std::uint32_t flag = 1U;
-    out.write(reinterpret_cast<const char*>(&flag), sizeof(flag));
     out.write(reinterpret_cast<const char*>(model.LevelSizes().data()),
               static_cast<std::streamsize>(model.LevelSizes().size() * sizeof(int)));
 
