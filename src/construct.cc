@@ -13,20 +13,20 @@ namespace sime {
 
 namespace {
 
-constexpr int MaxR = 4096;
 constexpr TokenID TailMarker = 0x00FFFFFF;
 
 } // namespace
 
-void NeyDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
-    float_t n1 = static_cast<float_t>(nr[1]);
-    float_t n2 = static_cast<float_t>(nr[2]);
-    float_t n3 = static_cast<float_t>(nr.size() > 3 ? nr[3] : 0);
-    float_t n4 = static_cast<float_t>(nr.size() > 4 ? nr[4] : 0);
-    float_t y = (n1 == 0.0) ? 0.0 : n1 / (n1 + 2.0 * n2);
-    v1_ = 1.0 - 2.0 * y * (n2 / std::max(n1, 1.0));
-    v2_ = 2.0 - 3.0 * y * (n3 / std::max(n2, 1.0));
-    v3_ = 3.0 - 4.0 * y * (n4 / std::max(n3, 1.0));
+void NeyDiscounter::Init(std::uint64_t n1, std::uint64_t n2,
+                         std::uint64_t n3, std::uint64_t n4) {
+    float_t d1 = static_cast<float_t>(n1);
+    float_t d2 = static_cast<float_t>(n2);
+    float_t d3 = static_cast<float_t>(n3);
+    float_t d4 = static_cast<float_t>(n4);
+    float_t y = (d1 == 0.0) ? 0.0 : d1 / (d1 + 2.0 * d2);
+    v1_ = 1.0 - 2.0 * y * (d2 / std::max(d1, 1.0));
+    v2_ = 2.0 - 3.0 * y * (d3 / std::max(d2, 1.0));
+    v3_ = 3.0 - 4.0 * y * (d4 / std::max(d3, 1.0));
     v1_ = std::max(v1_, 0.0);
     v2_ = std::max(v2_, 0.0);
     v3_ = std::max(v3_, 0.0);
@@ -58,7 +58,7 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
 
     node_levels_[0].push_back(Node{0, 0, 0.0, 0.0, 0.0, 0});
 
-    nr_.assign(opts_.num + 1, std::vector<std::uint64_t>(MaxR, 0));
+    nt_.assign(opts_.num + 1, {});
 
     cuts_.assign(opts_.num + 1, 0);
     for (std::size_t i = 0; i < opts_.cutoffs.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
@@ -141,9 +141,8 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt)
         if (cnt > cuts_[opts_.num]) {
             leaves_.push_back(Leave{ids.back(), static_cast<float_t>(cnt), 0.0, 0});
         } else {
-            nr_[opts_.num][0] += cnt;
-            if (cnt < static_cast<std::uint32_t>(MaxR)) {
-                nr_[opts_.num][cnt] += cnt;
+            if (cnt >= 1 && cnt <= 4) {
+                nt_[opts_.num][cnt] += 1;
             }
         }
     }
@@ -153,23 +152,21 @@ void Constructor::CountCnt() {
     for (int lvl = 1; lvl < opts_.num; ++lvl) {
         for (const auto& node : node_levels_[lvl]) {
             auto c = static_cast<std::uint32_t>(node.cnt);
-            nr_[lvl][0] += c;
-            if (c < static_cast<std::uint32_t>(MaxR)) {
-                nr_[lvl][c] += c;
+            if (c >= 1 && c <= 4) {
+                nt_[lvl][c] += 1;
             }
         }
     }
     for (const auto& leaf : leaves_) {
         auto c = static_cast<std::uint32_t>(leaf.cnt);
-        nr_[opts_.num][0] += c;
-        if (c < static_cast<std::uint32_t>(MaxR)) {
-            nr_[opts_.num][c] += c;
+        if (c >= 1 && c <= 4) {
+            nt_[opts_.num][c] += 1;
         }
     }
 }
 
 void Constructor::AppendTails() {
-    const float_t tail_pro = static_cast<float_t>(std::numeric_limits<float>::denorm_min());
+    const float_t tail_pro = std::numeric_limits<float_t>::denorm_min();
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
         std::uint32_t down_count = 0;
         if (lvl == opts_.num - 1) {
@@ -429,7 +426,7 @@ void Constructor::ComputeContinuationCounts() {
 
 void Constructor::Discount() {
     for (int lvl = opts_.num; lvl >= 1; --lvl) {
-        discounters_[lvl].Init(MaxR, nr_[lvl]);
+        discounters_[lvl].Init(nt_[lvl][1], nt_[lvl][2], nt_[lvl][3], nt_[lvl][4]);
     }
 
     ComputeContinuationCounts();

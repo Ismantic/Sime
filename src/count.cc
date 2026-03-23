@@ -251,7 +251,7 @@ void MergeRuns(const std::filesystem::path& swap_path,
             has_current = true;
         } else {
             if (current.cnt > std::numeric_limits<Cnt>::max() - node.rec.cnt) {
-                throw std::overflow_error("Frequencey overflow during merge");
+                throw std::overflow_error("Frequency overflow during merge");
             }
             current.cnt += node.rec.cnt;
         }
