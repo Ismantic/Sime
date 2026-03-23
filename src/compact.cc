@@ -261,21 +261,12 @@ struct CompactLeave {
     std::uint32_t w1 = 0;
 };
 
-float EffectivePro(float value) {
-    return value / std::log(2.0F);
-}
+constexpr float kLn2 = 0.6931471805599453F;
 
-float OriginalPro(float effective) {
-    return effective * std::log(2.0F);
-}
-
-float EffectiveBow(float value) {
-    return std::exp(-value);
-}
-
-float OriginalBow(float effective) {
-    return -std::log(effective);
-}
+auto EffectivePro = [](float v) -> float { return v / kLn2; };
+auto OriginalPro  = [](float v) -> float { return v * kLn2; };
+auto EffectiveBow = [](float v) -> float { return std::exp(-v); };
+auto OriginalBow  = [](float v) -> float { return -std::log(v); };
 
 using EffFn1 = float(*)(float);
 
