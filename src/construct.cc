@@ -5,11 +5,9 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <iostream>
-#include <iterator>
 #include <limits>
-#include <numbers>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace sime {
 
@@ -18,48 +16,28 @@ namespace {
 constexpr int MaxR = 4096;
 constexpr TokenID TailMarker = 0x00FFFFFF;
 
-template <typename T>
-void EnsureSortedUnique(std::vector<T>& values) {
-    std::sort(values.begin(), values.end());
-    values.erase(std::unique(values.begin(), values.end()), values.end());
-}
-
 } // namespace
 
-AbsoluteDiscounter::AbsoluteDiscounter(std::optional<float_t> c) : user_c_(c) {}
-
-void AbsoluteDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
-    if (user_c_) {
-        c_ = *user_c_;
-    } else {
-        if (nr[1] == 0) {
-            c_ = 0.5;
-        } else {
-            c_ = static_cast<float_t>(nr[1]) /
-                 (static_cast<float_t>(nr[1]) + 2.0 * static_cast<float_t>(nr[2]));
-        }
-    }
+void NeyDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
+    float_t n1 = static_cast<float_t>(nr[1]);
+    float_t n2 = static_cast<float_t>(nr[2]);
+    float_t n3 = static_cast<float_t>(nr.size() > 3 ? nr[3] : 0);
+    float_t n4 = static_cast<float_t>(nr.size() > 4 ? nr[4] : 0);
+    float_t y = (n1 == 0.0) ? 0.0 : n1 / (n1 + 2.0 * n2);
+    v1_ = 1.0 - 2.0 * y * (n2 / std::max(n1, 1.0));
+    v2_ = 2.0 - 3.0 * y * (n3 / std::max(n2, 1.0));
+    v3_ = 3.0 - 4.0 * y * (n4 / std::max(n3, 1.0));
+    v1_ = std::max(v1_, 0.0);
+    v2_ = std::max(v2_, 0.0);
+    v3_ = std::max(v3_, 0.0);
 }
 
-float_t AbsoluteDiscounter::Discount(float_t freq) const {
-    return freq > 0.0 ? freq - c_ : 0.0;
+float_t NeyDiscounter::Discount(float_t cnt) const {
+    if (cnt <= 0.0) return 0.0;
+    if (cnt <= 1.0) return cnt - v1_;
+    if (cnt <= 2.0) return cnt - v2_;
+    return cnt - v3_;
 }
-
-LinearDiscounter::LinearDiscounter(std::optional<float_t> d) : user_d_(d) {}
-
-void LinearDiscounter::Init(int, const std::vector<std::uint64_t>& nr) {
-    if (user_d_) {
-        d_ = *user_d_;
-    } else {
-        if (nr[0] == 0) {
-            d_ = 0.5;
-        } else {
-            d_ = 1.0 - static_cast<float_t>(nr[1]) / static_cast<float_t>(nr[0]);
-        }
-    }
-}
-
-float_t LinearDiscounter::Discount(float_t freq) const { return freq * d_; }
 
 bool Constructor::NodeScore::operator<(const NodeScore& other) const {
     if (has_down == other.has_down) {
@@ -78,7 +56,7 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
     }
     leaves_.reserve(1024);
 
-    node_levels_[0].push_back(Node{0, 0, 0.0, 0.0, 0.0});
+    node_levels_[0].push_back(Node{0, 0, 0.0, 0.0, 0.0, 0});
 
     nr_.assign(opts_.num + 1, std::vector<std::uint64_t>(MaxR, 0));
 
@@ -87,10 +65,7 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
         cuts_[i + 1] = opts_.cutoffs[i];
     }
 
-    discounters_.assign(opts_.num + 1, nullptr);
-    for (std::size_t i = 0; i < opts_.discounters.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
-        discounters_[i + 1] = opts_.discounters[i].get();
-    }
+    discounters_.resize(opts_.num + 1);
 }
 
 bool Constructor::IsBreaker(TokenID i) const {
@@ -129,20 +104,20 @@ std::size_t Constructor::CutLevelByMark(std::vector<Node>& ups, Level& current, 
     return new_size;
 }
 
-void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq) {
+void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt) {
     if (static_cast<int>(ids.size()) != opts_.num) {
         throw std::invalid_argument("ngram length mismatch");
     }
     bool breaker = IsBreaker(ids[0]);
     if (!breaker) {
-        node_levels_[0][0].freq += freq;
+        node_levels_[0][0].cnt += cnt;
     }
     bool branch = false;
     for (int lvl = 1; (!breaker && lvl < opts_.num); ++lvl) {
         auto& up_level = node_levels_[lvl - 1];
         auto& current = node_levels_[lvl];
-        bool need_new = branch || 
-                        current.empty() || 
+        bool need_new = branch ||
+                        current.empty() ||
                         up_level.back().down >= static_cast<std::uint32_t>(current.size());
         if (!need_new && current.back().id != ids[lvl-1]) {
             need_new = true;
@@ -153,9 +128,9 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
                 (lvl == opts_.num - 1)
                     ? static_cast<std::uint32_t>(leaves_.size())
                     : static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
-            current.push_back(Node{ids[lvl - 1], down, static_cast<float_t>(freq), 0.0, 0.0});
+            current.push_back(Node{ids[lvl - 1], down, static_cast<float_t>(cnt), 0.0, 0.0, 0});
         } else {
-            current.back().freq += freq;
+            current.back().cnt += cnt;
         }
 
         branch = need_new;
@@ -163,12 +138,12 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
     }
 
     if (!breaker) {
-        if (freq > cuts_[opts_.num]) {
-            leaves_.push_back(Leave{ids.back(), static_cast<float_t>(freq), 0.0});
+        if (cnt > cuts_[opts_.num]) {
+            leaves_.push_back(Leave{ids.back(), static_cast<float_t>(cnt), 0.0, 0});
         } else {
-            nr_[opts_.num][0] += freq;
-            if (freq < static_cast<std::uint32_t>(MaxR)) {
-                nr_[opts_.num][freq] += freq;
+            nr_[opts_.num][0] += cnt;
+            if (cnt < static_cast<std::uint32_t>(MaxR)) {
+                nr_[opts_.num][cnt] += cnt;
             }
         }
     }
@@ -177,18 +152,18 @@ void Constructor::InsertItem(const std::vector<TokenID>& ids, std::uint32_t freq
 void Constructor::CountCnt() {
     for (int lvl = 1; lvl < opts_.num; ++lvl) {
         for (const auto& node : node_levels_[lvl]) {
-            auto freq = static_cast<std::uint32_t>(node.freq);
-            nr_[lvl][0] += freq;
-            if (freq < static_cast<std::uint32_t>(MaxR)) {
-                nr_[lvl][freq] += freq;
+            auto c = static_cast<std::uint32_t>(node.cnt);
+            nr_[lvl][0] += c;
+            if (c < static_cast<std::uint32_t>(MaxR)) {
+                nr_[lvl][c] += c;
             }
         }
-    }    
+    }
     for (const auto& leaf : leaves_) {
-        auto freq = static_cast<std::uint32_t>(leaf.freq);
-        nr_[opts_.num][0] += freq;
-        if (freq < static_cast<std::uint32_t>(MaxR)) {
-            nr_[opts_.num][freq] += freq;
+        auto c = static_cast<std::uint32_t>(leaf.cnt);
+        nr_[opts_.num][0] += c;
+        if (c < static_cast<std::uint32_t>(MaxR)) {
+            nr_[opts_.num][c] += c;
         }
     }
 }
@@ -202,10 +177,10 @@ void Constructor::AppendTails() {
         } else {
             down_count = static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
         }
-        node_levels_[lvl].push_back(Node{TailMarker, down_count, 1.0, 0.0, 0.0});
+        node_levels_[lvl].push_back(Node{TailMarker, down_count, 1.0, 0.0, 0.0, 0});
         node_levels_[lvl].back().pro = tail_pro;
     }
-    leaves_.push_back(Leave{0, 1.0, tail_pro});
+    leaves_.push_back(Leave{0, 1.0, tail_pro, 0});
 }
 
 template <typename Level>
@@ -219,10 +194,10 @@ int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold) {
     for (int idx = 0; idx < static_cast<int>(current.size()); ++idx) {
         bool keep = false;
         if constexpr (std::is_same_v<Level, LeaveLevel>) {
-            keep = (static_cast<int>(current[idx].freq) > threshold) ||
+            keep = (static_cast<int>(current[idx].cnt) > threshold) ||
                    (idx + 1 == static_cast<int>(current.size()));
         } else {
-            keep = (static_cast<int>(current[idx].freq) > threshold) ||
+            keep = (static_cast<int>(current[idx].cnt) > threshold) ||
                    (idx + 1 == static_cast<int>(current.size())) ||
                    (current[idx + 1].down != current[idx].down);
         }
@@ -261,13 +236,26 @@ void Constructor::Cut() {
 template <typename DownLevel>
 void Constructor::DiscountLevel(NodeLevel& level,
                                 DownLevel& down_level,
-                                Discounter& disc) {
+                                NeyDiscounter& disc,
+                                bool use_context) {
     for (std::size_t idx = 0; idx + 1 < level.size(); ++idx) {
         Node& node = level[idx];
         Node& next = level[idx + 1];
+        float_t denom;
+        if (use_context) {
+            denom = 0.0;
+            for (std::size_t i = node.down; i < next.down; ++i) {
+                denom += down_level[i].ctx;
+            }
+        } else {
+            denom = node.cnt;
+        }
         for (std::size_t down_idx = node.down; down_idx < next.down; ++down_idx) {
-            float_t discounted = disc.Discount(down_level[down_idx].freq);
-            float_t pro = discounted / node.freq;
+            float_t raw = use_context
+                ? static_cast<float_t>(down_level[down_idx].ctx)
+                : down_level[down_idx].cnt;
+            float_t discounted = disc.Discount(raw);
+            float_t pro = discounted / std::max(denom, 1.0);
             pro = std::clamp(pro, 1e-12, 1.0 - 1e-9);
             float_t encoded = -std::log(pro);
             down_level[down_idx].pro = static_cast<float>(encoded);
@@ -387,20 +375,72 @@ void Constructor::PruneLevel(int level) {
     }
 }
 
+void Constructor::ComputeContinuationCounts() {
+    if (opts_.num < 3) return;
+
+    auto& l1 = node_levels_[1];
+    auto& l2 = node_levels_[2];
+
+    // For each trigram path root->u(l1)->v(l2)->w(leaf),
+    // compute N1+(.,v,w) for the bigram node root->v(l1)->w(l2).
+    std::unordered_map<std::uint64_t, std::uint32_t> bigram_ctx;
+    for (std::size_t u_idx = 0; u_idx + 1 < l1.size(); ++u_idx) {
+        for (std::size_t v_idx = l1[u_idx].down; v_idx + 1 < l2.size() &&
+             v_idx < l1[u_idx + 1].down; ++v_idx) {
+            TokenID v_id = l2[v_idx].id;
+            for (std::size_t w_idx = l2[v_idx].down; w_idx < l2[v_idx + 1].down; ++w_idx) {
+                TokenID w_id = leaves_[w_idx].id;
+                auto key = (static_cast<std::uint64_t>(v_id) << 32) | w_id;
+                bigram_ctx[key]++;
+            }
+        }
+    }
+
+    // Set ctx on level 2 nodes (bigram level).
+    for (std::size_t v_idx = 0; v_idx + 1 < l1.size(); ++v_idx) {
+        TokenID v_id = l1[v_idx].id;
+        for (std::size_t w_idx = l1[v_idx].down;
+             w_idx + 1 < l2.size() && w_idx < l1[v_idx + 1].down; ++w_idx) {
+            TokenID w_id = l2[w_idx].id;
+            auto key = (static_cast<std::uint64_t>(v_id) << 32) | w_id;
+            auto it = bigram_ctx.find(key);
+            if (it != bigram_ctx.end()) {
+                l2[w_idx].ctx = it->second;
+            }
+        }
+    }
+
+    // Set ctx on level 1 nodes (unigram level).
+    // N1+(.,v) = number of distinct u's that have level 2 child v.
+    std::unordered_map<std::uint32_t, std::uint32_t> unigram_ctx;
+    for (std::size_t u_idx = 0; u_idx + 1 < l1.size(); ++u_idx) {
+        for (std::size_t v_idx = l1[u_idx].down;
+             v_idx + 1 < l2.size() && v_idx < l1[u_idx + 1].down; ++v_idx) {
+            unigram_ctx[l2[v_idx].id]++;
+        }
+    }
+    for (std::size_t v_idx = 0; v_idx + 1 < l1.size(); ++v_idx) {
+        auto it = unigram_ctx.find(l1[v_idx].id);
+        if (it != unigram_ctx.end()) {
+            l1[v_idx].ctx = it->second;
+        }
+    }
+}
+
 void Constructor::Discount() {
     for (int lvl = opts_.num; lvl >= 1; --lvl) {
-        auto* disc = discounters_[lvl];
-        if (!disc) {
-            throw std::runtime_error("missing discounter for level");
-        }
-        disc->Init(MaxR, nr_[lvl]);
+        discounters_[lvl].Init(MaxR, nr_[lvl]);
     }
+
+    ComputeContinuationCounts();
+
     for (int lvl = opts_.num - 1; lvl >= 0; --lvl) {
         auto& level = node_levels_[lvl];
+        bool use_context = lvl < opts_.num - 1;
         if (lvl == opts_.num - 1) {
-            DiscountLevel(level, leaves_, *discounters_[lvl+1]);
+            DiscountLevel(level, leaves_, discounters_[lvl+1], false);
         } else {
-            DiscountLevel(level, node_levels_[lvl+1], *discounters_[lvl+1]);
+            DiscountLevel(level, node_levels_[lvl+1], discounters_[lvl+1], use_context);
         }
     }
     Node& root = node_levels_[0][0];
@@ -628,14 +668,14 @@ void RunConstruct(ConstructOptions options) {
         throw std::runtime_error("Failed to open idngram file");
     }
     std::vector<TokenID> ids(num);
-    std::uint32_t freq = 0;
+    std::uint32_t cnt = 0;
     while (input.read(reinterpret_cast<char*>(ids.data()),
                       static_cast<std::streamsize>(ids.size() * sizeof(TokenID)))) {
-        if (!input.read(reinterpret_cast<char*>(&freq),
-                        static_cast<std::streamsize>(sizeof(freq)))) {
+        if (!input.read(reinterpret_cast<char*>(&cnt),
+                        static_cast<std::streamsize>(sizeof(cnt)))) {
             break;
         }
-        builder.InsertItem(ids, freq);
+        builder.InsertItem(ids, cnt);
     }
     builder.Finalize();
     if (!prune_reserves.empty()) {
