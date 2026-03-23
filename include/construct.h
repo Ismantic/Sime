@@ -5,48 +5,19 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <optional>
 #include <vector>
 
 namespace sime {
 
-class Discounter {
+class NeyDiscounter {
 public:
-    virtual ~Discounter() = default;
-    virtual const char* Name() const = 0;
-    virtual void Init(int max_r, const std::vector<std::uint64_t>& nr) = 0;
-    virtual float_t Discount(float_t freq) const = 0;
-    virtual std::unique_ptr<Discounter> Clone() const = 0;
-};
-
-class AbsoluteDiscounter final : public Discounter {
-public:
-    explicit AbsoluteDiscounter(std::optional<float_t> c);
-    const char* Name() const override { return "Absolute"; }
-    void Init(int max_r, const std::vector<std::uint64_t>& nr) override;
-    float_t Discount(float_t freq) const override;
-    std::unique_ptr<Discounter> Clone() const override {
-        return std::make_unique<AbsoluteDiscounter>(*this);
-    }
+    void Init(int max_r, const std::vector<std::uint64_t>& nr);
+    float_t Discount(float_t cnt) const;
 
 private:
-    std::optional<float_t> user_c_;
-    float_t c_ = 0.0;
-};
-
-class LinearDiscounter final : public Discounter {
-public:
-    explicit LinearDiscounter(std::optional<float_t> d);
-    const char* Name() const override { return "Linear"; }
-    void Init(int max_r, const std::vector<std::uint64_t>& nr) override;
-    float_t Discount(float_t freq) const override;
-    std::unique_ptr<Discounter> Clone() const override {
-        return std::make_unique<LinearDiscounter>(*this);
-    }
-
-private:
-    std::optional<float_t> user_d_;
-    float_t d_ = 0.0;
+    float_t v1_ = 0.0;
+    float_t v2_ = 0.0;
+    float_t v3_ = 0.0;
 };
 
 struct ConstructOptions {
@@ -55,7 +26,6 @@ struct ConstructOptions {
     std::filesystem::path input;
     std::uint32_t token_count = 0;
     std::vector<std::uint32_t> cutoffs;
-    std::vector<std::unique_ptr<Discounter>> discounters;
     std::vector<int> prune_reserves;
 };
 
@@ -71,15 +41,17 @@ private:
     struct Node {
         TokenID id = 0;
         std::uint32_t down = 0;
-        float_t freq = 0.0;
+        float_t cnt = 0.0;
         float_t pro = 0.0;
         float_t bow = 0.0;
+        std::uint32_t ctx = 0;
     };
 
     struct Leave {
         TokenID id = 0;
-        float_t freq = 0.0;
+        float_t cnt = 0.0;
         float_t pro = 0.0;
+        std::uint32_t ctx = 0;
     };
 
     using NodeLevel = std::vector<Node>;
@@ -93,6 +65,7 @@ private:
     void CountCnt();
     void Cut();
     void AppendTails();
+    void ComputeContinuationCounts();
     void Discount();
     void CalcBow();
     const void* FindDown(int level, const Node* node, TokenID i) const;
@@ -106,14 +79,15 @@ private:
                         std::size_t end) const;
 
     template <typename DownLevel>
-    void DiscountLevel(NodeLevel& level, DownLevel& down_level, Discounter& disc);
+    void DiscountLevel(NodeLevel& level, DownLevel& down_level, NeyDiscounter& disc,
+                       bool use_context);
 
     ConstructOptions opts_;
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
     std::vector<std::vector<std::uint64_t>> nr_;
     std::vector<std::uint32_t> cuts_;
-    std::vector<Discounter*> discounters_;
+    std::vector<NeyDiscounter> discounters_;
 
     // Prune
     struct NodeScore {

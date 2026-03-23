@@ -75,7 +75,6 @@ sime-construct output/raw.3gram \
     -n 3 \
     -o output/raw.slm \
     -c 0,0,2 \
-    -d ABS -d ABS -d ABS \
     -w 84054
 ```
 
@@ -84,8 +83,9 @@ sime-construct output/raw.3gram \
 | `-n 3` | 3-gram 模型 |
 | `-o` | 输出路径 |
 | `-c 0,0,2` | 各层 cutoff（逗号分隔），频次 <= cutoff 的 N-gram 被丢弃 |
-| `-d ABS` | 各层折扣方法，指定 N 次对应 N 层。可选 `ABS [c]` 或 `LIN [d]` |
 | `-w 84054` | 词汇表大小（freq_dict.txt 行数） |
+
+折扣方法固定为 Modified Kneser-Ney，无需指定。
 
 可选剪枝：
 
@@ -94,7 +94,6 @@ sime-construct output/raw.3gram \
     -n 3 \
     -o output/raw.slm \
     -c 0,0,2 \
-    -d ABS -d ABS -d ABS \
     -w 84054 \
     -r 15000,180000,300000
 ```
@@ -158,7 +157,6 @@ $SIME/sime-count -n 3 -d freq_dict.txt -s $OUT/swap.bin -o $OUT/raw.3gram corpus
 $SIME/sime-construct $OUT/raw.3gram \
     -n 3 -o $OUT/raw.slm \
     -c 0,0,2 \
-    -d ABS -d ABS -d ABS \
     -w $VOCAB
 
 # 5. 压缩
