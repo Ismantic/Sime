@@ -27,11 +27,11 @@ struct HeapItem {
     bool operator<(const HeapItem& other) const { return approx < other.approx; }
 };
 
-using ArrayBuffer = std::vector<ArrayItem>;
-using HeapBuffer = std::vector<HeapItem>;
+using ArrayVec = std::vector<ArrayItem>;
+using HeapVec = std::vector<HeapItem>;
 
 template <typename Cmp>
-void BubbleUp(HeapBuffer& heap, ArrayBuffer& arr, int index, Cmp cmp) {
+void BubbleUp(HeapVec& heap, ArrayVec& arr, int index, Cmp cmp) {
     while (index > 0) {
         int parent = (index - 1) / 2;
         if (!cmp(heap[index], heap[parent])) {
@@ -49,7 +49,7 @@ void BubbleUp(HeapBuffer& heap, ArrayBuffer& arr, int index, Cmp cmp) {
 }
 
 template <typename Cmp>
-void SiftDown(HeapBuffer& heap, ArrayBuffer& arr, int index, int bottom, Cmp cmp) {
+void SiftDown(HeapVec& heap, ArrayVec& arr, int index, int bottom, Cmp cmp) {
     int left = 0;
     while ((left = 2 * index + 1) < bottom) {
         int best = index;
@@ -85,8 +85,8 @@ void CompressValues(std::map<float, int>& values,
                     std::map<float, int>& mapping,
                     std::vector<float>& table,
                     std::uint32_t limit) {
-    ArrayBuffer arr;
-    HeapBuffer heap;
+    ArrayVec arr;
+    HeapVec heap;
     arr.reserve(values.size());
     heap.reserve(values.size());
 
