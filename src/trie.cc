@@ -2,15 +2,9 @@
 #include "ustr.h"
 
 #include <algorithm>
-#include <cmath>
-#include <cctype>
 #include <cstddef>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <map>
-#include <string_view>
 
 namespace sime {
 
