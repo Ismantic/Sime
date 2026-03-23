@@ -3,12 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <fstream>
 #include <limits>
-#include <map>
 #include <stdexcept>
-#include <vector>
 
 namespace sime {
 
@@ -281,11 +278,7 @@ std::size_t RawModel::LevelCount(int level) const {
 }
 
 std::size_t RawModel::LeaveCount() const {
-    if (level_sizes_.empty()) {
-        return 0;
-    }
-    const auto size = level_sizes_.back();
-    return (size == 0) ? 0 : static_cast<std::size_t>(size - 1);
+    return LevelCount(num_);
 }
 
 std::pair<std::size_t, std::size_t> RawModel::DownRange(int level, int index) const {

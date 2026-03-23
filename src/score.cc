@@ -145,10 +145,6 @@ void Scorer::Back(Pos& pos) const {
 }
 
 float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
-    return RawMove(s, w, r);
-}
-
-float_t Scorer::RawMove(Pos s, TokenID w, Pos& r) const {
     std::uint32_t level = s.level;
     std::uint32_t index = s.index;
 

@@ -9,10 +9,11 @@
 
 namespace sime {
 
+constexpr std::size_t ProTableSize = 1u << ProBits;
+constexpr std::size_t BowTableSize = 1u << BowBits;
+
 class Scorer {
 public:
-    static constexpr std::size_t ProTableSize = 1u << ProBits;
-    static constexpr std::size_t BowTableSize = 1u << BowBits;
 
     struct Pos {
         std::uint32_t level = 0;
@@ -53,7 +54,6 @@ private:
         std::uint32_t boe = 0;
     };
 
-    float_t RawMove(Pos s, TokenID w, Pos& r) const;
     std::size_t GetNode(int level, std::size_t b, std::size_t e, TokenID w) const;
     std::size_t GetLeave(std::size_t b, std::size_t e, TokenID w) const;
 
