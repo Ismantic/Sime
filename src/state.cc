@@ -52,43 +52,13 @@ void NetStates::Clear() {
     state_size_ = 0;
 }
 
-std::vector<State> NetStates::_GetStates() const {
+std::vector<State> NetStates::GetStates() const {
     std::vector<State> result;
     for (const auto& pair : pos_map_) {
         result.insert(result.end(), pair.second.begin(), pair.second.end());
     }
     std::sort(result.begin(), result.end());
     return result;
-}
-
-std::vector<State> NetStates::GetStates() const {
-    std::vector<State> sorted = _GetStates();
-    std::vector<State> filtered;
-    if (sorted.empty()) {
-        return filtered;
-    }
-    // TODO: Revisit these score filters. The current comparisons may not
-    // match the "smaller score is better" interpretation, and may also
-    // interact with Scorer::log_ semantics.
-    filtered.push_back(sorted[0]);
-    float_t top_score = sorted[0].score;
-    for (std::size_t i = 1; i < sorted.size(); ++i) {
-        float_t current = sorted[i].score;
-        if (current < ScoreMin) {
-            break;
-        }
-        if (top_score != 0.0) {
-            float_t ratio = current / top_score;
-            if (ratio < ScoreRatioL2) {
-                break;
-            }
-            if (ratio < ScoreRatioL1 && current < top_score) {
-                break;
-            }
-        }
-        filtered.push_back(sorted[i]);
-    }
-    return filtered;
 }
 
 void NetStates::Insert(const State& state) {
