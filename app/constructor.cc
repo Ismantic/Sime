@@ -8,15 +8,13 @@
 
 namespace {
 
-std::vector<std::string> SplitList(const char* arg) {
+std::vector<std::string> SplitList(const char* arg, char delim = ',') {
     std::vector<std::string> result;
     std::stringstream ss(arg);
     std::string item;
-    while (std::getline(ss, item, ' ')) {
+    while (std::getline(ss, item, delim)) {
         if (!item.empty()) {
-            if (!item.empty()) {
-                result.push_back(item);
-            }
+            result.push_back(item);
         }
     }
     return result;
@@ -51,7 +49,7 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             break;
         }
         case 'd': {
-            auto parts = SplitList(optarg);
+            auto parts = SplitList(optarg, ' ');
             if (parts.empty()) {
                 break;
             }

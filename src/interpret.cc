@@ -59,8 +59,9 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     InitNet(units, net);
 
     const std::size_t max_top = num == 0 ? 1 : num;
+    const std::size_t beam = max_top * 2;
     for (auto& column : net) {
-        column.states.SetMaxTop(max_top);
+        column.states.SetMaxTop(beam);
     }
     State init_state(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init_state);
@@ -73,8 +74,8 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     }
 
     const std::size_t total =
-        std::min<std::size_t>(max_top, tail_states.size());
-    for (std::size_t rank = 0; rank < total; ++rank) {
+        std::min<std::size_t>(beam, tail_states.size());
+    for (std::size_t rank = 0; rank < total && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], net.size() - 1);
         if (path.empty()) {
             continue;
@@ -91,7 +92,16 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
             continue;
         }
         result.text = std::move(composed);
-        results.push_back(std::move(result));
+        bool duplicate = false;
+        for (const auto& existing : results) {
+            if (existing.text == result.text) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) {
+            results.push_back(std::move(result));
+        }
     }
     return results;
 }

@@ -1,6 +1,5 @@
 #include "score.h"
 
-#include <cassert>
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -129,7 +128,9 @@ void Scorer::Back(Pos& pos) const {
         return;
     }
     const auto& nodes = node_levels_[pos.level];
-    assert(pos.index + 1 < nodes.size());
+    if (pos.index + 1 >= nodes.size()) {
+        return;
+    }
     const auto& node = nodes[pos.index];
     const auto& next = nodes[pos.index + 1];
     if (node.down == next.down) {
