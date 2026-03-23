@@ -63,8 +63,10 @@ public:
 
     std::vector<State> GetStates() const;
 
+private:
     using PosMap = std::map<Scorer::Pos, TopStates>;
 
+public:
     class iterator {
     public:
         iterator() = default;
@@ -87,7 +89,6 @@ public:
     iterator end();
 
 private:
-    std::vector<State> _GetStates() const;
     void PushScoreHeap(float_t score, const Scorer::Pos& pos);
     void PopScoreHeap();
     void RefreshTopIndex(std::size_t index);
@@ -96,9 +97,6 @@ private:
 
 private:
     static constexpr std::size_t BeamSize = 48;
-    static constexpr float_t ScoreRatioL1 = 0.12;
-    static constexpr float_t ScoreRatioL2 = 0.02;
-    static constexpr float_t ScoreMin = -40.0;
 
     PosMap pos_map_;
     std::size_t state_size_ = 0;
