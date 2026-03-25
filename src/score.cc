@@ -99,9 +99,11 @@ bool Scorer::Load(const std::filesystem::path& path) {
         }
         LeaveEntry entry;
         entry.token = static_cast<TokenID>(w0 & TokenMask);
-        std::uint32_t pro_low = (w0 >> TokenBits) & 0x3FFFU;
-        std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & 0x3U;
-        entry.pro = (pro_high << 14U) | pro_low;
+        constexpr std::uint32_t LeafProLow = 32U - TokenBits;
+        constexpr std::uint32_t LeafProHigh = ProBits - LeafProLow;
+        std::uint32_t pro_low = (w0 >> TokenBits) & ((1U << LeafProLow) - 1U);
+        std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & ((1U << LeafProHigh) - 1U);
+        entry.pro = (pro_high << LeafProLow) | pro_low;
         entry.bon = w1 & BonMask;
         entry.boe = (w1 >> BonBits) & BoeMask;
         leave_level_[static_cast<std::size_t>(idx)] = entry;
