@@ -536,11 +536,13 @@ CompactLeave DoPackLeave(TokenID wid,
         throw std::runtime_error("compact: leave value exceeds limit");
     }
     CompactLeave leaf;
+    constexpr std::uint32_t LeafProLow = 32U - TokenBits;
+    constexpr std::uint32_t LeafProHigh = ProBits - LeafProLow;
     leaf.w0 = (wid & ((1U << TokenBits) - 1U)) |
-                 ((pro_index & 0x3FFFU) << TokenBits);
+                 ((pro_index & ((1U << LeafProLow) - 1U)) << TokenBits);
     leaf.w1 = (bon & ((1U << BonBits) - 1U)) |
                  ((boe & ((1U << BoeBits) - 1U)) << BonBits) |
-                 (((pro_index >> 14U) & 0x3U) << (BonBits + BoeBits));
+                 (((pro_index >> LeafProLow) & ((1U << LeafProHigh) - 1U)) << (BonBits + BoeBits));
     return leaf;
 }
 
