@@ -9,7 +9,6 @@
 - **量化压缩** — 概率/backoff 权重量化 + threaded backoff 索引，模型体积压缩约 50%
 - **拼音 Trie** — 音节前缀树，支持多音字和词组匹配
 - **Viterbi 解码** — Beam search 求解最优汉字序列
-- **内置模型** — 基于维基百科、人民日报、THUCNews 语料训练，274,506 词条
 
 ## 构建
 
@@ -46,7 +45,7 @@ cmake --build build
      → sime-construct (构建 backoff 模型)
      → sime-compact (量化压缩) → model.bin
 
-词典 + pypinyin → pinyin_dict.txt
+词典 + pinyin → pinyin_dict.txt
      → sime-converter → trie.bin
 ```
 
@@ -79,7 +78,6 @@ app/
   counter.cc     - sime-count 入口
 docs/
   TRAINING.md    - 训练流程文档
-  TRAIN_V1.md    - V1 训练记录
 ```
 
 ## License
