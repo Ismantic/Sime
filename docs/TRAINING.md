@@ -2,60 +2,43 @@
 
 ## 前置条件
 
-- 编译 Sime：`cmake --build build -j$(nproc)`
-- 编译 IsmaCut：`cmake --build /path/to/IsmaCut/build -j$(nproc)`
-
-## 源数据
-
-| 文件 | 说明 |
-|------|------|
-| `sime_dict.v0.txt` | 拼音词典源文件，格式：`word id [pinyin ...]` |
-| `dict.txt` | 词频文件（IsmaCut 用），格式：`word\tfreq` |
-| `corpus.txt` | 训练语料，每行一句中文 |
+- 编译 Sime：`cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build`
+- 准备好 `pinyin_dict.txt`（格式：`word pinyin`，音节用 `'` 连接，如 `中国 zhong'guo`）
+- 准备好 `freq_dict.txt`（格式：`word\tfreq`，词条与 pinyin_dict.txt 一致）
+- 准备好分词语料 `corpus_seg.txt`（每行一句，空格分隔，使用与 freq_dict.txt 相同的词典由 IsmaCut 分词产生）
 
 ## Pipeline
 
 ```
-sime_dict.v0.txt + dict.txt
-  --> gen_dicts.py --> pinyin_dict.txt + freq_dict.txt
+pinyin_dict.txt → sime-converter → trie.bin
 
-corpus.txt
-  --> ismacut (分词)
-  --> sime-count (N-gram 统计)
-  --> sime-construct (构建语言模型)
-  --> sime-compact (量化压缩)
-  --> lm.t3g
+corpus_seg.txt → sime-count (trigram 统计)
+             → sime-construct (构建 backoff 模型)
+             → sime-compact (量化压缩)
+             → model.bin
 
-pinyin_dict.txt
-  --> sime-converter --> pinyin.ime.bin
-
-运行时: pinyin.ime.bin + lm.t3g --> ime_interpreter
+运行时: trie.bin + model.bin → ime_interpreter
 ```
 
 ## 步骤
 
-### 1. 生成词典
+### 1. 构建拼音 Trie
 
 ```bash
-python3 gen_dicts.py sime_dict.v0.txt dict.txt .
+sime-converter pinyin_dict.txt output/trie.bin
 ```
 
-从源数据生成两个词典文件（词集合相同，84054 条）：
-- `pinyin_dict.txt` — 格式：`word [pinyin1 pinyin2 ...]`（标点无拼音）
-- `freq_dict.txt` — 格式：`word\tfreq`（查不到词频的赋 1）
+将拼音词典编译为二进制 Trie。每个拼音音节作为边，节点存储候选词 TokenID。
 
-### 2. 分词
+### 2. N-gram 统计
 
 ```bash
-ismacut freq_dict.txt --pipe < corpus.txt 2>/dev/null > corpus_seg.txt
-```
-
-IsmaCut DAG+DP 分词，输出空格分隔的分词结果。
-
-### 3. N-gram 统计
-
-```bash
-sime-count -n 3 -d freq_dict.txt -s output/swap.bin -o output/raw.3gram corpus_seg.txt
+sime-count -n 3 \
+    -d freq_dict.txt \
+    -s output/swap.bin \
+    -o output/raw.3gram \
+    -c 83886080 \
+    corpus_seg.txt
 ```
 
 | 参数 | 说明 |
@@ -64,66 +47,44 @@ sime-count -n 3 -d freq_dict.txt -s output/swap.bin -o output/raw.3gram corpus_s
 | `-d freq_dict.txt` | 词典（按行序分配 TokenID） |
 | `-s output/swap.bin` | 外部排序临时文件 |
 | `-o output/raw.3gram` | 输出文件 |
+| `-c 83886080` | 内存中最大 trigram 条目数，越大 flush 越少，推荐按可用内存调整 |
 | 末尾 | 输入分词文件（可多个） |
 
 输出二进制格式：每条记录 `[TokenID x 3, uint32_t freq]`，按字典序排列。
 
-### 4. 构建语言模型
+### 3. 构建语言模型
 
 ```bash
 sime-construct output/raw.3gram \
     -n 3 \
     -o output/raw.slm \
     -c 0,0,2 \
-    -w 84054
+    -w $VOCAB \
+    -r 50000,600000,1000000
 ```
 
 | 参数 | 说明 |
 |------|------|
 | `-n 3` | 3-gram 模型 |
 | `-o` | 输出路径 |
-| `-c 0,0,2` | 各层 cutoff（逗号分隔），频次 <= cutoff 的 N-gram 被丢弃 |
-| `-w 84054` | 词汇表大小（freq_dict.txt 行数） |
+| `-c 0,0,2` | 各层 cutoff（逗号分隔），频次 ≤ cutoff 的 N-gram 被丢弃 |
+| `-w $VOCAB` | 词汇表大小（freq_dict.txt 行数） |
+| `-r 50000,600000,1000000` | 各层保留最大条目数（entropy pruning），按模型体积需求调整 |
 
-折扣方法固定为 Modified Kneser-Ney，无需指定。
+折扣方法固定为 Modified Kneser-Ney。输出 `raw.slm`，未压缩的 backoff 语言模型。
 
-可选剪枝：
+### 4. 压缩
 
 ```bash
-sime-construct output/raw.3gram \
-    -n 3 \
-    -o output/raw.slm \
-    -c 0,0,2 \
-    -w 84054 \
-    -r 15000,180000,300000
+sime-compact output/raw.slm output/model.bin
 ```
 
-| 参数 | 说明 |
-|------|------|
-| `-r 15000,180000,300000` | 各层保留的最大条目数（逗号分隔），基于 entropy pruning 裁剪低价值 N-gram |
+量化概率和 backoff 权重，计算 threaded backoff 索引。
 
-输出 `raw.slm`，未压缩的 backoff 语言模型。
-
-### 5. 压缩
+### 5. 验证
 
 ```bash
-sime-compact output/raw.slm output/lm.t3g
-```
-
-量化概率和 backoff 权重，计算 threaded backoff 索引。输出 `lm.t3g`（~5.5 MB）。
-
-### 6. 构建拼音 Trie
-
-```bash
-sime-converter pinyin_dict.txt output/pinyin.ime.bin
-```
-
-将拼音词典编译为二进制 Trie。每个拼音音节作为边，节点存储候选词 TokenID。输出 `pinyin.ime.bin`（~2 MB）。
-
-### 7. 验证
-
-```bash
-echo "nihao" | ime_interpreter --trie output/pinyin.ime.bin --model output/lm.t3g
+echo "nihao" | ime_interpreter --trie output/trie.bin --model output/model.bin
 ```
 
 预期第一个候选为「你好」。
@@ -135,36 +96,35 @@ echo "nihao" | ime_interpreter --trie output/pinyin.ime.bin --model output/lm.t3
 set -e
 
 SIME=./build
-ISMACUT=/path/to/IsmaCut/build/ismacut
-DICT_SRC=sime_dict.v0.txt
-FREQ_SRC=dict.txt
-CORPUS=corpus.txt
+CORPUS_SEG=corpus_seg.txt
 OUT=output
+VOCAB=$(wc -l < freq_dict.txt)
 
 mkdir -p $OUT
 
-# 1. 生成词典
-python3 gen_dicts.py $DICT_SRC $FREQ_SRC .
-VOCAB=$(wc -l < freq_dict.txt)
+# 1. 拼音 Trie
+$SIME/sime-converter pinyin_dict.txt $OUT/trie.bin
 
-# 2. 分词
-$ISMACUT freq_dict.txt --pipe < $CORPUS 2>/dev/null > corpus_seg.txt
+# 2. N-gram 统计
+$SIME/sime-count -n 3 -d freq_dict.txt \
+    -s $OUT/swap.bin -o $OUT/raw.3gram \
+    -c 83886080 $CORPUS_SEG
 
-# 3. N-gram 统计
-$SIME/sime-count -n 3 -d freq_dict.txt -s $OUT/swap.bin -o $OUT/raw.3gram corpus_seg.txt
-
-# 4. 构建语言模型
+# 3. 构建语言模型（含剪枝）
 $SIME/sime-construct $OUT/raw.3gram \
     -n 3 -o $OUT/raw.slm \
-    -c 0,0,2 \
-    -w $VOCAB
+    -c 0,0,2 -w $VOCAB \
+    -r 50000,600000,1000000
 
-# 5. 压缩
-$SIME/sime-compact $OUT/raw.slm $OUT/lm.t3g
+# 4. 压缩
+$SIME/sime-compact $OUT/raw.slm $OUT/model.bin
 
-# 6. 拼音 Trie
-$SIME/sime-converter pinyin_dict.txt $OUT/pinyin.ime.bin
-
-# 7. 验证
-echo "nihao" | $SIME/ime_interpreter --trie $OUT/pinyin.ime.bin --model $OUT/lm.t3g
+# 5. 验证
+echo "nihao" | $SIME/ime_interpreter --trie $OUT/trie.bin --model $OUT/model.bin
 ```
+
+## 注意事项
+
+- 词典大小不应超过 262,143（TokenBits=18 的上限），超过需调整 `include/compact.h` 中的位域常量
+- `-c`（count_max）越大，swap 文件越小、速度越快，但内存占用越高（每条约 80 字节）
+- `-r` 参数控制模型体积，数值越小模型越小但精度下降
