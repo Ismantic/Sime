@@ -37,7 +37,7 @@ cmake --build build
 
 ## 训练
 
-训练流程依赖 [IsmaCut](https://github.com/Ismantic/IsmaCut) 分词器。完整步骤见 [docs/TRAINING.md](docs/TRAINING.md)，V1 训练记录见 [docs/TRAIN_V1.md](docs/TRAIN_V1.md)。
+训练流程依赖 [IsmaCut](https://github.com/Ismantic/IsmaCut) 分词器。完整步骤见 [docs/TRAINING.md](docs/TRAINING.md)。
 
 简要流程：
 
