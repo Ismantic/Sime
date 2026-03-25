@@ -1,0 +1,11 @@
+## 词典大小与 Compact 位数常量
+
+V1 词典 274,506 条，超过了 TokenBits=18 的上限 262,143，不得不将 TokenBits 改为 19（BowBits 从 14 降到 13）。
+
+下次训练时应控制词典大小不超过 262,143（2^18），建议对 IsmaCut 词频词典按 freq >= 3 过滤（约 259,539 条），然后将位数常量恢复：
+
+    include/compact.h:
+      TokenBits = 18  （当前 19）
+      BowBits   = 14  （当前 13）
+
+同时 src/compact.cc 和 src/score.cc 中 leaf 节点的 pro_index 拆分已改为基于常量计算，无需额外修改。
