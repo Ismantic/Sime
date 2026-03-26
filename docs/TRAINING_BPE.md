@@ -33,11 +33,11 @@ isma-tokenizer train --method bytepiece \
 
 ```bash
 # freq_dict.txt — 所有 piece 及其 score，供 sime-count 分配 TokenID
-python3 gen_freq_dict.py tokenizer.model freq_dict.txt
+python3 scripts/gen_freq_dict.py tokenizer.model freq_dict.txt
 
 # pinyin_token_dict.txt — 所有 piece 附拼音，供 sime-converter 构建 Trie
 # 单字多音字自动标注所有读音，非中文 piece 只输出 piece 不附拼音（converter 会跳过）
-python3 gen_token_pinyin.py tokenizer.model pinyin_token_dict.txt
+python3 scripts/gen_token_pinyin.py tokenizer.model pinyin_token_dict.txt
 ```
 
 `gen_token_pinyin.py` 依赖 `pypinyin` 库。
@@ -47,7 +47,7 @@ python3 gen_token_pinyin.py tokenizer.model pinyin_token_dict.txt
 用训练好的 BPE 模型对语料做分词，每行输出空格分隔的 piece 序列：
 
 ```bash
-python3 tokenize_corpus.py tokenizer.model corpus.txt corpus_tokenized.txt
+python3 scripts/tokenize_corpus.py tokenizer.model corpus.txt corpus_tokenized.txt
 ```
 
 `tokenize_corpus.py` 依赖编译好的 `isma_tokenizer` Python 模块（位于 IsmaTokenizer/build/python/）。
