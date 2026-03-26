@@ -86,7 +86,7 @@ bool TrieConverter::ParseLine(const std::string& line,
                               std::vector<std::string>& units) const {
     units.clear();
     token.clear();
-    if (line.empty() || line[0] == '#' || line[0] == '\n') {
+    if (line.empty() || line[0] == '\n') {
         return false;
     }
 
@@ -94,7 +94,7 @@ bool TrieConverter::ParseLine(const std::string& line,
     while (*ptr && IsWhitespace(*ptr)) {
         ++ptr;
     }
-    if (*ptr == '\0' || *ptr == '#') {
+    if (*ptr == '\0') {
         return false;
     }
     const char* start = ptr;
