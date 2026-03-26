@@ -10,9 +10,9 @@
 
 namespace sime {
 
-constexpr std::uint32_t TokenBits = 19;
+constexpr std::uint32_t TokenBits = 18;
 constexpr std::uint32_t ProBits = 16;
-constexpr std::uint32_t BowBits = 13;
+constexpr std::uint32_t BowBits = 14;
 constexpr std::uint32_t BonBits = 23;
 constexpr std::uint32_t BoeBits = 2;
 constexpr std::uint32_t DownBits = 23;
