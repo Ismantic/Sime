@@ -1,6 +1,6 @@
 # Sime 是语输入法
 
-基于 Trigram 语言模型的拼音输入法引擎。使用 Modified Kneser-Ney 平滑、entropy pruning 和量化压缩，配合拼音 Trie 实现拼音到汉字的转换。
+目标是做能持久长远更新的输入法，能始终用最简洁高效的方法来做输入法。
 
 ## 特性
 
