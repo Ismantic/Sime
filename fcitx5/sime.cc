@@ -286,7 +286,7 @@ void SimeEngine::updateUI(InputContext *ic) {
     // 预编辑 (照搬 reference 用 setPreedit)
     Text preeditText(st->preedit);
     preeditText.setCursor(st->preedit.size());
-    panel.setPreedit(preeditText);
+    panel.setClientPreedit(preeditText);
 
     // 解码
     if (!interpreter_) {
