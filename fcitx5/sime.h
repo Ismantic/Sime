@@ -49,8 +49,6 @@ private:
     void updateUI(InputContext *ic);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
-    std::vector<std::size_t> validPrefixLengths(const std::string &preedit);
-
     Instance *instance_;
     FactoryFor<SimeState> factory_;
     std::unique_ptr<sime::Interpreter> interpreter_;
