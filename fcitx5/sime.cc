@@ -176,9 +176,10 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
-    // 与官方一致：检查客户端是否支持内联 preedit
-    // 支持时送 clientPreedit（显示在应用内），不支持时送 preedit（显示在候选框）
-    if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
+    bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
+    FCITX_INFO() << "Sime: CapabilityFlag::Preedit = " << hasPreeditCap
+                 << " preedit=" << st->preedit;
+    if (hasPreeditCap) {
         panel.setClientPreedit(preeditText);
         panel.setPreedit(Text{});
     } else {
