@@ -287,10 +287,10 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // === Layer 1: Full sentence N-best (covers all input) ===
     {
         const auto tail = net.back().states.GetStates();
-        // Limit Layer 1 to ~2/3 of max_top, reserving space for word candidates
-        const std::size_t layer1_limit = std::max<std::size_t>(max_top * 2 / 3, 3);
+        // libime uses nbest=3 for full sentences; keep most space for word candidates
+        constexpr std::size_t kNBest = 3;
         const std::size_t scan = std::min<std::size_t>(beam, tail.size());
-        for (std::size_t rank = 0; rank < scan && results.size() < layer1_limit; ++rank) {
+        for (std::size_t rank = 0; rank < scan && results.size() < kNBest; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::u32string composed;
