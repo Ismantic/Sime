@@ -178,9 +178,6 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
-    { std::ofstream f("/tmp/sime_debug.log", std::ios::app);
-      f << "CapabilityFlag::Preedit=" << hasPreeditCap
-        << " preedit=" << st->preedit << "\n"; }
     if (hasPreeditCap) {
         panel.setClientPreedit(preeditText);
         panel.setPreedit(Text{});
@@ -188,6 +185,12 @@ void SimeEngine::updateUI(InputContext *ic) {
         panel.setClientPreedit(Text{});
         panel.setPreedit(preeditText);
     }
+    { std::ofstream f("/tmp/sime_debug.log", std::ios::app);
+      f << "cap=" << hasPreeditCap
+        << " preedit_str=" << st->preedit
+        << " panel.preedit=" << panel.preedit().toString()
+        << " panel.clientPreedit=" << panel.clientPreedit().toString()
+        << "\n"; }
 
     if (!interpreter_) {
         ic->updatePreedit();
