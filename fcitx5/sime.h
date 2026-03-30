@@ -4,7 +4,6 @@
 #include "sime-state.h"
 #include <fcitx-config/iniparser.h>
 #include <fcitx-utils/i18n.h>
-#include <fcitx/action.h>
 #include <fcitx/addonfactory.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/inputcontextproperty.h>
@@ -12,7 +11,6 @@
 #include <fcitx/instance.h>
 #include <memory>
 
-// Sime 核心库
 #include "interpret.h"
 
 namespace fcitx {
@@ -22,31 +20,18 @@ public:
     SimeEngine(Instance *instance);
     ~SimeEngine() override;
 
-    // InputMethodEngine 接口实现
     void keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) override;
+    void reset(const InputMethodEntry &entry, InputContextEvent &event) override;
+    void activate(const InputMethodEntry &entry, InputContextEvent &event) override;
+    void deactivate(const InputMethodEntry &entry, InputContextEvent &event) override;
 
-    void reset(const InputMethodEntry &entry,
-               InputContextEvent &event) override;
-
-    void activate(const InputMethodEntry &entry,
-                  InputContextEvent &event) override;
-
-    void deactivate(const InputMethodEntry &entry,
-                    InputContextEvent &event) override;
-
-    // 获取配置描述（用于 fcitx5-configtool）
     const Configuration *getConfig() const override { return &config_; }
-
-    // 设置配置
     void setConfig(const RawConfig &config) override {
         config_.load(config);
         safeSaveAsIni(config_, "conf/sime.conf");
     }
-
-    // 重新加载配置
     void reloadConfig() override;
 
-    // 输入法列表（用于 fcitx5 发现输入法）
     std::vector<InputMethodEntry> listInputMethods() override {
         std::vector<InputMethodEntry> result;
         InputMethodEntry entry("sime-pinyin", _("Sime"), "zh_CN", "sime");
@@ -55,37 +40,20 @@ public:
         return result;
     }
 
-    // 获取工厂名称
-    std::string addonName() const { return "sime"; }
-
 private:
-    // 内部方法
-    void initializeInterpreter();
-    void updateCandidates(InputContext *ic);
-    void selectCandidate(InputContext *ic, int index);
-    void commitPreedit(InputContext *ic);
-    void clearPreedit(InputContext *ic);
+    void initInterpreter();
+    void updateUI(InputContext *ic);
+    void commitCandidate(InputContext *ic, int localIdx);
+    void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
 
-    // 提取拼音前缀（用于部分匹配）
-    std::string extractPinyinPrefix(const std::string& pinyin) const;
-
-    // 查找所有有效的拼音前缀（用于渐进式匹配）
-    std::vector<std::size_t> findAllValidPrefixes(const std::string& pinyin) const;
-
-    // Fcitx5 实例
     Instance *instance_;
-
-    // 工厂用于创建 SimeState
     FactoryFor<SimeState> factory_;
-
-    // Sime 核心库
     std::unique_ptr<sime::Interpreter> interpreter_;
 
-    // 配置
     struct Config : public Configuration {
-        Option<int> numCandidates{this, "NumCandidates", "候选词数量", 10};
-        Option<int> pageSize{this, "PageSize", "每页候选数", 7};
+        Option<int> pageSize{this, "PageSize", "每页候选数", 9};
+        Option<int> nbest{this, "NBest", "候选总数", 18};
         Option<std::string> dictPath{this, "DictPath", "词典路径",
                                      "/usr/share/sime/trie.bin"};
         Option<std::string> lmPath{this, "LMPath", "语言模型路径",
@@ -95,7 +63,6 @@ private:
     };
     Config config_;
 
-    // 允许 SimeCandidateWord 访问 selectCandidate
     friend class SimeCandidateWord;
 };
 
