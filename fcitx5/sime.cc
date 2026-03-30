@@ -8,7 +8,6 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
-#include <fstream>
 #include <set>
 
 namespace fcitx {
@@ -185,12 +184,6 @@ void SimeEngine::updateUI(InputContext *ic) {
         panel.setClientPreedit(Text{});
         panel.setPreedit(preeditText);
     }
-    { std::ofstream f("/tmp/sime_debug.log", std::ios::app);
-      f << "cap=" << hasPreeditCap
-        << " preedit_str=" << st->preedit
-        << " panel.preedit=" << panel.preedit().toString()
-        << " panel.clientPreedit=" << panel.clientPreedit().toString()
-        << "\n"; }
 
     if (!interpreter_) {
         ic->updatePreedit();
@@ -223,6 +216,9 @@ void SimeEngine::updateUI(InputContext *ic) {
         }
     }
 
+    if (!seen.empty()) {
+        cl->setCursorIndex(0);
+    }
     panel.setCandidateList(std::move(cl));
     ic->updatePreedit();
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
