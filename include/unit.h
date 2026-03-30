@@ -56,10 +56,19 @@ public:
     static const UnitEntry* GetDict(std::size_t& count);
 };
 
+struct ParseResult {
+    bool complete = false;
+    std::vector<Unit> units;
+    std::size_t matched_len = 0;
+};
+
 class UnitParser {
 public:
     bool ParseStr(std::string_view token, std::vector<Unit>& units) const;
     bool ParseUnits(std::string_view input, std::vector<Unit>& units) const;
+
+    ParseResult ParseTokenEnhanced(std::string_view token,
+                                   bool allow_partial = true) const;
 
     static bool IsDelimiter(char ch);
 
