@@ -43,7 +43,6 @@ public:
 private:
     void initInterpreter();
     void updateUI(InputContext *ic);
-    void commitCandidate(InputContext *ic, int localIdx);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
 
