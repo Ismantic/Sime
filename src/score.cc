@@ -189,6 +189,13 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
     return cost + pro_table_[node_levels_[0][0].pro];
 }
 
+float_t Scorer::UnknownPenalty() const {
+    if (node_levels_.empty() || node_levels_[0].empty()) {
+        return -20.0;
+    }
+    return pro_table_[node_levels_[0][0].pro];
+}
+
 std::size_t Scorer::GetNode(int level,
                             std::size_t begin,
                             std::size_t end,

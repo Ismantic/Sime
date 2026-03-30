@@ -36,6 +36,7 @@ public:
 
     float_t ScoreMove(Pos s, TokenID w, Pos& r) const;
     void Back(Pos& pos) const;
+    float_t UnknownPenalty() const;
 
 private:
     struct NodeEntry {

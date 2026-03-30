@@ -61,9 +61,6 @@ private:
     void InitNet(const std::vector<Unit>& units,
                  std::vector<Node>& net) const;
 
-    // Sentence net: SentenceToken at every column → multi-endpoint decode
-    void InitSentenceNet(const std::vector<Unit>& units,
-                         std::vector<Node>& net) const;
 
     void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,

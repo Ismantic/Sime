@@ -3,6 +3,7 @@
 #include "ustr.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace sime {
@@ -258,42 +259,6 @@ bool Interpreter::ParseWithBoundaries(
     return !units.empty();
 }
 
-void Interpreter::InitSentenceNet(const std::vector<Unit>& units,
-                                  std::vector<Node>& net) const {
-    net.clear();
-    net.resize(units.size() + 2);
-
-    // Word edges: same as InitNet
-    for (std::size_t start = 0; start < units.size(); ++start) {
-        auto& bucket = net[start].es;
-        bool inserted = false;
-        const Trie::Node* trie_node = trie_.Root();
-        std::size_t pos = start;
-        while (trie_node && pos < units.size()) {
-            trie_node = trie_.DoMove(trie_node, units[pos]);
-            ++pos;
-            if (!trie_node) break;
-            std::uint32_t count = 0;
-            const std::uint32_t* tokens = trie_.GetToken(trie_node, count);
-            for (std::uint32_t idx = 0; idx < count; ++idx) {
-                TokenID wid = static_cast<TokenID>(tokens[idx]);
-                bucket.push_back({start, pos, wid});
-            }
-            if (count > 0) inserted = true;
-        }
-        if (!inserted) {
-            bucket.push_back({start, start + 1, ScoreNotToken});
-        }
-    }
-
-    // SentenceToken at EVERY column (not just the last).
-    // This enables collecting candidates at all prefix lengths.
-    const std::size_t end_col = units.size() + 1;
-    for (std::size_t col = 1; col <= units.size(); ++col) {
-        net[col].es.push_back({col, end_col, SentenceToken});
-    }
-}
-
 std::vector<SentenceResult> Interpreter::DecodeSentence(
     std::string_view input,
     std::size_t num) const {
@@ -307,58 +272,114 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
         return results;
     }
 
-    // 2. Build sentence net and run forward pass
-    std::vector<Node> net;
-    InitSentenceNet(units, net);
-
     const std::size_t max_top = num == 0 ? 1 : num;
-    const std::size_t beam = std::max<std::size_t>(max_top * 4, units.size() * 3);
-    for (auto& column : net) {
-        column.states.SetMaxTop(beam);
-    }
-    State init_state(0.0, 0, Scorer::Pos{}, nullptr, 0);
-    net[0].states.Insert(init_state);
+    const std::size_t total_bytes = input.size();
 
+    // Build lattice once, shared by Layer 1 and Layer 2
+    std::vector<Node> net;
+    InitNet(units, net);
+    const std::size_t beam = max_top * 2;
+    for (auto& col : net) col.states.SetMaxTop(beam);
+    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    net[0].states.Insert(init);
     Process(net);
 
-    // 3. Collect from end node (has candidates from all prefix lengths)
-    const std::size_t end_col = units.size() + 1;
-    const auto tail_states = net[end_col].states.GetStates();
-    if (tail_states.empty()) return results;
-
-    const std::size_t scan = std::min<std::size_t>(beam, tail_states.size());
-    for (std::size_t rank = 0; rank < scan && results.size() < max_top; ++rank) {
-        auto path = Backtrace(tail_states[rank], end_col);
-        if (path.empty()) continue;
-
-        // Determine prefix length: last word link's end = unit column
-        std::size_t prefix_units = path.back().end;
-        if (prefix_units == 0 || prefix_units > units.size()) continue;
-        std::size_t matched_bytes = unit_byte_end[prefix_units - 1];
-
-        // Build text
-        std::u32string composed;
-        composed.reserve(path.size() * 4);
-        for (const auto& word : path) {
-            composed += ToText(word, units);
-        }
-        if (composed.empty()) continue;
-
-        // Deduplicate
-        bool duplicate = false;
-        for (const auto& existing : results) {
-            if (existing.text == composed && existing.matched_len == matched_bytes) {
-                duplicate = true;
-                break;
+    // === Layer 1: Full sentence N-best (covers all input) ===
+    {
+        const auto tail = net.back().states.GetStates();
+        // Limit Layer 1 to ~2/3 of max_top, reserving space for word candidates
+        const std::size_t layer1_limit = std::max<std::size_t>(max_top * 2 / 3, 3);
+        const std::size_t scan = std::min<std::size_t>(beam, tail.size());
+        for (std::size_t rank = 0; rank < scan && results.size() < layer1_limit; ++rank) {
+            auto path = Backtrace(tail[rank], net.size() - 1);
+            if (path.empty()) continue;
+            std::u32string composed;
+            composed.reserve(path.size() * 4);
+            for (const auto& w : path) composed += ToText(w, units);
+            if (composed.empty()) continue;
+            bool dup = false;
+            for (const auto& e : results)
+                if (e.text == composed) { dup = true; break; }
+            if (!dup) {
+                SentenceResult r;
+                r.text = std::move(composed);
+                r.score = -tail[rank].score;
+                r.matched_len = total_bytes;  // full match
+                results.push_back(std::move(r));
             }
         }
-        if (!duplicate) {
-            SentenceResult r;
-            r.text = std::move(composed);
-            r.score = -tail_states[rank].score;
-            r.matched_len = matched_bytes;
-            results.push_back(std::move(r));
+    }
+
+    const std::size_t layer1_size = results.size();
+
+    // === Layer 2: Word/phrase candidates from BOS with distance penalty ===
+    // Similar to libime: distancePenalty = unknownPenalty / 1.8
+    constexpr float_t kDistancePenaltyFactor = 3.0;
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / kDistancePenaltyFactor;
+
+    {
+
+        // Collect best states at each intermediate column (prefix endpoints)
+        for (std::size_t col = 1; col < units.size(); ++col) {
+            // Add SentenceToken cost to get final score at this prefix
+            const auto& col_states = net[col].states.GetStates();
+            if (col_states.empty()) continue;
+
+            std::size_t distance = units.size() - col;
+            float_t dist_penalty =
+                static_cast<float_t>(distance) * penalty_per_unit;
+            std::size_t matched_bytes = unit_byte_end[col - 1];
+
+            const std::size_t col_scan = std::min<std::size_t>(beam, col_states.size());
+            for (std::size_t rank = 0; rank < col_scan; ++rank) {
+                const auto& st = col_states[rank];
+
+                // Score the SentenceToken transition from this state
+                Scorer::Pos sent_pos{};
+                float_t sent_step =
+                    scorer_.ScoreMove(st.pos, SentenceToken, sent_pos);
+                float_t raw_score = -(st.score + sent_step);
+                float_t adjusted = raw_score - dist_penalty;
+
+                // Backtrace to get the text.
+                // Pass SIZE_MAX as end so Backtrace won't strip the last link
+                // (that stripping is for removing the SentenceToken link,
+                //  which doesn't apply here since we're at an intermediate column).
+                auto path = Backtrace(st, SIZE_MAX);
+                if (path.empty()) continue;
+
+                std::u32string composed;
+                composed.reserve(path.size() * 4);
+                for (const auto& w : path) composed += ToText(w, units);
+                if (composed.empty()) continue;
+
+                bool dup = false;
+                for (const auto& e : results)
+                    if (e.text == composed && e.matched_len == matched_bytes) {
+                        dup = true; break;
+                    }
+                if (!dup) {
+                    SentenceResult r;
+                    r.text = std::move(composed);
+                    r.score = adjusted;
+                    r.matched_len = matched_bytes;
+                    results.push_back(std::move(r));
+                }
+            }
         }
+    }
+
+    // Sort Layer 2 (partial matches) by adjusted score.
+    // Layer 1 (full matches) already sorted by LM score and stays in front.
+    std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
+              results.end(),
+              [](const SentenceResult& a, const SentenceResult& b) {
+                  return a.score > b.score;
+              });
+
+    if (results.size() > max_top) {
+        results.resize(max_top);
     }
     return results;
 }

@@ -13,10 +13,11 @@ struct Options {
     std::filesystem::path trie;
     std::filesystem::path model;
     std::size_t num = 5;
+    bool sentence = false;
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--num N]\n";
+    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--num N] [--sentence]\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -28,6 +29,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.model = argv[++i];
         } else if (arg == "--num" && i + 1 < argc) {
             opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));
+        } else if (arg == "--sentence" || arg == "-s") {
+            opts.sentence = true;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -77,16 +80,31 @@ int main(int argc, char** argv) {
         if (line.empty()) {
             continue;
         }
-        auto results = interpreter.DecodeText(line, opts.num);
-        if (results.empty()) {
-            std::cout << "  (没有候选)\n";
-            continue;
-        }
-        for (std::size_t idx = 0; idx < results.size(); ++idx) {
-            const auto& result = results[idx];
-            std::string utf8 = sime::ustr::FromU32(result.text);
-            std::cout << "  [" << idx << "] " << utf8 << " (score "
-                      << std::fixed << std::setprecision(3) << result.score << ")\n";
+        if (opts.sentence) {
+            auto results = interpreter.DecodeSentence(line, opts.num);
+            if (results.empty()) {
+                std::cout << "  (没有候选)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& r = results[idx];
+                std::string utf8 = sime::ustr::FromU32(r.text);
+                std::cout << "  [" << idx << "] " << utf8
+                          << " (score " << std::fixed << std::setprecision(3) << r.score
+                          << ", matched " << r.matched_len << "/" << line.size() << ")\n";
+            }
+        } else {
+            auto results = interpreter.DecodeText(line, opts.num);
+            if (results.empty()) {
+                std::cout << "  (没有候选)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& result = results[idx];
+                std::string utf8 = sime::ustr::FromU32(result.text);
+                std::cout << "  [" << idx << "] " << utf8 << " (score "
+                          << std::fixed << std::setprecision(3) << result.score << ")\n";
+            }
         }
     }
     return 0;

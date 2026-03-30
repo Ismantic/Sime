@@ -43,6 +43,15 @@ target_link_libraries(sime-compact PRIVATE sime_core)
 add_executable(ime_interpreter ${NEW_ROOT}/app/interpreter.cc)
 target_link_libraries(ime_interpreter PRIVATE sime_core)
 
+# Compare tool (optional, requires libime)
+find_library(LIBIME_PINYIN IMEPinyin)
+find_library(LIBIME_CORE IMECore)
+if(LIBIME_PINYIN AND LIBIME_CORE)
+    add_executable(sime-compare ${NEW_ROOT}/app/compare.cc)
+    target_link_libraries(sime-compare PRIVATE sime_core ${LIBIME_PINYIN} ${LIBIME_CORE})
+    target_include_directories(sime-compare PRIVATE /usr/include/LibIME /usr/include/Fcitx5/Utils /usr/include/Fcitx5/Core)
+endif()
+
 set(_sime_targets
     sime-count
     sime-construct
