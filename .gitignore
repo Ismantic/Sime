@@ -1,0 +1,25 @@
+# Build
+build/
+build_fcitx5/
+
+# Corpus and training data
+corpus*
+freq_dict_*.txt
+pinyin_token_dict_*.txt
+
+# Training output
+output/
+output_*/
+
+# Package build artifacts
+package/*.pkg.tar.zst
+package/src/
+package/pkg/
+package/sime/
+package/*.bin
+
+# Python
+__pycache__/
+
+# Scripts (training/debug utilities)
+scripts/
