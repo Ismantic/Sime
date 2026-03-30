@@ -11,7 +11,7 @@ set(NEW_INC_DIR ${NEW_ROOT}/include)
 
 add_library(sime_core
     ${NEW_SRC_DIR}/ustr.cc
-${NEW_SRC_DIR}/unit.cc
+    ${NEW_SRC_DIR}/unit.cc
     ${NEW_SRC_DIR}/count.cc
     ${NEW_SRC_DIR}/construct.cc
     ${NEW_SRC_DIR}/convert.cc
@@ -20,11 +20,13 @@ ${NEW_SRC_DIR}/unit.cc
     ${NEW_SRC_DIR}/trie.cc
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/interpret.cc
+    ${NEW_SRC_DIR}/context.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})
 target_compile_features(sime_core PUBLIC cxx_std_20)
 target_compile_options(sime_core PRIVATE -Wall -Wextra -pedantic -Wconversion)
+set_target_properties(sime_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_executable(sime-count ${NEW_ROOT}/app/counter.cc)
 target_link_libraries(sime-count PRIVATE sime_core)
@@ -52,3 +54,8 @@ set(_sime_targets
 foreach(target_name IN LISTS _sime_targets)
     target_compile_options(${target_name} PRIVATE -Wall -Wextra -pedantic -Wconversion)
 endforeach()
+
+option(SIME_ENABLE_FCITX5 "Build fcitx5 input method plugin" OFF)
+if(SIME_ENABLE_FCITX5)
+    add_subdirectory(fcitx5)
+endif()
