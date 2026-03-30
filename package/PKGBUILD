@@ -10,6 +10,11 @@ makedepends=("cmake" "gcc" "make")
 source=("sime::git+file:///home/tfbao/Isma/Sime")
 sha256sums=("SKIP")
 
+prepare() {
+  cd "$srcdir/sime"
+  git lfs pull
+}
+
 build() {
   cmake -S "$srcdir/sime" -B "$srcdir/build" \
     -DCMAKE_BUILD_TYPE=Release \
