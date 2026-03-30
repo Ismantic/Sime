@@ -8,6 +8,7 @@
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
+#include <fstream>
 #include <set>
 
 namespace fcitx {
@@ -177,8 +178,9 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
-    FCITX_INFO() << "Sime: CapabilityFlag::Preedit = " << hasPreeditCap
-                 << " preedit=" << st->preedit;
+    { std::ofstream f("/tmp/sime_debug.log", std::ios::app);
+      f << "CapabilityFlag::Preedit=" << hasPreeditCap
+        << " preedit=" << st->preedit << "\n"; }
     if (hasPreeditCap) {
         panel.setClientPreedit(preeditText);
         panel.setPreedit(Text{});
