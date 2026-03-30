@@ -177,11 +177,13 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
-    // 特性3：检查客户端是否支持 inline preedit
+    // 特性3：二选一，对齐官方行为
+    // 支持 inline preedit → 显示在应用内；不支持 → 显示在 fcitx5 面板
     if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
         panel.setClientPreedit(preeditText);
+    } else {
+        panel.setPreedit(preeditText);
     }
-    panel.setPreedit(preeditText);
 
     if (!interpreter_) {
         ic->updatePreedit();
