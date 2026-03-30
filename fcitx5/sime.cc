@@ -1,7 +1,6 @@
 // Sime Fcitx5 Engine
 
 #include "sime.h"
-#include "unit.h"
 #include <fcitx-utils/key.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
@@ -137,29 +136,6 @@ void SimeEngine::consumePreedit(InputContext *ic, std::size_t n) {
     }
 }
 
-// 特性4：找出 preedit 所有合法的拼音前缀分割点
-// 返回长度列表（从大到小），第一个始终是 preedit.size()
-std::vector<std::size_t> SimeEngine::validPrefixLengths(const std::string &preedit) {
-    std::vector<std::size_t> result;
-    result.push_back(preedit.size());
-
-    if (preedit.size() <= 3) return result;
-
-    static const sime::UnitParser parser;
-
-    for (std::size_t len = preedit.size() - 1; len >= 2; --len) {
-        std::string prefix = preedit.substr(0, len);
-        std::string suffix = preedit.substr(len);
-        std::vector<sime::Unit> units;
-        if (parser.ParseStr(prefix, units) && parser.ParseStr(suffix, units)) {
-            result.push_back(len);
-        }
-        if (result.size() >= 4) break; // 最多 3 个前缀 + 全长
-    }
-
-    return result;
-}
-
 void SimeEngine::updateUI(InputContext *ic) {
     auto *st = state(ic);
     auto &panel = ic->inputPanel();
@@ -191,28 +167,19 @@ void SimeEngine::updateUI(InputContext *ic) {
         return;
     }
 
-    // 特性4：对完整 preedit 和有效前缀分别解码，合并候选
-    auto prefixLens = validPrefixLengths(st->preedit);
-
     auto cl = std::make_unique<CommonCandidateList>();
     cl->setPageSize(*config_.pageSize);
     cl->setLayoutHint(CandidateLayoutHint::Horizontal);
     cl->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
+    auto results = interpreter_->DecodeSentence(
+        st->preedit, static_cast<std::size_t>(*config_.nbest));
     std::set<std::string> seen;
-
-    for (std::size_t len : prefixLens) {
-        std::string prefix = st->preedit.substr(0, len);
-        bool isFull = (len == st->preedit.size());
-        std::size_t num = isFull ? static_cast<std::size_t>(*config_.nbest) : 5;
-
-        auto results = interpreter_->DecodeText(prefix, num);
-        for (const auto &r : results) {
-            auto text = u32ToUtf8(r.text);
-            if (seen.insert(text).second) {
-                cl->append<SimeCandidateWord>(this, text, len);
-            }
+    for (const auto &r : results) {
+        auto text = u32ToUtf8(r.text);
+        if (seen.insert(text).second) {
+            cl->append<SimeCandidateWord>(this, text, r.matched_len);
         }
     }
 

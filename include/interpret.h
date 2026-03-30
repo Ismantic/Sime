@@ -18,6 +18,12 @@ struct DecodeResult {
     std::vector<TokenID> tokens;
 };
 
+struct SentenceResult {
+    std::u32string text;
+    float_t score = 0.0;        // larger is better
+    std::size_t matched_len = 0; // bytes of input consumed
+};
+
 class Interpreter {
 public:
     Interpreter() = default;
@@ -27,11 +33,18 @@ public:
 
     bool Ready() const { return ready_; }
 
+    // Original: decode full input, return n-best
     std::vector<DecodeResult> DecodeText(std::string_view input,
                                          std::size_t num = 5) const;
 
     std::vector<DecodeResult> DecodeUnits(const std::vector<Unit>& units,
                                           std::size_t num = 5) const;
+
+    // Sentence: single-lattice decode returning candidates at all prefix lengths.
+    // Candidates from different prefix lengths compete by LM score.
+    std::vector<SentenceResult> DecodeSentence(
+        std::string_view input, std::size_t num = 18) const;
+
 private:
     struct Link {
         std::size_t start = 0;
@@ -44,8 +57,14 @@ private:
         NetStates states;
     };
 
+    // Original net: SentenceToken only at end
     void InitNet(const std::vector<Unit>& units,
                  std::vector<Node>& net) const;
+
+    // Sentence net: SentenceToken at every column → multi-endpoint decode
+    void InitSentenceNet(const std::vector<Unit>& units,
+                         std::vector<Node>& net) const;
+
     void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
@@ -55,6 +74,13 @@ private:
         const std::vector<Unit>& units,
         std::size_t start,
         std::size_t end);
+
+    // Parse input into units, tracking byte boundary for each unit.
+    // unit_byte_end[i] = byte position in input after unit i.
+    static bool ParseWithBoundaries(
+        std::string_view input,
+        std::vector<Unit>& units,
+        std::vector<std::size_t>& unit_byte_end);
 
 private:
     Trie trie_;
