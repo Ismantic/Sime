@@ -6,11 +6,13 @@ arch=("x86_64")
 url="https://github.com/Ismantic/Sime"
 license=("custom")
 depends=("fcitx5")
-makedepends=("cmake" "gcc" "make")
-source=("sime::git+file:///home/tfbao/Isma/Sime"
-        "trie.bin::file:///home/tfbao/Isma/Sime/dict/trie.bin"
-        "model.bin::file:///home/tfbao/Isma/Sime/dict/model.bin")
-sha256sums=("SKIP" "SKIP" "SKIP")
+makedepends=("cmake" "gcc" "make" "git-lfs")
+source=("sime::git+https://github.com/Ismantic/Sime")
+sha256sums=("SKIP")
+
+prepare() {
+  git -C "$srcdir/sime" lfs pull
+}
 
 build() {
   cmake -S "$srcdir/sime" -B "$srcdir/build" \
@@ -23,6 +25,6 @@ package() {
   DESTDIR="$pkgdir" cmake --install "$srcdir/build"
 
   install -dm755 "$pkgdir/usr/share/sime"
-  install -m644 "$srcdir/trie.bin"  "$pkgdir/usr/share/sime/trie.bin"
-  install -m644 "$srcdir/model.bin" "$pkgdir/usr/share/sime/model.bin"
+  install -m644 "$srcdir/sime/dict/trie.bin"  "$pkgdir/usr/share/sime/trie.bin"
+  install -m644 "$srcdir/sime/dict/model.bin" "$pkgdir/usr/share/sime/model.bin"
 }
