@@ -176,9 +176,15 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
-    // 与官方一致：clientPreedit 有内容，panel preedit 显式置空
-    panel.setClientPreedit(preeditText);
-    panel.setPreedit(Text{});
+    // 与官方一致：检查客户端是否支持内联 preedit
+    // 支持时送 clientPreedit（显示在应用内），不支持时送 preedit（显示在候选框）
+    if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
+        panel.setClientPreedit(preeditText);
+        panel.setPreedit(Text{});
+    } else {
+        panel.setClientPreedit(Text{});
+        panel.setPreedit(preeditText);
+    }
 
     if (!interpreter_) {
         ic->updatePreedit();
