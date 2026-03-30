@@ -2,7 +2,6 @@
 
 #include "sime.h"
 #include "unit.h"
-#include <fcitx-utils/capabilityflags.h>
 #include <fcitx-utils/key.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
@@ -177,13 +176,8 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
-    // 特性3：二选一，对齐官方行为
-    // 支持 inline preedit → 显示在应用内；不支持 → 显示在 fcitx5 面板
-    if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
-        panel.setClientPreedit(preeditText);
-    } else {
-        panel.setPreedit(preeditText);
-    }
+    // 始终用 setClientPreedit（inline），不在候选框里重复显示拼音
+    panel.setClientPreedit(preeditText);
 
     if (!interpreter_) {
         ic->updatePreedit();
