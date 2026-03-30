@@ -10,6 +10,7 @@
 #include <fcitx/inputmethodengine.h>
 #include <fcitx/instance.h>
 #include <memory>
+#include <vector>
 
 #include "interpret.h"
 
@@ -40,11 +41,15 @@ public:
         return result;
     }
 
+    // 供 SimeCandidateWord 调用
+    void consumePreedit(InputContext *ic, std::size_t n);
+
 private:
     void initInterpreter();
     void updateUI(InputContext *ic);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
+    std::vector<std::size_t> validPrefixLengths(const std::string &preedit);
 
     Instance *instance_;
     FactoryFor<SimeState> factory_;
@@ -61,8 +66,6 @@ private:
         const char *typeName() const override { return "SimeConfig"; }
     };
     Config config_;
-
-    friend class SimeCandidateWord;
 };
 
 class SimeEngineFactory : public AddonFactory {

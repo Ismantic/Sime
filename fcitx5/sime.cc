@@ -1,16 +1,20 @@
 // Sime Fcitx5 Engine
-// 参照 fcitx5-chinese-addons/im/pinyin/pinyin.cpp 实现模式
 
 #include "sime.h"
+#include "unit.h"
+#include <fcitx-utils/capabilityflags.h>
 #include <fcitx-utils/key.h>
 #include <fcitx/candidatelist.h>
+#include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
+#include <set>
 
 namespace fcitx {
 
-// UTF-32 → UTF-8
+// ===== UTF-32 → UTF-8 =====
+
 static std::string u32ToUtf8(const std::u32string &u32str) {
     std::string utf8;
     utf8.reserve(u32str.size() * 4);
@@ -34,25 +38,45 @@ static std::string u32ToUtf8(const std::u32string &u32str) {
     return utf8;
 }
 
-// ===== 候选词类 =====
-// 存 text，select() 直接 commitString，不依赖外部索引
+// ===== 标点映射 (特性1) =====
+
+static const char *chinesePunc(KeySym sym) {
+    switch (sym) {
+    case FcitxKey_comma:      return "，";
+    case FcitxKey_period:     return "。";
+    case FcitxKey_question:   return "？";
+    case FcitxKey_exclam:     return "！";
+    case FcitxKey_semicolon:  return "；";
+    case FcitxKey_colon:      return "：";
+    case FcitxKey_parenleft:  return "（";
+    case FcitxKey_parenright: return "）";
+    case FcitxKey_bracketleft:  return "【";
+    case FcitxKey_bracketright: return "】";
+    default: return nullptr;
+    }
+}
+
+// ===== 候选词 =====
+// 存 text + matchedLen，select() 提交文字并消耗 matchedLen 个字节的 preedit
 
 class SimeCandidateWord : public CandidateWord {
 public:
-    SimeCandidateWord(SimeEngine *engine, std::string text)
-        : CandidateWord(Text(text)), engine_(engine), text_(std::move(text)) {}
+    SimeCandidateWord(SimeEngine *engine, std::string text, std::size_t matchedLen)
+        : CandidateWord(Text(text)), engine_(engine),
+          text_(std::move(text)), matchedLen_(matchedLen) {}
 
     void select(InputContext *ic) const override {
         ic->commitString(text_);
-        engine_->resetState(ic);
+        engine_->consumePreedit(ic, matchedLen_);
     }
 
 private:
     SimeEngine *engine_;
     std::string text_;
+    std::size_t matchedLen_;
 };
 
-// ===== 引擎实现 =====
+// ===== 引擎 =====
 
 SimeEngine::SimeEngine(Instance *instance)
     : instance_(instance),
@@ -103,6 +127,98 @@ void SimeEngine::resetState(InputContext *ic) {
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
+// 特性4：消耗 n 个字节的 preedit，剩余部分继续输入
+void SimeEngine::consumePreedit(InputContext *ic, std::size_t n) {
+    auto *st = state(ic);
+    if (n >= st->preedit.size()) {
+        resetState(ic);
+    } else {
+        st->preedit = st->preedit.substr(n);
+        updateUI(ic);
+    }
+}
+
+// 特性4：找出 preedit 所有合法的拼音前缀分割点
+// 返回长度列表（从大到小），第一个始终是 preedit.size()
+std::vector<std::size_t> SimeEngine::validPrefixLengths(const std::string &preedit) {
+    std::vector<std::size_t> result;
+    result.push_back(preedit.size());
+
+    if (preedit.size() <= 3) return result;
+
+    static const sime::UnitParser parser;
+
+    for (std::size_t len = preedit.size() - 1; len >= 2; --len) {
+        std::string prefix = preedit.substr(0, len);
+        std::string suffix = preedit.substr(len);
+        std::vector<sime::Unit> units;
+        if (parser.ParseStr(prefix, units) && parser.ParseStr(suffix, units)) {
+            result.push_back(len);
+        }
+        if (result.size() >= 4) break; // 最多 3 个前缀 + 全长
+    }
+
+    return result;
+}
+
+void SimeEngine::updateUI(InputContext *ic) {
+    auto *st = state(ic);
+    auto &panel = ic->inputPanel();
+    panel.reset();
+
+    if (st->preedit.empty()) {
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        return;
+    }
+
+    // 特性2：preedit 加下划线
+    Text preeditText;
+    preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
+    preeditText.setCursor(static_cast<int>(st->preedit.size()));
+
+    // 特性3：检查客户端是否支持 inline preedit
+    if (ic->capabilityFlags().test(CapabilityFlag::Preedit)) {
+        panel.setClientPreedit(preeditText);
+    }
+    panel.setPreedit(preeditText);
+
+    if (!interpreter_) {
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        return;
+    }
+
+    // 特性4：对完整 preedit 和有效前缀分别解码，合并候选
+    auto prefixLens = validPrefixLengths(st->preedit);
+
+    auto cl = std::make_unique<CommonCandidateList>();
+    cl->setPageSize(*config_.pageSize);
+    cl->setLayoutHint(CandidateLayoutHint::Horizontal);
+    cl->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
+    cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
+
+    std::set<std::string> seen;
+
+    for (std::size_t len : prefixLens) {
+        std::string prefix = st->preedit.substr(0, len);
+        bool isFull = (len == st->preedit.size());
+        std::size_t num = isFull ? static_cast<std::size_t>(*config_.nbest) : 5;
+
+        auto results = interpreter_->DecodeText(prefix, num);
+        for (const auto &r : results) {
+            auto text = u32ToUtf8(r.text);
+            if (seen.insert(text).second) {
+                cl->append<SimeCandidateWord>(this, text, len);
+            }
+        }
+    }
+
+    panel.setCandidateList(std::move(cl));
+    ic->updatePreedit();
+    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+}
+
 void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     if (event.isRelease()) return;
 
@@ -113,7 +229,7 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     auto &panel = ic->inputPanel();
     auto *cl = panel.candidateList().get();
 
-    // 数字键 1-9 选词（local index，CommonCandidateList 已处理页偏移）
+    // 数字 1-9 选词
     if (!st->preedit.empty() && sym >= FcitxKey_1 && sym <= FcitxKey_9) {
         int localIdx = sym - FcitxKey_1;
         if (cl && localIdx < cl->size()) {
@@ -141,7 +257,7 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // Escape：取消输入
+    // Escape：取消
     if (sym == FcitxKey_Escape && !st->preedit.empty()) {
         resetState(ic);
         event.filterAndAccept();
@@ -161,7 +277,7 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 翻页（= / + 下一页，- / PageDown 上一页）
+    // 翻页
     if (!st->preedit.empty() && cl) {
         auto *pageable = cl->toPageable();
         if (pageable) {
@@ -185,7 +301,7 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
     }
 
-    // 字母输入 a-z
+    // 字母 a-z
     if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
         st->preedit.push_back(static_cast<char>(sym));
         updateUI(ic);
@@ -200,49 +316,16 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         event.filterAndAccept();
         return;
     }
-}
 
-// 参照官方 updatePreedit + updateUI 分离模式
-void SimeEngine::updateUI(InputContext *ic) {
-    auto *st = state(ic);
-    auto &panel = ic->inputPanel();
-    panel.reset();
-
+    // 特性1：标点符号转中文
+    // preedit 为空时直接转换；非空时不拦截（用户先完成选词）
     if (st->preedit.empty()) {
-        ic->updatePreedit();
-        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-        return;
+        if (const char *punc = chinesePunc(sym)) {
+            ic->commitString(punc);
+            event.filterAndAccept();
+            return;
+        }
     }
-
-    // 同时设置 clientPreedit（应用内联）和 preedit（fcitx5 面板）
-    // 官方实现 pinyin.cpp updatePreedit() 两个都设
-    Text preeditText(st->preedit);
-    preeditText.setCursor(static_cast<int>(st->preedit.size()));
-    panel.setClientPreedit(preeditText);
-    panel.setPreedit(preeditText);
-
-    // 解码
-    if (!interpreter_) {
-        ic->updatePreedit();
-        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-        return;
-    }
-    auto results = interpreter_->DecodeText(st->preedit, *config_.nbest);
-
-    // 用 CommonCandidateList（官方模式），setSelectionKey 设置数字键标签
-    auto cl = std::make_unique<CommonCandidateList>();
-    cl->setPageSize(*config_.pageSize);
-    cl->setLayoutHint(CandidateLayoutHint::Horizontal);
-    cl->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
-    cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
-
-    for (const auto &r : results) {
-        cl->append<SimeCandidateWord>(this, u32ToUtf8(r.text));
-    }
-
-    panel.setCandidateList(std::move(cl));
-    ic->updatePreedit();
-    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
 } // namespace fcitx
