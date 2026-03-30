@@ -20,13 +20,12 @@ enum class MatchCategory {
 struct SimeCandidate {
     std::string text;           // 显示文本（UTF-8）
     double score;               // 得分
-    int index;                  // 索引（用于选择）
     std::size_t matched_length; // 匹配的拼音长度（用于选词后计算剩余）
     MatchCategory category;     // 匹配类型
 
-    SimeCandidate(std::string t, double s, int i, std::size_t m = 0,
+    SimeCandidate(std::string t, double s, std::size_t m = 0,
                   MatchCategory c = MatchCategory::COMPLETE_MATCH)
-        : text(std::move(t)), score(s), index(i), matched_length(m), category(c) {}
+        : text(std::move(t)), score(s), matched_length(m), category(c) {}
 };
 
 // Sime 输入法状态（每个 InputContext 一个实例）
