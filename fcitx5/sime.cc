@@ -259,12 +259,7 @@ void SimeEngine::updateCandidates(InputContext *ic) {
 
     // 生成候选词
     if (!pinyin.empty() && interpreter_ && interpreter_->Ready()) {
-        auto t_start = std::chrono::high_resolution_clock::now();
-
         std::vector<std::size_t> prefixes = findAllValidPrefixes(pinyin);
-
-        auto t_prefixes = std::chrono::high_resolution_clock::now();
-        auto dur_prefixes = std::chrono::duration_cast<std::chrono::milliseconds>(t_prefixes - t_start).count();
 
         if (prefixes.empty()) {
             // 无有效拼音前缀
@@ -314,7 +309,6 @@ void SimeEngine::updateCandidates(InputContext *ic) {
                 all_candidates.emplace_back(
                     text,
                     result.score,
-                    0,  // 稍后重新索引
                     prefix_len,
                     is_complete ? MatchCategory::COMPLETE_MATCH
                                 : MatchCategory::PREFIX_MATCH
@@ -403,17 +397,6 @@ void SimeEngine::updateCandidates(InputContext *ic) {
             }
         }
 
-        // 重新索引所有候选
-        for (size_t i = 0; i < filtered_candidates.size(); ++i) {
-            filtered_candidates[i].index = static_cast<int>(i);
-        }
-
-        auto t_end = std::chrono::high_resolution_clock::now();
-        auto dur_total = std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count();
-
-        // 减少日志输出，避免频繁日志导致性能问题
-        // FCITX_INFO() << "updateCandidates('" << pinyin << "') took " << dur_total << "ms";
-
         state->setCandidates(std::move(filtered_candidates));
         state->setCachedPinyin(pinyin);
     }
@@ -499,7 +482,7 @@ void SimeEngine::clearPreedit(InputContext *ic) {
 
 std::vector<std::size_t> SimeEngine::findAllValidPrefixes(const std::string& pinyin) const {
     std::vector<std::size_t> prefixes;
-    sime::UnitParser parser;
+    static const sime::UnitParser parser;
 
     // 1. 总是添加完整输入
     prefixes.push_back(pinyin.size());
@@ -512,8 +495,6 @@ std::vector<std::size_t> SimeEngine::findAllValidPrefixes(const std::string& pin
 
         // 前缀必须是完整的拼音序列
         if (!prefix_result.complete || prefix_result.matched_len != len) {
-            // 减少日志输出
-        // FCITX_INFO() << "  Checking prefix '" << prefix << "' (len=" << len << "): SKIP";
             continue;
         }
 
@@ -521,18 +502,10 @@ std::vector<std::size_t> SimeEngine::findAllValidPrefixes(const std::string& pin
         std::string remaining = pinyin.substr(len);
         auto remaining_result = parser.ParseTokenEnhanced(remaining, false);
 
-        // 减少日志输出
-        // FCITX_INFO() << "  Prefix '" << prefix << "' valid, remaining '" << remaining << "'";
-
-        // 如果剩余部分也是完整的拼音序列，这就是一个有效的分割点
         if (remaining_result.complete && remaining_result.matched_len == remaining.size()) {
             prefixes.push_back(len);
-            // FCITX_INFO() << "  -> Added boundary at " << len;
         }
     }
-
-    // 减少日志输出
-    // FCITX_INFO() << "findAllValidPrefixes('" << pinyin << "') found " << prefixes.size() << " prefixes";
 
     return prefixes;
 }
