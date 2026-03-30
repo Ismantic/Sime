@@ -176,8 +176,9 @@ void SimeEngine::updateUI(InputContext *ic) {
     preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
     preeditText.setCursor(static_cast<int>(st->preedit.size()));
 
-    // 始终用 setClientPreedit（inline），不在候选框里重复显示拼音
+    // 与官方一致：clientPreedit 有内容，panel preedit 显式置空
     panel.setClientPreedit(preeditText);
+    panel.setPreedit(Text{});
 
     if (!interpreter_) {
         ic->updatePreedit();
