@@ -250,12 +250,13 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 翻页
+    // 翻页：Page Up/Down、+/-、方向键
     if (!st->preedit.empty() && cl) {
         auto *pageable = cl->toPageable();
         if (pageable) {
             if (sym == FcitxKey_Page_Down || sym == FcitxKey_equal ||
-                sym == FcitxKey_plus) {
+                sym == FcitxKey_plus || sym == FcitxKey_Down ||
+                sym == FcitxKey_Right) {
                 if (pageable->hasNext()) {
                     pageable->next();
                     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
@@ -263,7 +264,8 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
                 event.filterAndAccept();
                 return;
             }
-            if (sym == FcitxKey_Page_Up || sym == FcitxKey_minus) {
+            if (sym == FcitxKey_Page_Up || sym == FcitxKey_minus ||
+                sym == FcitxKey_Up || sym == FcitxKey_Left) {
                 if (pageable->hasPrev()) {
                     pageable->prev();
                     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
