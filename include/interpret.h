@@ -4,6 +4,7 @@
 #include "score.h"
 #include "state.h"
 #include "trie.h"
+#include "userdict.h"
 
 #include <filesystem>
 #include <string>
@@ -30,6 +31,8 @@ public:
 
     bool LoadResources(const std::filesystem::path& trie_path,
                        const std::filesystem::path& model_path);
+
+    bool LoadUserDict(const std::filesystem::path& path);
 
     bool Ready() const { return ready_; }
 
@@ -90,6 +93,8 @@ private:
 private:
     Trie trie_;
     Scorer scorer_;
+    UserDict userdict_;
+    float_t userdict_boost_ = 0.0;
     bool ready_ = false;
 };
 

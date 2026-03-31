@@ -19,8 +19,16 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
         ready_ = false;
         return false;
     }
+    userdict_.SetBaseTokenID(trie_.TokenCount());
+    userdict_boost_ = std::abs(scorer_.UnknownPenalty()) * 0.1;
     ready_ = true;
     return true;
+}
+
+bool Interpreter::LoadUserDict(const std::filesystem::path& path) {
+    if (!ready_) return false;
+    userdict_.SetBaseTokenID(trie_.TokenCount());
+    return userdict_.Load(path, trie_, scorer_);
 }
 
 std::vector<DecodeResult> Interpreter::DecodeText(
@@ -369,7 +377,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
         }
     }
 
-    const std::size_t layer1_size = results.size();
+    std::size_t layer1_size = results.size();
 
     // === Layer 2: Word/phrase candidates from BOS with distance penalty ===
     // Similar to libime: distancePenalty = unknownPenalty / 1.8
@@ -443,6 +451,56 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
               [](const SentenceResult& a, const SentenceResult& b) {
                   return a.score > b.score;
               });
+
+    // === User dict: inject matches directly, bypassing beam search ===
+    if (!userdict_.Empty()) {
+        const std::size_t n = units.size();
+        for (std::size_t len = 1; len <= n; ++len) {
+            auto matches = userdict_.Lookup(units.data(), len);
+            if (matches.empty()) continue;
+
+            std::size_t matched_bytes =
+                (len <= unit_byte_end.size()) ? unit_byte_end[len - 1]
+                                              : total_bytes;
+            bool full = (len == effective_n) ||
+                        (matched_bytes == total_bytes);
+            float_t dist_penalty = 0.0;
+            if (!full) {
+                float_t penalty_per_unit =
+                    std::abs(scorer_.UnknownPenalty()) / 3.0;
+                dist_penalty = static_cast<float_t>(n - len) * penalty_per_unit;
+            }
+
+            for (const auto& m : matches) {
+                std::size_t local = m.id - userdict_.BaseTokenID();
+                const auto& text = userdict_.TextAt(local);
+                float_t score = -(userdict_.ScoreAt(local) - userdict_boost_)
+                                - dist_penalty;
+
+                bool dup = false;
+                for (const auto& e : results)
+                    if (e.text == text && e.matched_len == matched_bytes) {
+                        dup = true; break;
+                    }
+                if (!dup) {
+                    SentenceResult r;
+                    r.text = text;
+                    r.score = score;
+                    r.matched_len = matched_bytes;
+                    if (full) {
+                        // Insert after Layer 1 (top of full matches)
+                        results.insert(
+                            results.begin() +
+                                static_cast<std::ptrdiff_t>(layer1_size),
+                            std::move(r));
+                        ++layer1_size;
+                    } else {
+                        results.push_back(std::move(r));
+                    }
+                }
+            }
+        }
+    }
 
     if (results.size() > max_top) {
         results.resize(max_top);

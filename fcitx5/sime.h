@@ -60,6 +60,8 @@ private:
                                      "/usr/share/sime/trie.bin"};
         Option<std::string> lmPath{this, "LMPath", "语言模型路径",
                                    "/usr/share/sime/model.bin"};
+        Option<std::string> userDictPath{this, "UserDictPath", "自定义词表路径",
+                                         ""};
 
         const char *typeName() const override { return "SimeConfig"; }
     };
