@@ -1,6 +1,7 @@
 // Sime Fcitx5 Engine
 
 #include "sime.h"
+#include <cstdlib>
 #include <fcitx-utils/key.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
@@ -99,6 +100,24 @@ void SimeEngine::initInterpreter() {
         interpreter_.reset();
     } else {
         FCITX_INFO() << "Sime: resources loaded";
+        // Load user dictionary
+        std::string udPath = *config_.userDictPath;
+        if (udPath.empty()) {
+            // Default: ~/.local/share/fcitx5/sime/user.dict
+            const char* xdg = std::getenv("XDG_DATA_HOME");
+            if (xdg && xdg[0]) {
+                udPath = std::string(xdg) + "/fcitx5/sime/user.dict";
+            } else {
+                const char* home = std::getenv("HOME");
+                if (home) {
+                    udPath = std::string(home) +
+                             "/.local/share/fcitx5/sime/user.dict";
+                }
+            }
+        }
+        if (!udPath.empty() && interpreter_->LoadUserDict(udPath)) {
+            FCITX_INFO() << "Sime: user dict loaded from " << udPath;
+        }
     }
 }
 

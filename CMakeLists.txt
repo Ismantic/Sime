@@ -20,6 +20,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/trie.cc
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/interpret.cc
+    ${NEW_SRC_DIR}/userdict.cc
     ${NEW_SRC_DIR}/context.cc
 )
 

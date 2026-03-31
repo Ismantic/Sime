@@ -12,12 +12,13 @@ namespace {
 struct Options {
     std::filesystem::path trie;
     std::filesystem::path model;
+    std::filesystem::path userdict;
     std::size_t num = 5;
     bool sentence = false;
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--num N] [--sentence]\n";
+    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--userdict <user.dict>] [--num N] [--sentence]\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -27,6 +28,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.trie = argv[++i];
         } else if ((arg == "--model" || arg == "-m") && i + 1 < argc) {
             opts.model = argv[++i];
+        } else if ((arg == "--userdict" || arg == "-u") && i + 1 < argc) {
+            opts.userdict = argv[++i];
         } else if (arg == "--num" && i + 1 < argc) {
             opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--sentence" || arg == "-s") {
@@ -62,6 +65,14 @@ int main(int argc, char** argv) {
     if (!interpreter.LoadResources(opts.trie, opts.model)) {
         std::cerr << "Load failed: " << opts.trie << ", " << opts.model << "\n";
         return 1;
+    }
+
+    if (!opts.userdict.empty()) {
+        if (interpreter.LoadUserDict(opts.userdict)) {
+            std::cout << "UserDict: " << opts.userdict << "\n";
+        } else {
+            std::cerr << "Warning: failed to load user dict: " << opts.userdict << "\n";
+        }
     }
 
     std::cout << "Dict: " << opts.trie << "\n"
