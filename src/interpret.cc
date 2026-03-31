@@ -392,8 +392,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 (col <= unit_byte_end.size()) ? unit_byte_end[col - 1]
                                               : total_bytes;
 
-            // Top few per prefix: enough variety without flooding
-            constexpr std::size_t kPerPrefix = 3;
+            // Top few per prefix: enough variety for short inputs
+            constexpr std::size_t kPerPrefix = 5;
             const std::size_t col_scan =
                 std::min<std::size_t>(kPerPrefix, col_states.size());
             for (std::size_t rank = 0; rank < col_scan; ++rank) {
