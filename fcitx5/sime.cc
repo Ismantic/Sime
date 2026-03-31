@@ -119,7 +119,7 @@ void SimeEngine::reset(const InputMethodEntry &, InputContextEvent &event) {
 }
 
 void SimeEngine::resetState(InputContext *ic) {
-    state(ic)->preedit.clear();
+    state(ic)->reset();
     ic->inputPanel().reset();
     ic->updatePreedit();
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
@@ -132,6 +132,7 @@ void SimeEngine::consumePreedit(InputContext *ic, std::size_t n) {
         resetState(ic);
     } else {
         st->preedit = st->preedit.substr(n);
+        st->cursor = st->preedit.size(); // cursor to end after consume
         updateUI(ic);
     }
 }
@@ -149,9 +150,33 @@ void SimeEngine::updateUI(InputContext *ic) {
 
     // 特性2：preedit 显示切分后的拼音，加下划线
     std::string segmented = sime::Interpreter::SegmentPinyin(st->preedit);
+    // Map raw cursor to segmented position: count inserted spaces
+    // Segmented string inserts spaces at syllable boundaries.
+    // Walk both strings in parallel to find the cursor mapping.
+    int segCursor = static_cast<int>(segmented.size()); // default: end
+    {
+        std::size_t rawIdx = 0;
+        std::size_t segIdx = 0;
+        while (rawIdx < st->preedit.size() && segIdx < segmented.size()) {
+            if (rawIdx == st->cursor) {
+                segCursor = static_cast<int>(segIdx);
+                break;
+            }
+            // Skip spaces in segmented that don't exist in raw
+            if (segmented[segIdx] == ' ' && (rawIdx >= st->preedit.size() ||
+                st->preedit[rawIdx] != ' ')) {
+                ++segIdx;
+                continue;
+            }
+            ++rawIdx;
+            ++segIdx;
+        }
+        if (rawIdx == st->cursor)
+            segCursor = static_cast<int>(segIdx);
+    }
     Text preeditText;
     preeditText.append(segmented, TextFormatFlags{TextFormatFlag::Underline});
-    preeditText.setCursor(static_cast<int>(segmented.size()));
+    preeditText.setCursor(segCursor);
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
     if (hasPreeditCap) {
@@ -239,10 +264,11 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 退格
+    // 退格：删除光标前一个字符
     if (sym == FcitxKey_BackSpace) {
-        if (!st->preedit.empty()) {
-            st->preedit.pop_back();
+        if (!st->preedit.empty() && st->cursor > 0) {
+            st->preedit.erase(st->cursor - 1, 1);
+            --st->cursor;
             if (st->preedit.empty())
                 resetState(ic);
             else
@@ -252,14 +278,27 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 左右方向键：在当前页内移动高亮选择
+    // Delete：删除光标后一个字符
+    if (sym == FcitxKey_Delete) {
+        if (!st->preedit.empty() && st->cursor < st->preedit.size()) {
+            st->preedit.erase(st->cursor, 1);
+            if (st->preedit.empty())
+                resetState(ic);
+            else
+                updateUI(ic);
+            event.filterAndAccept();
+        }
+        return;
+    }
+
+    // Tab/Shift+Tab：在候选之间移动高亮
     if (!st->preedit.empty() && cl &&
-        (sym == FcitxKey_Right || sym == FcitxKey_Left)) {
+        (sym == FcitxKey_Tab || sym == FcitxKey_ISO_Left_Tab)) {
         auto *ccl = dynamic_cast<CommonCandidateList *>(cl);
         if (ccl) {
             int cur = ccl->cursorIndex();
             int pageSize = ccl->size();
-            if (sym == FcitxKey_Right) {
+            if (sym == FcitxKey_Tab) {
                 if (cur + 1 < pageSize)
                     ccl->setCursorIndex(cur + 1);
             } else {
@@ -297,17 +336,40 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
     }
 
-    // 字母 a-z
-    if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
-        st->preedit.push_back(static_cast<char>(sym));
+    // 左右方向键：移动 preedit 光标
+    if (!st->preedit.empty() &&
+        (sym == FcitxKey_Left || sym == FcitxKey_Right)) {
+        if (sym == FcitxKey_Left && st->cursor > 0)
+            --st->cursor;
+        else if (sym == FcitxKey_Right && st->cursor < st->preedit.size())
+            ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // 单引号分词
+    // Home/End：光标跳到开头/末尾
+    if (!st->preedit.empty() &&
+        (sym == FcitxKey_Home || sym == FcitxKey_End)) {
+        st->cursor = (sym == FcitxKey_Home) ? 0 : st->preedit.size();
+        updateUI(ic);
+        event.filterAndAccept();
+        return;
+    }
+
+    // 字母 a-z：插入到光标位置
+    if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
+        st->preedit.insert(st->cursor, 1, static_cast<char>(sym));
+        ++st->cursor;
+        updateUI(ic);
+        event.filterAndAccept();
+        return;
+    }
+
+    // 单引号分词：插入到光标位置
     if (sym == FcitxKey_apostrophe && !st->preedit.empty()) {
-        st->preedit.push_back('\'');
+        st->preedit.insert(st->cursor, 1, '\'');
+        ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();
         return;
