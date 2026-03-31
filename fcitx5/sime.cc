@@ -199,8 +199,13 @@ void SimeEngine::updateUI(InputContext *ic) {
     cl->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
+    // candidatesToCursor: only decode up to cursor position
+    std::string_view decodeInput = st->preedit;
+    if (st->cursor < st->preedit.size()) {
+        decodeInput = std::string_view(st->preedit).substr(0, st->cursor);
+    }
     auto results = interpreter_->DecodeSentence(
-        st->preedit, static_cast<std::size_t>(*config_.nbest));
+        decodeInput, static_cast<std::size_t>(*config_.nbest));
     std::set<std::string> seen;
     for (const auto &r : results) {
         auto text = u32ToUtf8(r.text);
@@ -376,13 +381,14 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     }
 
     // 特性1：标点符号转中文
-    // preedit 为空时直接转换；非空时不拦截（用户先完成选词）
-    if (st->preedit.empty()) {
-        if (const char *punc = chinesePunc(sym)) {
-            ic->commitString(punc);
-            event.filterAndAccept();
-            return;
+    // preedit 非空时：先提交第一个候选，再输出标点
+    if (const char *punc = chinesePunc(sym)) {
+        if (!st->preedit.empty() && cl && cl->size() > 0) {
+            cl->candidate(0).select(ic);
         }
+        ic->commitString(punc);
+        event.filterAndAccept();
+        return;
     }
 }
 
