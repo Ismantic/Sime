@@ -109,38 +109,59 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
 }
 
 void Interpreter::InitNet(const std::vector<Unit>& units,
-                          std::vector<Node>& net) const {
+                          std::vector<Node>& net,
+                          const std::vector<Unit>& tail_expansions) const {
+    const std::size_t n = units.size();
+    const bool has_exp = !tail_expansions.empty();
+    // With expansion: extra column for the incomplete syllable
+    const std::size_t effective_n = has_exp ? n + 1 : n;
     net.clear();
-    net.resize(units.size() + 2);
+    net.resize(effective_n + 2);
 
-    for (std::size_t start = 0; start < units.size(); ++start) {
+    for (std::size_t start = 0; start < effective_n; ++start) {
         auto& bucket = net[start].es;
         bool inserted = false;
         const Trie::Node* trie_node = trie_.Root();
         std::size_t pos = start;
-        while (trie_node && pos < units.size()) {
+
+        // Traverse through complete units
+        while (trie_node && pos < n) {
             trie_node = trie_.DoMove(trie_node, units[pos]);
             ++pos;
-            if (!trie_node) {
-                break;
-            }
+            if (!trie_node) break;
             std::uint32_t count = 0;
             const std::uint32_t* tokens = trie_.GetToken(trie_node, count);
             for (std::uint32_t idx = 0; idx < count; ++idx) {
                 TokenID wid = static_cast<TokenID>(tokens[idx]);
                 bucket.push_back({start, pos, wid});
             }
-            if (count > 0) {
-                inserted = true;
+            if (count > 0) inserted = true;
+        }
+
+        // Fan out: try each expansion at the incomplete tail position
+        if (has_exp && trie_node && pos == n) {
+            for (const auto& exp : tail_expansions) {
+                const Trie::Node* exp_node =
+                    trie_.DoMove(trie_node, exp);
+                if (!exp_node) continue;
+                std::uint32_t count = 0;
+                const std::uint32_t* tokens =
+                    trie_.GetToken(exp_node, count);
+                for (std::uint32_t idx = 0; idx < count; ++idx) {
+                    TokenID wid = static_cast<TokenID>(tokens[idx]);
+                    bucket.push_back({start, n + 1, wid});
+                }
+                if (count > 0) inserted = true;
             }
         }
+
         if (!inserted) {
             bucket.push_back({start, start + 1, ScoreNotToken});
         }
     }
 
-    net[units.size()].es.push_back(
-        {units.size(), units.size() + 1, SentenceToken});
+    net[effective_n].es.push_back(
+        {effective_n, effective_n + 1, SentenceToken});
 }
 
 void Interpreter::Process(std::vector<Node>& net) const {
@@ -229,9 +250,11 @@ std::string Interpreter::SliceToUnits(
 bool Interpreter::ParseWithBoundaries(
     std::string_view input,
     std::vector<Unit>& units,
-    std::vector<std::size_t>& unit_byte_end) {
+    std::vector<std::size_t>& unit_byte_end,
+    std::vector<Unit>& tail_expansions) {
     units.clear();
     unit_byte_end.clear();
+    tail_expansions.clear();
     UnitParser parser;
     std::size_t pos = 0;
     while (pos < input.size()) {
@@ -245,16 +268,48 @@ bool Interpreter::ParseWithBoundaries(
         }
         std::string chunk_str(input.substr(chunk_start, pos - chunk_start));
         std::vector<Unit> chunk;
-        if (!parser.ParseStr(chunk_str, chunk)) continue;
-
-        // Reconstruct per-unit byte offsets within this chunk
-        std::size_t byte_offset = chunk_start;
-        for (const auto& u : chunk) {
-            const char* syl = UnitData::Decode(u);
-            if (syl) byte_offset += std::strlen(syl);
-            unit_byte_end.push_back(byte_offset);
+        if (!parser.ParseStr(chunk_str, chunk)) {
+            // Full parse failed — try partial parse + incomplete tail
+            auto pr = parser.ParseTokenEnhanced(chunk_str, true);
+            if (pr.matched_len > 0) {
+                chunk = std::move(pr.units);
+            } else {
+                continue;
+            }
         }
-        units.insert(units.end(), chunk.begin(), chunk.end());
+
+        // Check if last unit is a bare initial (incomplete syllable)
+        if (!chunk.empty() && !chunk.back().Full()) {
+            // Last unit is incomplete — pop it and generate expansions
+            Unit bare = chunk.back();
+            chunk.pop_back();
+            // Add the complete units
+            std::size_t byte_offset = chunk_start;
+            for (const auto& u : chunk) {
+                const char* syl = UnitData::Decode(u);
+                if (syl) byte_offset += std::strlen(syl);
+                unit_byte_end.push_back(byte_offset);
+            }
+            units.insert(units.end(), chunk.begin(), chunk.end());
+            // Generate expansions from the bare initial
+            const char* initial = UnitData::Decode(bare);
+            if (initial) {
+                auto exps = UnitData::ExpandIncomplete(initial);
+                if (!exps.empty()) {
+                    tail_expansions = std::move(exps);
+                    unit_byte_end.push_back(chunk_start + chunk_str.size());
+                }
+            }
+        } else {
+            // All units are complete
+            std::size_t byte_offset = chunk_start;
+            for (const auto& u : chunk) {
+                const char* syl = UnitData::Decode(u);
+                if (syl) byte_offset += std::strlen(syl);
+                unit_byte_end.push_back(byte_offset);
+            }
+            units.insert(units.end(), chunk.begin(), chunk.end());
+        }
     }
     return !units.empty();
 }
@@ -268,7 +323,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // 1. Parse input with byte boundary tracking
     std::vector<Unit> units;
     std::vector<std::size_t> unit_byte_end;
-    if (!ParseWithBoundaries(input, units, unit_byte_end)) {
+    std::vector<Unit> tail_expansions;
+    if (!ParseWithBoundaries(input, units, unit_byte_end, tail_expansions)) {
         return results;
     }
 
@@ -277,7 +333,9 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
 
     // Build lattice once, shared by Layer 1 and Layer 2
     std::vector<Node> net;
-    InitNet(units, net);
+    const bool has_exp = !tail_expansions.empty();
+    const std::size_t effective_n = has_exp ? units.size() + 1 : units.size();
+    InitNet(units, net, tail_expansions);
     // Wider beam than DecodeText: Layer 2 needs good states at intermediate cols
     const std::size_t beam = std::max<std::size_t>(max_top * 3, 40);
     for (auto& col : net) col.states.SetMaxTop(beam);
@@ -323,11 +381,11 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
 
         // Collect candidates at each column (including full match for overflow
         // beyond kNBest). Distance penalty = 0 for full matches.
-        for (std::size_t col = 1; col <= units.size(); ++col) {
+        for (std::size_t col = 1; col <= effective_n; ++col) {
             const auto& col_states = net[col].states.GetStates();
             if (col_states.empty()) continue;
 
-            std::size_t distance = units.size() - col;
+            std::size_t distance = effective_n - col;
             float_t dist_penalty =
                 static_cast<float_t>(distance) * penalty_per_unit;
             std::size_t matched_bytes =
@@ -415,9 +473,26 @@ std::string Interpreter::SegmentPinyin(std::string_view input) {
                 result.append(syl);
             }
         } else {
-            // Unparseable chunk: append as-is
-            if (!result.empty()) result.push_back(' ');
-            result.append(chunk);
+            // Try partial parse: show complete syllables + incomplete tail
+            auto pr = parser.ParseTokenEnhanced(chunk, true);
+            if (!pr.complete && pr.matched_len > 0) {
+                for (const auto& u : pr.units) {
+                    const char* syl = UnitData::Decode(u);
+                    if (!syl) continue;
+                    if (!result.empty()) result.push_back(' ');
+                    result.append(syl);
+                }
+                // Append the incomplete remainder as-is
+                std::string remainder(chunk.substr(pr.matched_len));
+                if (!remainder.empty()) {
+                    if (!result.empty()) result.push_back(' ');
+                    result.append(remainder);
+                }
+            } else {
+                // Fully unparseable: append as-is
+                if (!result.empty()) result.push_back(' ');
+                result.append(chunk);
+            }
         }
     }
     return result;

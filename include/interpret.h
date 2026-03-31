@@ -62,8 +62,10 @@ private:
     };
 
     // Original net: SentenceToken only at end
+    // tail_expansions: if non-empty, fan out at the end for incomplete syllable
     void InitNet(const std::vector<Unit>& units,
-                 std::vector<Node>& net) const;
+                 std::vector<Node>& net,
+                 const std::vector<Unit>& tail_expansions = {}) const;
 
 
     void Process(std::vector<Node>& net) const;
@@ -78,10 +80,12 @@ private:
 
     // Parse input into units, tracking byte boundary for each unit.
     // unit_byte_end[i] = byte position in input after unit i.
+    // tail_expansions: filled with possible Units if trailing incomplete syllable.
     static bool ParseWithBoundaries(
         std::string_view input,
         std::vector<Unit>& units,
-        std::vector<std::size_t>& unit_byte_end);
+        std::vector<std::size_t>& unit_byte_end,
+        std::vector<Unit>& tail_expansions);
 
 private:
     Trie trie_;

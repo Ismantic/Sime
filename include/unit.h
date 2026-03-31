@@ -54,6 +54,11 @@ public:
     static const char* const* GetIs(std::size_t& count);
     static const char* const* GetAs(std::size_t& count);
     static const UnitEntry* GetDict(std::size_t& count);
+
+    // Return all valid Units whose pinyin starts with the given prefix.
+    // e.g. "l" → [la, lai, lan, ..., le, ...], "zh" → [zha, zhai, ...]
+    // Also handles fuzzy: "z" matches z- AND zh-, "c"→c-/ch-, "s"→s-/sh-
+    static std::vector<Unit> ExpandIncomplete(const std::string& prefix);
 };
 
 struct ParseResult {
