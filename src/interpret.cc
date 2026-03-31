@@ -392,10 +392,12 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 (col <= unit_byte_end.size()) ? unit_byte_end[col - 1]
                                               : total_bytes;
 
-            // Top few per prefix: enough variety for short inputs
-            constexpr std::size_t kPerPrefix = 5;
+            // Full-match column: unlimited. Partial: cap per prefix.
+            constexpr std::size_t kPerPrefix = 15;
             const std::size_t col_scan =
-                std::min<std::size_t>(kPerPrefix, col_states.size());
+                (col == effective_n)
+                    ? col_states.size()
+                    : std::min<std::size_t>(kPerPrefix, col_states.size());
             for (std::size_t rank = 0; rank < col_scan; ++rank) {
                 const auto& st = col_states[rank];
 
