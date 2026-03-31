@@ -212,10 +212,12 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 空格选第一个候选
+    // 空格选当前高亮候选（默认第一个）
     if (!st->preedit.empty() && sym == FcitxKey_space) {
         if (cl && cl->size() > 0) {
-            cl->candidate(0).select(ic);
+            int idx = cl->cursorIndex();
+            if (idx < 0 || idx >= cl->size()) idx = 0;
+            cl->candidate(idx).select(ic);
         }
         event.filterAndAccept();
         return;
@@ -250,13 +252,29 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 翻页：Page Up/Down、+/-、方向键
+    // 左右方向键：在当前页内移动高亮选择
+    if (!st->preedit.empty() && cl &&
+        (sym == FcitxKey_Right || sym == FcitxKey_Left)) {
+        int cur = cl->cursorIndex();
+        int pageSize = cl->size();
+        if (sym == FcitxKey_Right) {
+            if (cur + 1 < pageSize)
+                cl->setCursorIndex(cur + 1);
+        } else {
+            if (cur > 0)
+                cl->setCursorIndex(cur - 1);
+        }
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        event.filterAndAccept();
+        return;
+    }
+
+    // 上下方向键 + Page Up/Down + +/-：翻页
     if (!st->preedit.empty() && cl) {
         auto *pageable = cl->toPageable();
         if (pageable) {
             if (sym == FcitxKey_Page_Down || sym == FcitxKey_equal ||
-                sym == FcitxKey_plus || sym == FcitxKey_Down ||
-                sym == FcitxKey_Right) {
+                sym == FcitxKey_plus || sym == FcitxKey_Down) {
                 if (pageable->hasNext()) {
                     pageable->next();
                     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
@@ -265,7 +283,7 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
                 return;
             }
             if (sym == FcitxKey_Page_Up || sym == FcitxKey_minus ||
-                sym == FcitxKey_Up || sym == FcitxKey_Left) {
+                sym == FcitxKey_Up) {
                 if (pageable->hasPrev()) {
                     pageable->prev();
                     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
