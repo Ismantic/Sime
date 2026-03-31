@@ -278,7 +278,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // Build lattice once, shared by Layer 1 and Layer 2
     std::vector<Node> net;
     InitNet(units, net);
-    const std::size_t beam = max_top * 2;
+    // Wider beam than DecodeText: Layer 2 needs good states at intermediate cols
+    const std::size_t beam = std::max<std::size_t>(max_top * 3, 40);
     for (auto& col : net) col.states.SetMaxTop(beam);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init);
@@ -287,8 +288,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // === Layer 1: Full sentence N-best (covers all input) ===
     {
         const auto tail = net.back().states.GetStates();
-        // libime uses nbest=3 for full sentences; keep most space for word candidates
-        constexpr std::size_t kNBest = 3;
+        // libime uses nbest=2 for full sentences by default
+        constexpr std::size_t kNBest = 2;
         const std::size_t scan = std::min<std::size_t>(beam, tail.size());
         for (std::size_t rank = 0; rank < scan && results.size() < kNBest; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
@@ -320,18 +321,23 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
 
     {
 
-        // Collect best states at each intermediate column (prefix endpoints)
-        for (std::size_t col = 1; col < units.size(); ++col) {
-            // Add SentenceToken cost to get final score at this prefix
+        // Collect candidates at each column (including full match for overflow
+        // beyond kNBest). Distance penalty = 0 for full matches.
+        for (std::size_t col = 1; col <= units.size(); ++col) {
             const auto& col_states = net[col].states.GetStates();
             if (col_states.empty()) continue;
 
             std::size_t distance = units.size() - col;
             float_t dist_penalty =
                 static_cast<float_t>(distance) * penalty_per_unit;
-            std::size_t matched_bytes = unit_byte_end[col - 1];
+            std::size_t matched_bytes =
+                (col <= unit_byte_end.size()) ? unit_byte_end[col - 1]
+                                              : total_bytes;
 
-            const std::size_t col_scan = std::min<std::size_t>(beam, col_states.size());
+            // Top few per prefix: enough variety without flooding
+            constexpr std::size_t kPerPrefix = 3;
+            const std::size_t col_scan =
+                std::min<std::size_t>(kPerPrefix, col_states.size());
             for (std::size_t rank = 0; rank < col_scan; ++rank) {
                 const auto& st = col_states[rank];
 
@@ -382,6 +388,39 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
         results.resize(max_top);
     }
     return results;
+}
+
+std::string Interpreter::SegmentPinyin(std::string_view input) {
+    std::vector<Unit> units;
+    UnitParser parser;
+    std::string result;
+    std::size_t pos = 0;
+    while (pos < input.size()) {
+        // Preserve delimiters (apostrophes) as spaces
+        while (pos < input.size() && UnitParser::IsDelimiter(input[pos])) {
+            ++pos;
+        }
+        if (pos >= input.size()) break;
+        std::size_t start = pos;
+        while (pos < input.size() && !UnitParser::IsDelimiter(input[pos])) {
+            ++pos;
+        }
+        std::string chunk(input.substr(start, pos - start));
+        std::vector<Unit> chunk_units;
+        if (parser.ParseStr(chunk, chunk_units)) {
+            for (const auto& u : chunk_units) {
+                const char* syl = UnitData::Decode(u);
+                if (!syl) continue;
+                if (!result.empty()) result.push_back(' ');
+                result.append(syl);
+            }
+        } else {
+            // Unparseable chunk: append as-is
+            if (!result.empty()) result.push_back(' ');
+            result.append(chunk);
+        }
+    }
+    return result;
 }
 
 } // namespace sime
