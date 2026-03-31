@@ -255,16 +255,19 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     // 左右方向键：在当前页内移动高亮选择
     if (!st->preedit.empty() && cl &&
         (sym == FcitxKey_Right || sym == FcitxKey_Left)) {
-        int cur = cl->cursorIndex();
-        int pageSize = cl->size();
-        if (sym == FcitxKey_Right) {
-            if (cur + 1 < pageSize)
-                cl->setCursorIndex(cur + 1);
-        } else {
-            if (cur > 0)
-                cl->setCursorIndex(cur - 1);
+        auto *ccl = dynamic_cast<CommonCandidateList *>(cl);
+        if (ccl) {
+            int cur = ccl->cursorIndex();
+            int pageSize = ccl->size();
+            if (sym == FcitxKey_Right) {
+                if (cur + 1 < pageSize)
+                    ccl->setCursorIndex(cur + 1);
+            } else {
+                if (cur > 0)
+                    ccl->setCursorIndex(cur - 1);
+            }
+            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
         }
-        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
         event.filterAndAccept();
         return;
     }
