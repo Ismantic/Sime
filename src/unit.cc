@@ -105,6 +105,28 @@ const UnitEntry* UnitData::GetDict(std::size_t& count) {
     return Dict;
 }
 
+std::vector<Unit> UnitData::ExpandIncomplete(const std::string& prefix) {
+    std::vector<Unit> result;
+    if (prefix.empty()) return result;
+
+    // Collect prefixes to match: include fuzzy z/zh, c/ch, s/sh
+    std::vector<std::string> prefixes = {prefix};
+    if (prefix == "z") prefixes.push_back("zh");
+    else if (prefix == "c") prefixes.push_back("ch");
+    else if (prefix == "s") prefixes.push_back("sh");
+
+    for (std::size_t i = 0; i < DictSize; ++i) {
+        const char* text = Dict[i].text;
+        for (const auto& p : prefixes) {
+            if (std::strncmp(text, p.c_str(), p.size()) == 0) {
+                result.emplace_back(Dict[i].value);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
 bool UnitParser::IsDelimiter(char ch) {
     switch (ch) {
         case '\'':
