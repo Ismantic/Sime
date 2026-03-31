@@ -147,10 +147,11 @@ void SimeEngine::updateUI(InputContext *ic) {
         return;
     }
 
-    // 特性2：preedit 加下划线
+    // 特性2：preedit 显示切分后的拼音，加下划线
+    std::string segmented = sime::Interpreter::SegmentPinyin(st->preedit);
     Text preeditText;
-    preeditText.append(st->preedit, TextFormatFlags{TextFormatFlag::Underline});
-    preeditText.setCursor(static_cast<int>(st->preedit.size()));
+    preeditText.append(segmented, TextFormatFlags{TextFormatFlag::Underline});
+    preeditText.setCursor(static_cast<int>(segmented.size()));
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
     if (hasPreeditCap) {
