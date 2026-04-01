@@ -6,6 +6,10 @@ build_fcitx5/
 corpus*
 freq_dict_*.txt
 pinyin_token_dict_*.txt
+dict_pinyin.txt
+pinyin_counts.bin
+pinyin_lm_raw.bin
+pinyin_model.bin
 
 # Training output
 output/
