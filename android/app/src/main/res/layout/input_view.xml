@@ -19,22 +19,38 @@
         android:paddingBottom="4dp"
         android:visibility="gone" />
 
-    <!-- Candidate bar -->
-    <HorizontalScrollView
-        android:id="@+id/candidate_scroll"
+    <!-- Toolbar: [settings] [candidate bar] -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="44dp"
-        android:scrollbars="none"
+        android:orientation="horizontal"
         android:background="@color/candidate_bg">
-        <LinearLayout
-            android:id="@+id/candidate_container"
-            android:layout_width="wrap_content"
+
+        <TextView
+            android:layout_width="40dp"
             android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="4dp"
-            android:paddingEnd="4dp" />
-    </HorizontalScrollView>
+            android:text="⚙"
+            android:tag="settings_open"
+            android:textSize="20sp"
+            android:gravity="center"
+            android:textColor="@color/key_text_secondary" />
+
+        <HorizontalScrollView
+            android:id="@+id/candidate_scroll"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/candidate_container"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp" />
+        </HorizontalScrollView>
+    </LinearLayout>
 
     <View
         android:layout_width="match_parent"
@@ -105,7 +121,7 @@
             android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" />
     </LinearLayout>
 
-    <!-- Row 4: [layout] [中/英] [?123] [，] [space] [。] [enter] -->
+    <!-- Row 4: [符号] [?123] [，] [space] [中/英] [enter] -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
@@ -115,16 +131,9 @@
         android:paddingTop="3dp"
         android:paddingBottom="8dp">
         <TextView
-            android:id="@+id/key_layout"
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.9"
-            android:text="9" android:tag="layout_toggle"
-            android:textSize="14sp" android:gravity="center"
-            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
-        <TextView
-            android:id="@+id/key_toggle"
-            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
-            android:text="中" android:tag="toggle"
-            android:textSize="15sp" android:gravity="center"
+            android:text="符号" android:tag="sym_open"
+            android:textSize="13sp" android:gravity="center"
             android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
         <TextView
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
@@ -139,9 +148,11 @@
             android:tag="space"
             android:textSize="14sp" android:gravity="center"
             android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.9"
-            android:text="。" android:tag="period"
-            android:textSize="22sp" android:gravity="center"
+        <TextView
+            android:id="@+id/key_toggle"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:text="中" android:tag="toggle"
+            android:textSize="15sp" android:gravity="center"
             android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
         <ImageView
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.3"

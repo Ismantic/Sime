@@ -21,7 +21,6 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
-import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -64,7 +63,7 @@ public class SimeInputMethodService extends InputMethodService {
     // Stored in SharedPreferences
     private boolean mT9LayoutMode = false;
 
-    private enum KeyboardMode { QWERTY, T9, NUMBER, SYMBOL }
+    private enum KeyboardMode { QWERTY, T9, NUMBER, SYMBOL, SETTINGS }
     private KeyboardMode mKeyboardMode = KeyboardMode.QWERTY;
 
     // Candidate state
@@ -74,9 +73,16 @@ public class SimeInputMethodService extends InputMethodService {
     // UI refs
     private View mInputView;
     private LinearLayout mCandidateContainer;
-    private HorizontalScrollView mCandidateScroll;
+    private View mCandidateScroll;
     private TextView mPreeditView;
     private TextView mToggleKey;
+
+    // T9 left column and pinyin candidate state
+    private LinearLayout mT9LeftCol;
+    private String[] mT9PinyinOptions = new String[0];
+    private int mSelectedPinyinIndex = 0;
+    private static final int T9_PINYIN_COUNT = 8;
+    private static final String[] T9_DEFAULT_PUNCTUATION = {"，", "。", "？", "！", "……"};
 
     // Key popup
     private PopupWindow mPopup;
@@ -92,24 +98,20 @@ public class SimeInputMethodService extends InputMethodService {
     // Symbol data
     private static final LinkedHashMap<String, String[]> SYMBOL_CATEGORIES = new LinkedHashMap<>();
     static {
-        SYMBOL_CATEGORIES.put("常用", new String[]{
+        SYMBOL_CATEGORIES.put("中文", new String[]{
             "，", "。", "？", "！", "、", "：", "；",
             "\u201C", "\u201D", "\u2018", "\u2019", "……",
-            "——", "（", "）", "【", "】",
-            "《", "》", "「", "」", "～", "·", "…",
-            "@", "#", "￥", "%", "&", "*", "+", "-", "=", "/", "\\", "|",
-            "^", "_", "<", ">", "{", "}", "[", "]", ".", ",", "?", "!",
-            ":", ";", "\"", "'", "`", "~", "$", "€", "£", "¥"
+            "——", "（", "）", "【", "】", "～",
+            "《", "》", "「", "」", "『", "』", "·",
+            "〔", "〕", "〈", "〉", "〖", "〗", "…",
+            "—", "–", "‧", "•", "※", "°", "￥"
         });
-        SYMBOL_CATEGORIES.put("标点", new String[]{
-            "。", "，", "、", "；", "：", "？", "！", ".", ",", ";", ":", "?",
-            "!", "…", "……", "—", "——", "～", "~", "-", "–", "―",
-            "·", "•", "‧", "﹒", "°", "′", "″", "‰", "‱", "※"
-        });
-        SYMBOL_CATEGORIES.put("括号", new String[]{
-            "（", "）", "【", "】", "《", "》", "「", "」", "『", "』", "〔", "〕",
-            "〈", "〉", "｛", "｝", "〖", "〗", "〘", "〙", "〚", "〛",
-            "(", ")", "[", "]", "{", "}", "<", ">", "⟨", "⟩"
+        SYMBOL_CATEGORIES.put("英文", new String[]{
+            ".", ",", "?", "!", ":", ";", "\"", "'",
+            "-", "_", "(", ")", "[", "]", "{", "}",
+            "<", ">", "/", "\\", "|", "&", "@", "#",
+            "$", "%", "^", "*", "+", "=", "~", "`",
+            "€", "£", "¥", "©", "®", "™"
         });
         SYMBOL_CATEGORIES.put("数学", new String[]{
             "+", "-", "×", "÷", "=", "≠", "≈", "≤", "≥", "<", ">", "±",
@@ -188,32 +190,39 @@ public class SimeInputMethodService extends InputMethodService {
     private View inflateKeyboard() {
         int layoutRes;
         switch (mKeyboardMode) {
-            case T9:     layoutRes = R.layout.input_view_t9; break;
-            case NUMBER:  layoutRes = R.layout.input_view_number; break;
-            case SYMBOL: layoutRes = R.layout.input_view_symbol; break;
-            default:     layoutRes = R.layout.input_view; break;
+            case T9:       layoutRes = R.layout.input_view_t9; break;
+            case NUMBER:   layoutRes = R.layout.input_view_number; break;
+            case SYMBOL:   layoutRes = R.layout.input_view_symbol; break;
+            case SETTINGS: layoutRes = R.layout.input_view_settings; break;
+            default:       layoutRes = R.layout.input_view; break;
         }
         mInputView = getLayoutInflater().inflate(layoutRes, null);
 
         if (mKeyboardMode == KeyboardMode.SYMBOL) {
             setupSymbolKeyboard();
-        } else if (mKeyboardMode == KeyboardMode.NUMBER) {
-            // Number keyboard has no preedit/candidates
+        } else if (mKeyboardMode == KeyboardMode.SETTINGS) {
+            setupSettingsPanel();
             mPreeditView = null;
             mCandidateContainer = null;
             mCandidateScroll = null;
             mToggleKey = null;
+            mT9LeftCol = null;
+        } else if (mKeyboardMode == KeyboardMode.NUMBER) {
+            mPreeditView = null;
+            mCandidateContainer = null;
+            mCandidateScroll = null;
+            mToggleKey = null;
+            mT9LeftCol = null;
         } else {
             mPreeditView = mInputView.findViewById(R.id.preedit);
             mCandidateContainer = mInputView.findViewById(R.id.candidate_container);
             mCandidateScroll = mInputView.findViewById(R.id.candidate_scroll);
             mToggleKey = mInputView.findViewById(R.id.key_toggle);
-            updateToggleLabel();
-            // Update layout toggle button label
-            TextView layoutKey = mInputView.findViewById(R.id.key_layout);
-            if (layoutKey != null) {
-                layoutKey.setText(mT9LayoutMode ? "26" : "9");
+            mT9LeftCol = mInputView.findViewById(R.id.t9_left_col);
+            if (mT9LeftCol != null) {
+                populateT9LeftColumn();
             }
+            updateToggleLabel();
         }
 
         // Set up touch listeners for all tagged views
@@ -424,12 +433,22 @@ public class SimeInputMethodService extends InputMethodService {
                 switchKeyboard(KeyboardMode.SYMBOL);
                 break;
             case "sym_back":
+            case "settings_back":
                 // Back to main keyboard
                 switchKeyboard(getMainKeyboardMode());
+                break;
+            case "settings_open":
+                switchKeyboard(KeyboardMode.SETTINGS);
                 break;
             case "comma":
             case "period":
                 handlePunctuation(tag);
+                break;
+            case "t9_fenci":
+                handleT9Fenci();
+                break;
+            case "t9_clear":
+                resetComposition();
                 break;
             default:
                 if (tag.startsWith("t9_")) {
@@ -477,6 +496,7 @@ public class SimeInputMethodService extends InputMethodService {
         mPreedit.append(digit);
         mCursor = mPreedit.length();
         mCandidatePage = 0;
+        mSelectedPinyinIndex = 0;
         updateUI();
     }
 
@@ -543,10 +563,8 @@ public class SimeInputMethodService extends InputMethodService {
             if (ic != null) ic.commitText(mPreedit.toString(), 1);
             resetComposition();
         }
-        // Toggle layout mode and save preference
         mT9LayoutMode = !mT9LayoutMode;
         saveLayoutPref();
-        // Switch to the correct keyboard
         mKeyboardMode = getMainKeyboardMode();
         setInputView(inflateKeyboard());
     }
@@ -610,12 +628,18 @@ public class SimeInputMethodService extends InputMethodService {
         mCursor = 0;
         mCandidates.clear();
         mCandidatePage = 0;
+        mSelectedPinyinIndex = 0;
+        mT9PinyinOptions = new String[0];
         if (mPreeditView != null) {
             mPreeditView.setText("");
             mPreeditView.setVisibility(View.GONE);
         }
         if (mCandidateContainer != null) {
             mCandidateContainer.removeAllViews();
+        }
+        // Restore T9 left column to punctuation
+        if (mT9LeftCol != null) {
+            populateT9LeftColumn();
         }
     }
 
@@ -655,27 +679,133 @@ public class SimeInputMethodService extends InputMethodService {
 
     private void updateT9UI() {
         String digits = mPreedit.toString();
-        String preeditText = digits;
-        if (mEngine.isReady()) {
-            SimeEngine.Candidate[] t9Results =
-                mEngine.decodeT9(digits, MAX_CANDIDATES);
-            mCandidates.clear();
-            for (SimeEngine.Candidate c : t9Results) {
-                mCandidates.add(c);
-            }
-            // Show pinyin instead of raw digits
-            String pinyin = mEngine.decodeT9Pinyin(digits);
-            if (pinyin != null && !pinyin.isEmpty()) {
-                preeditText = pinyin;
-            }
+        if (!mEngine.isReady()) return;
+
+        // Get pinyin interpretations
+        mT9PinyinOptions = mEngine.decodeT9Pinyin(digits, T9_PINYIN_COUNT);
+        if (mSelectedPinyinIndex >= mT9PinyinOptions.length) {
+            mSelectedPinyinIndex = 0;
         }
 
+        // Update preedit with selected pinyin
+        String preeditText = digits;
+        if (mT9PinyinOptions.length > 0) {
+            preeditText = mT9PinyinOptions[mSelectedPinyinIndex];
+        }
         SpannableString ss = new SpannableString(preeditText);
         ss.setSpan(new UnderlineSpan(), 0, preeditText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         mPreeditView.setText(ss);
         mPreeditView.setVisibility(View.VISIBLE);
 
+        // Populate mCandidates from the selected pinyin
+        mCandidates.clear();
+        if (mT9PinyinOptions.length > 0) {
+            String selectedPinyin = mT9PinyinOptions[mSelectedPinyinIndex];
+            SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(selectedPinyin, MAX_CANDIDATES);
+            for (SimeEngine.Candidate c : hanzi) {
+                mCandidates.add(c);
+            }
+        }
+
+        // Show hanzi in horizontal candidate bar
         showCandidatePage();
+
+        // Update left column to show pinyin candidates
+        populateT9LeftColumn();
+    }
+
+    /** Populate the T9 left column with punctuation (idle) or pinyin candidates (typing). */
+    private void populateT9LeftColumn() {
+        if (mT9LeftCol == null) return;
+        mT9LeftCol.removeAllViews();
+
+        if (mPreedit.length() > 0 && mT9PinyinOptions.length > 0) {
+            // Show pinyin candidates
+            for (int i = 0; i < mT9PinyinOptions.length; i++) {
+                String pinyin = mT9PinyinOptions[i].replace(" ", "'");
+                boolean isSelected = (i == mSelectedPinyinIndex);
+
+                TextView tv = new TextView(this);
+                tv.setText(pinyin);
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                tv.setGravity(Gravity.CENTER);
+                tv.setSingleLine(true);
+                tv.setPadding(dp(2), dp(4), dp(2), dp(4));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+                tv.setLayoutParams(lp);
+
+                if (isSelected) {
+                    tv.setTextColor(getColor(R.color.candidate_first));
+                    tv.setTypeface(null, Typeface.BOLD);
+                } else {
+                    tv.setTextColor(getColor(R.color.key_text_secondary));
+                }
+
+                final int idx = i;
+                tv.setOnClickListener(v -> {
+                    mSelectedPinyinIndex = idx;
+                    mCandidatePage = 0;
+                    // Refresh hanzi for selected pinyin
+                    mCandidates.clear();
+                    SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(
+                        mT9PinyinOptions[idx], MAX_CANDIDATES);
+                    for (SimeEngine.Candidate c : hanzi) {
+                        mCandidates.add(c);
+                    }
+                    // Update preedit
+                    String py = mT9PinyinOptions[idx];
+                    SpannableString s = new SpannableString(py);
+                    s.setSpan(new UnderlineSpan(), 0, py.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    mPreeditView.setText(s);
+                    showCandidatePage();
+                    populateT9LeftColumn();
+                });
+                mT9LeftCol.addView(tv);
+            }
+        } else {
+            // Show default punctuation
+            for (String punc : T9_DEFAULT_PUNCTUATION) {
+                TextView tv = new TextView(this);
+                tv.setText(punc);
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+                tv.setGravity(Gravity.CENTER);
+                tv.setPadding(dp(2), dp(4), dp(2), dp(4));
+                tv.setTextColor(getColor(R.color.key_text));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+                tv.setLayoutParams(lp);
+
+                final String symbol = punc;
+                tv.setOnClickListener(v -> {
+                    InputConnection ic = getCurrentInputConnection();
+                    if (ic != null) {
+                        ic.commitText(symbol, 1);
+                    }
+                });
+                mT9LeftCol.addView(tv);
+            }
+        }
+    }
+
+    /** T9 分词: cycle to next pinyin interpretation */
+    private void handleT9Fenci() {
+        if (mT9PinyinOptions.length <= 1) return;
+        mSelectedPinyinIndex = (mSelectedPinyinIndex + 1) % mT9PinyinOptions.length;
+        mCandidatePage = 0;
+        // Refresh
+        mCandidates.clear();
+        SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(
+            mT9PinyinOptions[mSelectedPinyinIndex], MAX_CANDIDATES);
+        for (SimeEngine.Candidate c : hanzi) {
+            mCandidates.add(c);
+        }
+        String py = mT9PinyinOptions[mSelectedPinyinIndex];
+        SpannableString s = new SpannableString(py);
+        s.setSpan(new UnderlineSpan(), 0, py.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        mPreeditView.setText(s);
+        showCandidatePage();
+        populateT9LeftColumn();
     }
 
     private void showCandidatePage() {
@@ -860,6 +990,79 @@ public class SimeInputMethodService extends InputMethodService {
 
         // Set up touch listeners (for backspace, space, sym_back, and symbol keys)
         setupTouchListeners(mInputView);
+    }
+
+    // === Settings panel ===
+
+    private void setupSettingsPanel() {
+        LinearLayout grid = mInputView.findViewById(R.id.settings_grid);
+        if (grid == null) return;
+
+        // Section label
+        TextView sectionLabel = new TextView(this);
+        sectionLabel.setText("键盘布局");
+        sectionLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        sectionLabel.setTextColor(getColor(R.color.key_text_secondary));
+        sectionLabel.setPadding(dp(4), 0, 0, dp(12));
+        grid.addView(sectionLabel);
+
+        // Two keyboard options side by side
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        grid.addView(row);
+
+        // QWERTY option
+        row.addView(createLayoutOption("全键盘", "QWERTY", !mT9LayoutMode, false));
+        // Spacer between
+        View gap = new View(this);
+        gap.setLayoutParams(new LinearLayout.LayoutParams(dp(12), 1));
+        row.addView(gap);
+        // T9 option
+        row.addView(createLayoutOption("九宫格", "T9", mT9LayoutMode, true));
+
+        setupTouchListeners(mInputView);
+    }
+
+    private LinearLayout createLayoutOption(String title, String subtitle, boolean selected, boolean isT9) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(8), dp(20), dp(8), dp(20));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        item.setLayoutParams(params);
+
+        // Title
+        TextView titleView = new TextView(this);
+        titleView.setText(title);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        titleView.setGravity(Gravity.CENTER);
+        titleView.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        titleView.setTextColor(getColor(selected ? R.color.key_text : R.color.key_text_secondary));
+        item.addView(titleView);
+
+        // Subtitle
+        TextView subView = new TextView(this);
+        subView.setText(subtitle);
+        subView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        subView.setGravity(Gravity.CENTER);
+        subView.setTextColor(getColor(selected ? R.color.candidate_first : R.color.key_text_secondary));
+        subView.setPadding(0, dp(4), 0, 0);
+        item.addView(subView);
+
+        // Background: highlighted if selected
+        item.setBackground(getDrawable(selected ? R.drawable.key_bg_accent : R.drawable.key_bg));
+        item.setClickable(true);
+
+        item.setOnClickListener(v -> {
+            mT9LayoutMode = isT9;
+            saveLayoutPref();
+            mKeyboardMode = KeyboardMode.SETTINGS;
+            setInputView(inflateKeyboard());
+        });
+
+        return item;
     }
 
     // === Utility ===
