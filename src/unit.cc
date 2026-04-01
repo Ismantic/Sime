@@ -16,7 +16,7 @@ namespace sime {
 
 namespace {
 
-constexpr int CompareEntry(const char* key, const UnitEntry& entry) {
+inline int CompareEntry(const char* key, const UnitEntry& entry) {
     return std::strcmp(key, entry.text);
 }
 
