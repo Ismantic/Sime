@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="56dp"
+    android:layout_height="70dp"
+    android:background="@drawable/key_popup_bg"
+    android:elevation="8dp">
+
+    <TextView
+        android:id="@+id/popup_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:textSize="28sp"
+        android:textColor="@color/popup_text"
+        android:textStyle="bold" />
+</FrameLayout>

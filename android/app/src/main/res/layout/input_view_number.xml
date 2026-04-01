@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/keyboard_bg">
+
+    <!-- Row 1: 1 2 3 4 5 6 7 8 9 0 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="3dp">
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="1" android:tag="num_1" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="2" android:tag="num_2" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="3" android:tag="num_3" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="4" android:tag="num_4" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="5" android:tag="num_5" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="6" android:tag="num_6" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="7" android:tag="num_7" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="8" android:tag="num_8" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="9" android:tag="num_9" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="0" android:tag="num_0" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+    </LinearLayout>
+
+    <!-- Row 2: - / : ; ( ) ￥ &amp; @ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="-"  android:tag="sym_-"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="/"  android:tag="sym_/"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text=":"  android:tag="sym_:"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text=";"  android:tag="sym_;"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="("  android:tag="sym_("  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text=")"  android:tag="sym_)"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="￥" android:tag="sym_￥" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="&amp;" android:tag="sym_&amp;" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="@"  android:tag="sym_@"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+    </LinearLayout>
+
+    <!-- Row 3: [#+=] . , ? ! ' [backspace] -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
+            android:text="#+=\n更多" android:tag="sym_open"
+            android:textSize="13sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="."  android:tag="sym_."  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text=","  android:tag="sym_,"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="?"  android:tag="sym_?"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="!"  android:tag="sym_!"  android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="&apos;" android:tag="sym_&apos;" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <ImageView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
+            android:src="@drawable/ic_backspace" android:tag="backspace"
+            android:scaleType="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" />
+    </LinearLayout>
+
+    <!-- Row 4: [ABC] [，] [space] [。] [enter] -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="8dp">
+        <TextView
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
+            android:text="ABC" android:tag="num_back"
+            android:textSize="14sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:text="，" android:tag="comma"
+            android:textSize="22sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="3.2"
+            android:tag="space"
+            android:textSize="14sp" android:gravity="center"
+            android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:text="。" android:tag="period"
+            android:textSize="22sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <ImageView
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
+            android:src="@drawable/ic_enter" android:tag="enter"
+            android:scaleType="center"
+            android:background="@drawable/key_bg_accent" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" />
+    </LinearLayout>
+
+</LinearLayout>

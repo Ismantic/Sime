@@ -177,7 +177,39 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     return arr;
 }
 
-// 7. Check if engine is ready.
+// 7. T9: digits → pinyin string (top parse).
+//    Returns e.g. "xi huan" for the best pinyin interpretation of the digit sequence.
+JNIEXPORT jstring JNICALL
+Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
+    JNIEnv* env, jclass /*clazz*/,
+    jstring digits, jint num) {
+
+    if (!g_interpreter || !g_interpreter->Ready() ||
+        !g_interpreter->T9Ready()) {
+        return env->NewStringUTF("");
+    }
+
+    auto d = jstringToString(env, digits);
+    auto results = g_interpreter->DecodeT9Pinyin(
+        d, static_cast<std::size_t>(num));
+
+    if (results.empty()) {
+        return env->NewStringUTF("");
+    }
+
+    // Take the top result and convert Unit vector to space-separated pinyin
+    std::string pinyin;
+    for (const auto& unit : results[0].pinyin) {
+        const char* py = sime::UnitData::Decode(unit);
+        if (py) {
+            if (!pinyin.empty()) pinyin += ' ';
+            pinyin += py;
+        }
+    }
+    return env->NewStringUTF(pinyin.c_str());
+}
+
+// 8. Check if engine is ready.
 JNIEXPORT jboolean JNICALL
 Java_com_isma_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {
