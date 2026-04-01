@@ -373,6 +373,27 @@ void Constructor::PruneLevel(int level) {
 }
 
 void Constructor::ComputeContinuationCounts() {
+    // For bigram models: compute unigram continuation counts from leaves.
+    // N1+(.,w) = number of distinct contexts v where bigram (v,w) exists.
+    if (opts_.num == 2) {
+        auto& unigram_level = node_levels_[1];
+
+        std::unordered_map<std::uint32_t, std::uint32_t> ctx_map;
+        for (std::size_t v = 0; v + 1 < unigram_level.size(); ++v) {
+            for (std::size_t w = unigram_level[v].down;
+                 w < unigram_level[v + 1].down; ++w) {
+                ctx_map[leaves_[w].id]++;
+            }
+        }
+        for (auto& node : unigram_level) {
+            auto it = ctx_map.find(node.id);
+            if (it != ctx_map.end()) {
+                node.ctx = it->second;
+            }
+        }
+        return;
+    }
+
     if (opts_.num < 3) return;
 
     auto& l1 = node_levels_[1];
