@@ -81,7 +81,7 @@
         android:paddingBottom="8dp">
         <TextView
             android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
-            android:text="ABC" android:tag="num_back"
+            android:text="返回" android:tag="num_back"
             android:textSize="14sp" android:gravity="center"
             android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
         <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
