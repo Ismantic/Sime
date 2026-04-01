@@ -177,36 +177,40 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     return arr;
 }
 
-// 7. T9: digits → pinyin string (top parse).
-//    Returns e.g. "xi huan" for the best pinyin interpretation of the digit sequence.
-JNIEXPORT jstring JNICALL
+// 7. T9: digits → pinyin candidates.
+//    Returns String[] of space-separated pinyin strings, one per interpretation.
+JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
     JNIEnv* env, jclass /*clazz*/,
     jstring digits, jint num) {
 
+    jclass stringClass = env->FindClass("java/lang/String");
+
     if (!g_interpreter || !g_interpreter->Ready() ||
         !g_interpreter->T9Ready()) {
-        return env->NewStringUTF("");
+        return env->NewObjectArray(0, stringClass, nullptr);
     }
 
     auto d = jstringToString(env, digits);
     auto results = g_interpreter->DecodeT9Pinyin(
         d, static_cast<std::size_t>(num));
 
-    if (results.empty()) {
-        return env->NewStringUTF("");
-    }
+    auto arr = env->NewObjectArray(
+        static_cast<jsize>(results.size()), stringClass, nullptr);
 
-    // Take the top result and convert Unit vector to space-separated pinyin
-    std::string pinyin;
-    for (const auto& unit : results[0].pinyin) {
-        const char* py = sime::UnitData::Decode(unit);
-        if (py) {
-            if (!pinyin.empty()) pinyin += ' ';
-            pinyin += py;
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        std::string pinyin;
+        for (const auto& unit : results[i].pinyin) {
+            const char* py = sime::UnitData::Decode(unit);
+            if (py) {
+                if (!pinyin.empty()) pinyin += ' ';
+                pinyin += py;
+            }
         }
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i),
+                                   env->NewStringUTF(pinyin.c_str()));
     }
-    return env->NewStringUTF(pinyin.c_str());
+    return arr;
 }
 
 // 8. Check if engine is ready.

@@ -2,16 +2,12 @@ package com.isma.sime;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
 import android.widget.TextView;
 
 public class SettingsActivity extends Activity {
@@ -72,50 +68,6 @@ public class SettingsActivity extends Activity {
             }
         });
         layout.addView(btnSwitch, btn2Params);
-
-        // Keyboard layout setting
-        TextView layoutTitle = new TextView(this);
-        layoutTitle.setText("\n键盘布局");
-        layoutTitle.setTextSize(20);
-        layoutTitle.setTextColor(Color.BLACK);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        titleParams.topMargin = 48;
-        layout.addView(layoutTitle, titleParams);
-
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        int currentMode = prefs.getInt(KEY_LAYOUT_MODE, MODE_QWERTY);
-
-        RadioGroup radioGroup = new RadioGroup(this);
-        radioGroup.setOrientation(RadioGroup.VERTICAL);
-
-        RadioButton rbQwerty = new RadioButton(this);
-        rbQwerty.setText("全键盘（中文全键盘，英文全键盘）");
-        rbQwerty.setTextSize(16);
-        rbQwerty.setId(MODE_QWERTY);
-        rbQwerty.setPadding(0, 16, 0, 16);
-        radioGroup.addView(rbQwerty);
-
-        RadioButton rbT9 = new RadioButton(this);
-        rbT9.setText("九宫格（中文九宫格，英文全键盘）");
-        rbT9.setTextSize(16);
-        rbT9.setId(MODE_T9);
-        rbT9.setPadding(0, 16, 0, 16);
-        radioGroup.addView(rbT9);
-
-        radioGroup.check(currentMode);
-        radioGroup.setOnCheckedChangeListener((group, checkedId) -> {
-            prefs.edit().putInt(KEY_LAYOUT_MODE, checkedId).apply();
-        });
-
-        LinearLayout.LayoutParams rgParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        rgParams.topMargin = 16;
-        layout.addView(radioGroup, rgParams);
 
         setContentView(layout);
     }
