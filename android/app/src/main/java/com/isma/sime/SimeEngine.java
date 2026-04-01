@@ -32,6 +32,7 @@ public class SimeEngine {
     private static native String[] nativeDecodeSentence(String input, int num);
     private static native String nativeSegmentPinyin(String input);
     private static native String[] nativeDecodeT9(String digits, int num);
+    private static native String nativeDecodeT9Pinyin(String digits, int num);
     private static native boolean nativeIsReady();
 
     private boolean mReady = false;
@@ -115,6 +116,12 @@ public class SimeEngine {
             );
         }
         return result;
+    }
+
+    /** T9: decode digit string to pinyin string (top parse). e.g. "94826" → "xi huan" */
+    public String decodeT9Pinyin(String digits) {
+        if (!isReady()) return "";
+        return nativeDecodeT9Pinyin(digits, 1);
     }
 
     /**

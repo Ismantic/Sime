@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#D2D5DB">
+    android:background="@color/keyboard_bg">
 
     <!-- Preedit display -->
     <TextView
@@ -11,12 +11,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="16sp"
-        android:textColor="#1A73E8"
-        android:background="#FFFFFF"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
+        android:textColor="@color/preedit_text"
+        android:background="@color/candidate_bg"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp"
         android:visibility="gone" />
 
     <!-- Candidate bar -->
@@ -25,116 +25,129 @@
         android:layout_width="match_parent"
         android:layout_height="44dp"
         android:scrollbars="none"
-        android:background="#FFFFFF">
-
+        android:background="@color/candidate_bg">
         <LinearLayout
             android:id="@+id/candidate_container"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:gravity="center_vertical" />
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp" />
     </HorizontalScrollView>
 
     <View
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#C0C0C0" />
+        android:layout_height="0.5dp"
+        android:background="@color/candidate_divider" />
 
     <!-- Row 1: q w e r t y u i o p -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="52dp"
         android:orientation="horizontal"
         android:paddingStart="3dp"
         android:paddingEnd="3dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="2dp">
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="q" android:tag="q" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="w" android:tag="w" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="e" android:tag="e" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="r" android:tag="r" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="t" android:tag="t" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="y" android:tag="y" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="u" android:tag="u" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="i" android:tag="i" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="o" android:tag="o" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="p" android:tag="p" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
+        android:paddingTop="6dp"
+        android:paddingBottom="3dp">
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="q" android:tag="q" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="w" android:tag="w" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="e" android:tag="e" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="r" android:tag="r" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="t" android:tag="t" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="y" android:tag="y" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="u" android:tag="u" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="i" android:tag="i" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="o" android:tag="o" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="p" android:tag="p" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
     </LinearLayout>
 
     <!-- Row 2: a s d f g h j k l -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="52dp"
         android:orientation="horizontal"
         android:paddingStart="18dp"
         android:paddingEnd="18dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="2dp">
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="a" android:tag="a" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="s" android:tag="s" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="d" android:tag="d" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="f" android:tag="f" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="g" android:tag="g" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="h" android:tag="h" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="j" android:tag="j" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="k" android:tag="k" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="l" android:tag="l" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="a" android:tag="a" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="s" android:tag="s" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="d" android:tag="d" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="f" android:tag="f" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="g" android:tag="g" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="h" android:tag="h" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="j" android:tag="j" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="k" android:tag="k" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="l" android:tag="l" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
     </LinearLayout>
 
     <!-- Row 3: z x c v b n m [backspace] -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="52dp"
         android:orientation="horizontal"
         android:paddingStart="3dp"
         android:paddingEnd="3dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="2dp">
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="z" android:tag="z" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="x" android:tag="x" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="c" android:tag="c" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="v" android:tag="v" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="b" android:tag="b" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="n" android:tag="n" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="m" android:tag="m" android:onClick="onKeyPress" android:textAllCaps="false" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5" android:text="⌫" android:tag="backspace" android:onClick="onKeyPress" android:textSize="20sp" android:gravity="center" android:background="@drawable/key_bg_dark" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+        <View android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.75" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="z" android:tag="z" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="x" android:tag="x" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="c" android:tag="c" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="v" android:tag="v" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="b" android:tag="b" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="n" android:tag="n" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="m" android:tag="m" android:textAllCaps="false" android:textSize="22sp" android:gravity="center" android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text" />
+        <ImageView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
+            android:src="@drawable/ic_backspace" android:tag="backspace"
+            android:scaleType="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" />
     </LinearLayout>
 
-    <!-- Row 4: [中/英] [9键] [，] [space] [。] [enter] -->
+    <!-- Row 4: [layout] [中/英] [?123] [，] [space] [。] [enter] -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:orientation="horizontal"
         android:paddingStart="3dp"
         android:paddingEnd="3dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="6dp">
+        android:paddingTop="3dp"
+        android:paddingBottom="8dp">
+        <TextView
+            android:id="@+id/key_layout"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.9"
+            android:text="9" android:tag="layout_toggle"
+            android:textSize="14sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
         <TextView
             android:id="@+id/key_toggle"
-            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.2"
-            android:text="中" android:tag="toggle" android:onClick="onKeyPress"
-            android:textSize="16sp" android:gravity="center"
-            android:background="@drawable/key_bg_dark" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.2"
-            android:text="9键" android:tag="switch_kb" android:onClick="onKeyPress"
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:text="中" android:tag="toggle"
+            android:textSize="15sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:text="\?123" android:tag="num_open"
+            android:textSize="13sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.9"
+            android:text="，" android:tag="comma"
+            android:textSize="22sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="3"
+            android:tag="space"
             android:textSize="14sp" android:gravity="center"
-            android:background="@drawable/key_bg_dark" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
-            android:text="，" android:tag="comma" android:onClick="onKeyPress"
-            android:textSize="20sp" android:gravity="center"
-            android:background="@drawable/key_bg_dark" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="4"
-            android:text="空格" android:tag="space" android:onClick="onKeyPress"
-            android:textSize="18sp" android:gravity="center"
-            android:background="@drawable/key_bg" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
-            android:text="。" android:tag="period" android:onClick="onKeyPress"
-            android:textSize="20sp" android:gravity="center"
-            android:background="@drawable/key_bg_dark" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#333333" />
-        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.5"
-            android:text="确认" android:tag="enter" android:onClick="onKeyPress"
-            android:textSize="16sp" android:gravity="center"
-            android:background="@drawable/key_bg_accent" android:layout_marginStart="2dp" android:layout_marginEnd="2dp" android:textColor="#FFFFFF" />
+            android:background="@drawable/key_bg" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <TextView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.9"
+            android:text="。" android:tag="period"
+            android:textSize="22sp" android:gravity="center"
+            android:background="@drawable/key_bg_dark" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" android:textColor="@color/key_text_secondary" />
+        <ImageView
+            android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.3"
+            android:src="@drawable/ic_enter" android:tag="enter"
+            android:scaleType="center"
+            android:background="@drawable/key_bg_accent" android:layout_marginStart="2.5dp" android:layout_marginEnd="2.5dp" />
     </LinearLayout>
 
 </LinearLayout>
