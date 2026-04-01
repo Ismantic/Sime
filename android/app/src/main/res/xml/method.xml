@@ -2,8 +2,4 @@
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:settingsActivity="com.isma.sime.SettingsActivity"
     android:isDefault="false">
-    <subtype
-        android:label="@string/ime_name"
-        android:imeSubtypeLocale="zh_CN"
-        android:imeSubtypeMode="keyboard" />
 </input-method>
