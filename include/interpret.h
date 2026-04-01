@@ -3,6 +3,7 @@
 #include "common.h"
 #include "score.h"
 #include "state.h"
+#include "t9.h"
 #include "trie.h"
 #include "userdict.h"
 
@@ -33,6 +34,17 @@ public:
                        const std::filesystem::path& model_path);
 
     bool LoadUserDict(const std::filesystem::path& path);
+
+    bool LoadT9(const std::filesystem::path& pinyin_model_path);
+    bool T9Ready() const { return t9_.Ready(); }
+
+    // T9: decode digit sequence → hanzi candidates.
+    std::vector<SentenceResult> DecodeT9(
+        std::string_view digits, std::size_t num = 18) const;
+
+    // T9: decode digit sequence → pinyin only (no hanzi lookup).
+    std::vector<T9Decoder::Result> DecodeT9Pinyin(
+        std::string_view digits, std::size_t num = 5) const;
 
     bool Ready() const { return ready_; }
 
@@ -94,6 +106,7 @@ private:
     Trie trie_;
     Scorer scorer_;
     UserDict userdict_;
+    T9Decoder t9_;
     float_t userdict_boost_ = 0.0;
     bool ready_ = false;
 };

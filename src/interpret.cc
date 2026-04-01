@@ -25,6 +25,67 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
     return true;
 }
 
+bool Interpreter::LoadT9(const std::filesystem::path& pinyin_model_path) {
+    return t9_.Load(pinyin_model_path);
+}
+
+std::vector<SentenceResult> Interpreter::DecodeT9(
+    std::string_view digits,
+    std::size_t num) const {
+    std::vector<SentenceResult> results;
+    if (!ready_ || !t9_.Ready() || digits.empty()) {
+        return results;
+    }
+
+    // T9 decode: digits → ranked pinyin parses
+    constexpr std::size_t kT9Parses = 3;
+    auto parses = t9_.Decode(digits, kT9Parses);
+
+    const std::size_t per_parse = num / std::max<std::size_t>(parses.size(), 1);
+
+    for (const auto& parse : parses) {
+        // Pinyin → hanzi via existing decoder
+        auto hanzi = DecodeUnits(parse.pinyin,
+                                 std::max<std::size_t>(per_parse, 3));
+        for (auto& h : hanzi) {
+            // Deduplicate
+            bool dup = false;
+            for (const auto& e : results) {
+                if (e.text == h.text) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) {
+                SentenceResult r;
+                r.text = std::move(h.text);
+                r.score = h.score;
+                r.matched_len = digits.size();
+                results.push_back(std::move(r));
+            }
+        }
+    }
+
+    std::sort(results.begin(), results.end(),
+              [](const SentenceResult& a, const SentenceResult& b) {
+                  return a.score > b.score;
+              });
+
+    if (results.size() > num) {
+        results.resize(num);
+    }
+    return results;
+}
+
+std::vector<T9Decoder::Result> Interpreter::DecodeT9Pinyin(
+    std::string_view digits,
+    std::size_t num) const {
+    if (!t9_.Ready() || digits.empty()) {
+        return {};
+    }
+    return t9_.Decode(digits, num);
+}
+
 bool Interpreter::LoadUserDict(const std::filesystem::path& path) {
     if (!ready_) return false;
     userdict_.SetBaseTokenID(trie_.TokenCount());
@@ -477,22 +538,23 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 float_t score = -(userdict_.ScoreAt(local) - userdict_boost_)
                                 - dist_penalty;
 
-                bool dup = false;
-                for (const auto& e : results)
-                    if (e.text == text && e.matched_len == matched_bytes) {
-                        dup = true; break;
+                // Check if this word already exists in results.
+                // If so, remove it and re-insert at the top.
+                for (auto it2 = results.begin(); it2 != results.end(); ++it2) {
+                    if (it2->text == text && it2->matched_len == matched_bytes) {
+                        if (score > it2->score) it2->score = score;
+                        score = it2->score;
+                        results.erase(it2);
+                        break;
                     }
-                if (!dup) {
+                }
+                {
                     SentenceResult r;
                     r.text = text;
                     r.score = score;
                     r.matched_len = matched_bytes;
                     if (full) {
-                        // Insert after Layer 1 (top of full matches)
-                        results.insert(
-                            results.begin() +
-                                static_cast<std::ptrdiff_t>(layer1_size),
-                            std::move(r));
+                        results.insert(results.begin(), std::move(r));
                         ++layer1_size;
                     } else {
                         results.push_back(std::move(r));
