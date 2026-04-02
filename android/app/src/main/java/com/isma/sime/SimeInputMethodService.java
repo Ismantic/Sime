@@ -751,29 +751,24 @@ public class SimeInputMethodService extends InputMethodService {
         mT9PinyinOptions = t9.pinyin;
         mSelectedPinyinIndex = 0;
 
-        // Build preedit: confirmed part + best remaining parse
-        StringBuilder preeditBuilder = new StringBuilder();
+        // Preedit: use first result's pinyin directly (includes prefix + remaining)
+        String preeditText = allDigits;
         int confirmedLen = 0;
-        for (String py : prefixList) {
-            if (preeditBuilder.length() > 0) preeditBuilder.append('\'');
-            preeditBuilder.append(py);
+        if (mT9PinyinOptions.length > 0) {
+            // First result's pinyin is space-separated; replace with apostrophe
+            preeditText = mT9PinyinOptions[0].pinyin.replace(' ', '\'');
+            // Compute confirmed portion length for highlighting
+            if (!prefixList.isEmpty()) {
+                StringBuilder cb = new StringBuilder();
+                for (String py : prefixList) {
+                    if (cb.length() > 0) cb.append('\'');
+                    cb.append(py);
+                }
+                confirmedLen = cb.length();
+            }
         }
-        confirmedLen = preeditBuilder.length();
-
-        // Append best full-match pinyin for remaining digits
-        if (mT9PinyinOptions.length > 0 && mT9PinyinOptions[0].cnt == remainingDigits.length()) {
-            // First result is full match — use its pinyin for remaining display
-            if (confirmedLen > 0) preeditBuilder.append('\'');
-            preeditBuilder.append(mT9PinyinOptions[0].pinyin);
-        } else if (remainingDigits.length() > 0) {
-            if (confirmedLen > 0) preeditBuilder.append('\'');
-            preeditBuilder.append(remainingDigits);
-        }
-
-        // Highlight confirmed portion
-        String preeditText = preeditBuilder.toString();
         SpannableString ss = new SpannableString(preeditText);
-        if (confirmedLen > 0) {
+        if (confirmedLen > 0 && confirmedLen <= preeditText.length()) {
             ss.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
                        0, confirmedLen, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
@@ -799,11 +794,11 @@ public class SimeInputMethodService extends InputMethodService {
         if (mT9LeftCol == null) return;
         mT9LeftCol.removeAllViews();
 
-        if (mPreedit.length() > 0 && mT9PinyinOptions.length > 0) {
-            // Show pinyin candidates
-            for (int i = 0; i < mT9PinyinOptions.length; i++) {
+        if (mPreedit.length() > 0 && mT9PinyinOptions.length > 1) {
+            // Show pinyin candidates: skip first (full match, shown in preedit), max 4
+            int maxShow = Math.min(mT9PinyinOptions.length, 5);
+            for (int i = 1; i < maxShow; i++) {
                 String pinyin = mT9PinyinOptions[i].pinyin.replace(" ", "'");
-                boolean isSelected = (i == mSelectedPinyinIndex);
 
                 TextView tv = new TextView(this);
                 tv.setText(pinyin);
@@ -814,13 +809,7 @@ public class SimeInputMethodService extends InputMethodService {
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
                 tv.setLayoutParams(lp);
-
-                if (isSelected) {
-                    tv.setTextColor(getColor(R.color.candidate_first));
-                    tv.setTypeface(null, Typeface.BOLD);
-                } else {
-                    tv.setTextColor(getColor(R.color.key_text_secondary));
-                }
+                tv.setTextColor(getColor(R.color.key_text_secondary));
 
                 final int idx = i;
                 tv.setOnClickListener(v -> {
