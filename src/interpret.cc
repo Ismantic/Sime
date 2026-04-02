@@ -19,7 +19,6 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
         ready_ = false;
         return false;
     }
-    dict_boost_ = std::abs(scorer_.UnknownPenalty()) * 0.1;
     ready_ = true;
     return true;
 }
@@ -87,7 +86,7 @@ std::vector<T9Decoder::Result> Interpreter::DecodeT9Pinyin(
 
 bool Interpreter::LoadDict(const std::filesystem::path& path) {
     if (!ready_) return false;
-    return dict_.Load(path, trie_, scorer_);
+    return dict_.Load(path);
 }
 
 std::vector<DecodeResult> Interpreter::DecodeText(
@@ -511,52 +510,36 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                   return a.score > b.score;
               });
 
-    // === User dict: inject matches directly, bypassing beam search ===
+    // === Dict: inject matches at the front, always top priority ===
     if (!dict_.Empty()) {
         const std::size_t n = units.size();
-        for (std::size_t len = 1; len <= n; ++len) {
+        for (std::size_t len = n; len >= 1; --len) {
             auto matches = dict_.Lookup(units.data(), len);
             if (matches.empty()) continue;
 
             std::size_t matched_bytes =
                 (len <= unit_byte_end.size()) ? unit_byte_end[len - 1]
                                               : total_bytes;
-            bool full = (len == effective_n) ||
-                        (matched_bytes == total_bytes);
-            float_t dist_penalty = 0.0;
-            if (!full) {
-                float_t penalty_per_unit =
-                    std::abs(scorer_.UnknownPenalty()) / 3.0;
-                dist_penalty = static_cast<float_t>(n - len) * penalty_per_unit;
-            }
 
             for (std::size_t idx : matches) {
                 const auto& text = dict_.TextAt(idx);
-                float_t score = -(dict_.ScoreAt(idx) - dict_boost_)
-                                - dist_penalty;
 
-                // Check if this word already exists in results.
-                // If so, remove it and re-insert at the top.
+                // Remove duplicate if already in results
                 for (auto it2 = results.begin(); it2 != results.end(); ++it2) {
                     if (it2->text == text && it2->matched_len == matched_bytes) {
-                        if (score > it2->score) it2->score = score;
-                        score = it2->score;
                         results.erase(it2);
+                        if (it2 - results.begin() < static_cast<std::ptrdiff_t>(layer1_size))
+                            --layer1_size;
                         break;
                     }
                 }
-                {
-                    SentenceResult r;
-                    r.text = text;
-                    r.score = score;
-                    r.matched_len = matched_bytes;
-                    if (full) {
-                        results.insert(results.begin(), std::move(r));
-                        ++layer1_size;
-                    } else {
-                        results.push_back(std::move(r));
-                    }
-                }
+
+                SentenceResult r;
+                r.text = text;
+                r.score = 1e9;  // always top
+                r.matched_len = matched_bytes;
+                results.insert(results.begin(), std::move(r));
+                ++layer1_size;
             }
         }
     }
