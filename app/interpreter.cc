@@ -71,6 +71,7 @@ int main(int argc, char** argv) {
     }
 
     sime::Interpreter interpreter;
+    sime::NineDecoder nine;
     bool has_hanzi = false;
     if (!opts.trie.empty() && !opts.model.empty()) {
         if (!interpreter.LoadResources(opts.trie, opts.model)) {
@@ -89,11 +90,12 @@ int main(int argc, char** argv) {
     }
 
     if (!opts.t9model.empty()) {
-        if (interpreter.LoadNine(opts.t9model)) {
-            std::cout << "T9Model: " << opts.t9model << "\n";
-        } else {
+        if (!nine.Load(opts.t9model)) {
             std::cerr << "Warning: failed to load T9 model: " << opts.t9model << "\n";
             opts.t9 = false;
+        } else {
+            std::cout << "T9Model: " << opts.t9model << "\n";
+            if (has_hanzi) interpreter.LoadNine(opts.t9model);
         }
     } else if (opts.t9) {
         std::cerr << "Error: --t9 requires --t9model\n";
@@ -121,8 +123,9 @@ int main(int argc, char** argv) {
         }
         if (opts.t9) {
             if (has_hanzi) {
-                // Full pipeline: digits → pinyin → hanzi
-                auto results = interpreter.DecodeNine(line, opts.num);
+                // Full pipeline: digits → pinyin + hanzi
+                auto nine_result = interpreter.DecodeNine(line, {}, opts.num);
+                const auto& results = nine_result.hanzi;
                 if (results.empty()) {
                     std::cout << "  (没有候选)\n";
                     continue;
@@ -134,8 +137,8 @@ int main(int argc, char** argv) {
                               << " (score " << std::fixed << std::setprecision(3) << r.score << ")\n";
                 }
             } else {
-                // Pinyin only: digits → pinyin
-                auto parses = interpreter.DecodeNinePinyin(line, opts.num);
+                // Pinyin only: digits → pinyin (NineDecoder directly)
+                auto parses = nine.Decode(line, opts.num);
                 if (parses.empty()) {
                     std::cout << "  (没有候选)\n";
                     continue;

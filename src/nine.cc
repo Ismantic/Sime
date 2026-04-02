@@ -37,6 +37,7 @@ std::string NineDecoder::PinyinToDigits(const char* pinyin) {
 void NineDecoder::BuildDigitMap() {
     digit_map_.clear();
     token_to_unit_.clear();
+    unit_to_token_.clear();
 
     std::size_t count = 0;
     const UnitEntry* entries = UnitData::GetDict(count);
@@ -63,6 +64,9 @@ void NineDecoder::BuildDigitMap() {
             token_to_unit_.resize(idx + 1);
         }
         token_to_unit_[idx] = unit;
+
+        // Reverse map: first token wins (for prefix lookup)
+        unit_to_token_.emplace(unit.value, tid);
     }
 }
 
@@ -210,30 +214,139 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
 
 std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
     std::string_view digits,
+    const std::vector<Unit>& prefix,
     std::size_t num) const {
 
     std::vector<Result> results;
-    if (!ready_ || digits.empty() || num == 0) {
+    if (!ready_ || num == 0) {
+        return results;
+    }
+    if (digits.empty() && prefix.empty()) {
         return results;
     }
 
+    // Validate digits
     for (char c : digits) {
         if (c < '2' || c > '9') {
             return results;
         }
     }
 
-    const std::size_t n = digits.size();
+    // Validate prefix: every unit must have a known TokenID
+    std::vector<TokenID> prefix_tokens;
+    for (const auto& u : prefix) {
+        auto it = unit_to_token_.find(u.value);
+        if (it == unit_to_token_.end()) return results;
+        prefix_tokens.push_back(it->second);
+    }
 
-    // --- First result: ONE best full-match parse via beam search ---
-    auto full = Decode(digits, 1);
-    if (!full.empty()) {
-        full[0].cnt = n;
-        results.push_back(std::move(full[0]));
+    const std::size_t p = prefix.size();
+    const std::size_t d = digits.size();
+
+    // --- First result: best full-match via beam search ---
+    // Lattice: p prefix columns + d digit columns + 1 SentenceToken column
+    // Total columns: p + d + 2
+    if (p + d > 0) {
+        struct Link {
+            std::size_t end = 0;
+            TokenID token_id = 0;
+        };
+        struct Column {
+            std::vector<Link> links;
+            NetStates states;
+        };
+
+        const std::size_t n = p + d;
+        std::vector<Column> net(n + 2);
+
+        // Prefix columns: fixed single edge each
+        for (std::size_t i = 0; i < p; ++i) {
+            net[i].links.push_back({i + 1, prefix_tokens[i]});
+        }
+
+        // Digit columns: normal digit_map_ expansion
+        for (std::size_t start = 0; start < d; ++start) {
+            std::string key;
+            std::size_t col = p + start;
+            for (std::size_t end = start + 1;
+                 end <= std::min(start + 6, d); ++end) {
+                key.push_back(digits[end - 1]);
+                auto it = digit_map_.find(key);
+                if (it != digit_map_.end()) {
+                    for (const auto& entry : it->second) {
+                        net[col].links.push_back(
+                            {p + end, entry.token_id});
+                    }
+                }
+            }
+            if (net[col].links.empty()) {
+                net[col].links.push_back({col + 1, ScoreNotToken});
+            }
+        }
+
+        // SentenceToken at end
+        net[n].links.push_back({n + 1, SentenceToken});
+
+        // Beam search
+        const std::size_t beam = std::max<std::size_t>(16, 16);
+        for (auto& col : net) {
+            col.states.SetMaxTop(beam);
+        }
+        State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+        net[0].states.Insert(init);
+
+        for (std::size_t col = 0; col < net.size(); ++col) {
+            auto& column = net[col];
+            for (auto it = column.states.begin();
+                 it != column.states.end(); ++it) {
+                const auto& state = *it;
+                for (const auto& link : column.links) {
+                    Scorer::Pos next_pos{};
+                    float_t step = scorer_.ScoreMove(
+                        state.pos, link.token_id, next_pos);
+                    scorer_.Back(next_pos);
+                    float_t next_cost = state.score + step;
+                    State next(next_cost, link.end, next_pos,
+                               &state, link.token_id);
+                    net[link.end].states.Insert(next);
+                }
+            }
+        }
+
+        // Backtrace from final column — take ONE best
+        auto tail_states = net.back().states.GetStates();
+        for (std::size_t rank = 0;
+             rank < tail_states.size() && results.empty(); ++rank) {
+            std::vector<TokenID> tokens;
+            const State* state = &tail_states[rank];
+            while (state->backtrace_state != nullptr) {
+                TokenID tid = state->backtrace_token;
+                if (tid != SentenceToken && tid != ScoreNotToken &&
+                    tid != NotToken) {
+                    tokens.push_back(tid);
+                }
+                state = state->backtrace_state;
+            }
+            std::reverse(tokens.begin(), tokens.end());
+            if (tokens.empty()) continue;
+
+            Result result;
+            result.score = -tail_states[rank].score;
+            result.cnt = d;  // all digits consumed
+            for (TokenID tid : tokens) {
+                std::size_t idx = tid - StartToken;
+                if (idx < token_to_unit_.size()) {
+                    result.units.push_back(token_to_unit_[idx]);
+                }
+            }
+            if (!result.units.empty()) {
+                results.push_back(std::move(result));
+            }
+        }
     }
 
     // --- Remaining: single-syllable lookups from digit prefixes, long→short ---
-    for (std::size_t len = n; len >= 1 && results.size() < num; --len) {
+    for (std::size_t len = d; len >= 1 && results.size() < num; --len) {
         std::string key(digits.substr(0, len));
         auto it = digit_map_.find(key);
         if (it == digit_map_.end()) continue;

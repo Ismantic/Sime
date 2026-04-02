@@ -28,9 +28,11 @@ public:
     std::vector<Result> Decode(std::string_view digits,
                                std::size_t num = 5) const;
 
-    // First result = best full-match parse (beam search).
+    // First result = best full-match parse (prefix + digits, beam search).
     // Remaining = single-syllable candidates from digit prefixes (long→short).
+    // prefix: locked confirmed syllables (empty for initial decode).
     std::vector<Result> DecodeSentence(std::string_view digits,
+                                       const std::vector<Unit>& prefix = {},
                                        std::size_t num = 18) const;
 
 private:
@@ -49,6 +51,9 @@ private:
 
     // TokenID - StartToken → Unit (for backtrace)
     std::vector<Unit> token_to_unit_;
+
+    // Unit.value → TokenID (for prefix lookup)
+    std::unordered_map<std::uint32_t, TokenID> unit_to_token_;
 
     Scorer scorer_;
     bool ready_ = false;

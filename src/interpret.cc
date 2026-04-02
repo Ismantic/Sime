@@ -27,61 +27,38 @@ bool Interpreter::LoadNine(const std::filesystem::path& pinyin_model_path) {
     return nine_.Load(pinyin_model_path);
 }
 
-std::vector<SentenceResult> Interpreter::DecodeNine(
+Interpreter::NineResult Interpreter::DecodeNine(
     std::string_view digits,
+    const std::vector<Unit>& prefix,
     std::size_t num) const {
-    std::vector<SentenceResult> results;
-    if (!ready_ || !nine_.Ready() || digits.empty()) {
-        return results;
+    NineResult result;
+    if (!nine_.Ready()) {
+        return result;
+    }
+    if (digits.empty() && prefix.empty()) {
+        return result;
     }
 
-    // Nine decode: digits → ranked pinyin parses
-    constexpr std::size_t kNineParses = 3;
-    auto parses = nine_.Decode(digits, kNineParses);
+    // Pinyin candidates from NineDecoder (prefix + digits)
+    result.pinyin = nine_.DecodeSentence(digits, prefix, num);
 
-    const std::size_t per_parse = num / std::max<std::size_t>(parses.size(), 1);
-
-    for (const auto& parse : parses) {
-        // Pinyin → hanzi via existing decoder
-        auto hanzi = DecodeUnits(parse.units,
-                                 std::max<std::size_t>(per_parse, 3));
-        for (auto& h : hanzi) {
-            // Deduplicate
-            bool dup = false;
-            for (const auto& e : results) {
-                if (e.text == h.text) {
-                    dup = true;
-                    break;
-                }
+    // Hanzi candidates: take first pinyin parse (best full match) → DecodeSentence
+    if (ready_ && !result.pinyin.empty()) {
+        // Convert units back to pinyin string for DecodeSentence
+        std::string pinyin_str;
+        for (const auto& u : result.pinyin[0].units) {
+            const char* syl = UnitData::Decode(u);
+            if (syl) {
+                if (!pinyin_str.empty()) pinyin_str += '\'';
+                pinyin_str += syl;
             }
-            if (!dup) {
-                SentenceResult r;
-                r.text = std::move(h.text);
-                r.score = h.score;
-                r.matched_len = digits.size();
-                results.push_back(std::move(r));
-            }
+        }
+        if (!pinyin_str.empty()) {
+            result.hanzi = DecodeSentence(pinyin_str, num);
         }
     }
 
-    std::sort(results.begin(), results.end(),
-              [](const SentenceResult& a, const SentenceResult& b) {
-                  return a.score > b.score;
-              });
-
-    if (results.size() > num) {
-        results.resize(num);
-    }
-    return results;
-}
-
-std::vector<NineDecoder::Result> Interpreter::DecodeNinePinyin(
-    std::string_view digits,
-    std::size_t num) const {
-    if (!nine_.Ready() || digits.empty()) {
-        return {};
-    }
-    return nine_.Decode(digits, num);
+    return result;
 }
 
 bool Interpreter::LoadDict(const std::filesystem::path& path) {
