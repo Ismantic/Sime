@@ -13,7 +13,7 @@
 
 namespace sime {
 
-class T9Decoder {
+class NineDecoder {
 public:
     bool Load(const std::filesystem::path& pinyin_model_path);
     bool Ready() const { return ready_; }
