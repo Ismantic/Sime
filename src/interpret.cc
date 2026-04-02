@@ -23,21 +23,21 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
     return true;
 }
 
-bool Interpreter::LoadT9(const std::filesystem::path& pinyin_model_path) {
-    return t9_.Load(pinyin_model_path);
+bool Interpreter::LoadNine(const std::filesystem::path& pinyin_model_path) {
+    return nine_.Load(pinyin_model_path);
 }
 
-std::vector<SentenceResult> Interpreter::DecodeT9(
+std::vector<SentenceResult> Interpreter::DecodeNine(
     std::string_view digits,
     std::size_t num) const {
     std::vector<SentenceResult> results;
-    if (!ready_ || !t9_.Ready() || digits.empty()) {
+    if (!ready_ || !nine_.Ready() || digits.empty()) {
         return results;
     }
 
-    // T9 decode: digits → ranked pinyin parses
-    constexpr std::size_t kT9Parses = 3;
-    auto parses = t9_.Decode(digits, kT9Parses);
+    // Nine decode: digits → ranked pinyin parses
+    constexpr std::size_t kNineParses = 3;
+    auto parses = nine_.Decode(digits, kNineParses);
 
     const std::size_t per_parse = num / std::max<std::size_t>(parses.size(), 1);
 
@@ -75,13 +75,13 @@ std::vector<SentenceResult> Interpreter::DecodeT9(
     return results;
 }
 
-std::vector<T9Decoder::Result> Interpreter::DecodeT9Pinyin(
+std::vector<NineDecoder::Result> Interpreter::DecodeNinePinyin(
     std::string_view digits,
     std::size_t num) const {
-    if (!t9_.Ready() || digits.empty()) {
+    if (!nine_.Ready() || digits.empty()) {
         return {};
     }
-    return t9_.Decode(digits, num);
+    return nine_.Decode(digits, num);
 }
 
 bool Interpreter::LoadDict(const std::filesystem::path& path) {

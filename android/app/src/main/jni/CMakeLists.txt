@@ -23,7 +23,7 @@ add_library(sime_core STATIC
     ${SIME_SRC}/state.cc
     ${SIME_SRC}/interpret.cc
     ${SIME_SRC}/dict.cc
-    ${SIME_SRC}/t9.cc
+    ${SIME_SRC}/nine.cc
     ${SIME_SRC}/context.cc
 )
 target_include_directories(sime_core PUBLIC ${SIME_INC} ${SIME_SRC})
