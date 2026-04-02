@@ -43,7 +43,7 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
 
     for (const auto& parse : parses) {
         // Pinyin → hanzi via existing decoder
-        auto hanzi = DecodeUnits(parse.pinyin,
+        auto hanzi = DecodeUnits(parse.units,
                                  std::max<std::size_t>(per_parse, 3));
         for (auto& h : hanzi) {
             // Deduplicate

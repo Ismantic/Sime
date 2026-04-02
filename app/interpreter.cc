@@ -143,7 +143,7 @@ int main(int argc, char** argv) {
                 for (std::size_t idx = 0; idx < parses.size(); ++idx) {
                     const auto& p = parses[idx];
                     std::string pinyin;
-                    for (const auto& u : p.pinyin) {
+                    for (const auto& u : p.units) {
                         if (!pinyin.empty()) pinyin += '\'';
                         const char* syl = sime::UnitData::Decode(u);
                         if (syl) pinyin += syl;

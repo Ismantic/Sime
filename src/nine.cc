@@ -185,22 +185,76 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
         for (TokenID tid : tokens) {
             std::size_t idx = tid - StartToken;
             if (idx < token_to_unit_.size()) {
-                result.pinyin.push_back(token_to_unit_[idx]);
+                result.units.push_back(token_to_unit_[idx]);
             }
         }
-        if (result.pinyin.empty()) {
+        if (result.units.empty()) {
             continue;
         }
 
         // Deduplicate
         bool dup = false;
         for (const auto& existing : results) {
-            if (existing.pinyin == result.pinyin) {
+            if (existing.units == result.units) {
                 dup = true;
                 break;
             }
         }
         if (!dup) {
+            results.push_back(std::move(result));
+        }
+    }
+
+    return results;
+}
+
+std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
+    std::string_view digits,
+    std::size_t num) const {
+
+    std::vector<Result> results;
+    if (!ready_ || digits.empty() || num == 0) {
+        return results;
+    }
+
+    for (char c : digits) {
+        if (c < '2' || c > '9') {
+            return results;
+        }
+    }
+
+    const std::size_t n = digits.size();
+
+    // --- First result: ONE best full-match parse via beam search ---
+    auto full = Decode(digits, 1);
+    if (!full.empty()) {
+        full[0].cnt = n;
+        results.push_back(std::move(full[0]));
+    }
+
+    // --- Remaining: single-syllable lookups from digit prefixes, long→short ---
+    for (std::size_t len = n; len >= 1 && results.size() < num; --len) {
+        std::string key(digits.substr(0, len));
+        auto it = digit_map_.find(key);
+        if (it == digit_map_.end()) continue;
+
+        for (const auto& entry : it->second) {
+            if (results.size() >= num) break;
+
+            // Deduplicate against existing results (single-unit match)
+            bool dup = false;
+            for (const auto& existing : results) {
+                if (existing.units.size() == 1 &&
+                    existing.units[0] == entry.unit) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup) continue;
+
+            Result result;
+            result.units.push_back(entry.unit);
+            result.cnt = len;
             results.push_back(std::move(result));
         }
     }

@@ -200,7 +200,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
 
     for (std::size_t i = 0; i < results.size(); ++i) {
         std::string pinyin;
-        for (const auto& unit : results[i].pinyin) {
+        for (const auto& unit : results[i].units) {
             const char* py = sime::UnitData::Decode(unit);
             if (py) {
                 if (!pinyin.empty()) pinyin += ' ';
