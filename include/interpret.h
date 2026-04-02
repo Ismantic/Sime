@@ -39,7 +39,8 @@ public:
     bool NineReady() const { return nine_.Ready(); }
 
     struct NineResult {
-        std::vector<NineDecoder::Result> pinyin;  // pinyin candidates
+        std::string best_pinyin;                   // beam search best (for preedit/hanzi)
+        std::vector<NineDecoder::Result> pinyin;   // exact-match syllable candidates
         std::vector<SentenceResult> hanzi;         // hanzi candidates
     };
 

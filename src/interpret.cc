@@ -39,24 +39,27 @@ Interpreter::NineResult Interpreter::DecodeNine(
         return result;
     }
 
-    // Pinyin candidates from NineDecoder (prefix + digits)
-    result.pinyin = nine_.DecodeSentence(digits, prefix, num);
+    // Decode digits → pinyin (beam search best + exact-match candidates)
+    auto nine = nine_.DecodeSentence(digits, prefix, num);
 
-    // Hanzi candidates: take first pinyin parse (best full match) → DecodeSentence
-    if (ready_ && !result.pinyin.empty()) {
-        // Convert units back to pinyin string for DecodeSentence
-        std::string pinyin_str;
-        for (const auto& u : result.pinyin[0].units) {
+    // Build best_pinyin string from beam search best parse
+    if (!nine.best.units.empty()) {
+        for (const auto& u : nine.best.units) {
             const char* syl = UnitData::Decode(u);
             if (syl) {
-                if (!pinyin_str.empty()) pinyin_str += '\'';
-                pinyin_str += syl;
+                if (!result.best_pinyin.empty()) result.best_pinyin += '\'';
+                result.best_pinyin += syl;
             }
         }
-        if (!pinyin_str.empty()) {
-            result.hanzi = DecodeSentence(pinyin_str, num);
-        }
     }
+
+    // Hanzi: best_pinyin → DecodeSentence
+    if (ready_ && !result.best_pinyin.empty()) {
+        result.hanzi = DecodeSentence(result.best_pinyin, num);
+    }
+
+    // Pinyin candidates: exact matches only
+    result.pinyin = std::move(nine.candidates);
 
     return result;
 }

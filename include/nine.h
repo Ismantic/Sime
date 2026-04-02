@@ -28,12 +28,17 @@ public:
     std::vector<Result> Decode(std::string_view digits,
                                std::size_t num = 5) const;
 
-    // First result = best full-match parse (prefix + digits, beam search).
-    // Remaining = single-syllable candidates from digit prefixes (long→short).
+    struct SentenceResult {
+        Result best;                  // beam search best full-match parse
+        std::vector<Result> candidates; // single-syllable exact matches
+    };
+
+    // best: beam search over prefix + digits (with tail expansion).
+    // candidates: single-syllable exact matches from digit prefixes.
     // prefix: locked confirmed syllables (empty for initial decode).
-    std::vector<Result> DecodeSentence(std::string_view digits,
-                                       const std::vector<Unit>& prefix = {},
-                                       std::size_t num = 18) const;
+    SentenceResult DecodeSentence(std::string_view digits,
+                                  const std::vector<Unit>& prefix = {},
+                                  std::size_t num = 18) const;
 
 private:
     struct SyllableEntry {
