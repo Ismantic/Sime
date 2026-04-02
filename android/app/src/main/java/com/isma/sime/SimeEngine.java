@@ -31,8 +31,7 @@ public class SimeEngine {
     private static native boolean nativeLoadUserDict(String userDictPath);
     private static native String[] nativeDecodeSentence(String input, int num);
     private static native String nativeSegmentPinyin(String input);
-    private static native String[] nativeDecodeT9(String digits, int num);
-    private static native String[] nativeDecodeT9Pinyin(String digits, int num);
+    private static native String[] nativeDecodeT9(String[] prefixPinyin, String digits, int num);
     private static native boolean nativeIsReady();
 
     private boolean mReady = false;
@@ -104,24 +103,55 @@ public class SimeEngine {
         return nativeSegmentPinyin(input);
     }
 
-    /** T9: decode digit string to hanzi candidates. */
-    public Candidate[] decodeT9(String digits, int num) {
-        if (!isReady()) return new Candidate[0];
-        String[] raw = nativeDecodeT9(digits, num);
-        Candidate[] result = new Candidate[raw.length / 2];
-        for (int i = 0; i < result.length; i++) {
-            result[i] = new Candidate(
-                raw[i * 2],
-                Integer.parseInt(raw[i * 2 + 1])
-            );
+    /** T9 result: hanzi candidates + pinyin candidates from a single decode. */
+    public static class T9Result {
+        public final Candidate[] hanzi;
+        public final PinyinCandidate[] pinyin;
+
+        T9Result(Candidate[] hanzi, PinyinCandidate[] pinyin) {
+            this.hanzi = hanzi;
+            this.pinyin = pinyin;
         }
-        return result;
     }
 
-    /** T9: decode digit string to multiple pinyin candidates. */
-    public String[] decodeT9Pinyin(String digits, int num) {
-        if (!isReady()) return new String[0];
-        return nativeDecodeT9Pinyin(digits, num);
+    /** Pinyin candidate: pinyin string + number of digits consumed. */
+    public static class PinyinCandidate {
+        public final String pinyin;
+        public final int cnt;
+
+        PinyinCandidate(String pinyin, int cnt) {
+            this.pinyin = pinyin;
+            this.cnt = cnt;
+        }
+    }
+
+    /** T9: decode digit string to hanzi + pinyin candidates.
+     *  prefixPinyin: confirmed syllables (e.g. ["pie", "mo"]), may be empty. */
+    public T9Result decodeT9(String[] prefixPinyin, String digits, int num) {
+        if (!isReady()) return new T9Result(new Candidate[0], new PinyinCandidate[0]);
+        String[] raw = nativeDecodeT9(prefixPinyin, digits, num);
+        if (raw.length == 0) return new T9Result(new Candidate[0], new PinyinCandidate[0]);
+
+        int hc = Integer.parseInt(raw[0]);
+        Candidate[] hanzi = new Candidate[hc];
+        for (int i = 0; i < hc; i++) {
+            hanzi[i] = new Candidate(
+                raw[1 + i * 2],
+                Integer.parseInt(raw[1 + i * 2 + 1])
+            );
+        }
+
+        int pinyinStart = 1 + hc * 2;
+        int pc = (raw.length - pinyinStart) / 2;
+        PinyinCandidate[] pinyin = new PinyinCandidate[pc];
+        for (int i = 0; i < pc; i++) {
+            pinyin[i] = new PinyinCandidate(
+                raw[pinyinStart + i * 2],
+                Integer.parseInt(raw[pinyinStart + i * 2 + 1])
+            );
+        }
+
+        return new T9Result(hanzi, pinyin);
     }
 
     /**

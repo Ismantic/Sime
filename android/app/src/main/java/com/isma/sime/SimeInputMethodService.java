@@ -79,9 +79,13 @@ public class SimeInputMethodService extends InputMethodService {
 
     // T9 left column and pinyin candidate state
     private LinearLayout mT9LeftCol;
-    private String[] mT9PinyinOptions = new String[0];
+    private SimeEngine.PinyinCandidate[] mT9PinyinOptions = new SimeEngine.PinyinCandidate[0];
     private int mSelectedPinyinIndex = 0;
     private static final int T9_PINYIN_COUNT = 8;
+
+    // T9 confirmed pinyin state: each entry = (syllables, digit count)
+    private final java.util.List<SimeEngine.PinyinCandidate> mConfirmedSyllables = new java.util.ArrayList<>();
+    private int mConfirmedDigitCount = 0;
     private static final String[] T9_DEFAULT_PUNCTUATION = {"，", "。", "？", "！", "……"};
 
     // Key popup
@@ -502,6 +506,17 @@ public class SimeInputMethodService extends InputMethodService {
 
     private void handleBackspace() {
         if (mPreedit.length() > 0 && mCursor > 0) {
+            // T9 with confirmed pinyin: un-confirm last syllable instead of deleting digit
+            if (mT9LayoutMode && !mConfirmedSyllables.isEmpty()) {
+                SimeEngine.PinyinCandidate last =
+                    mConfirmedSyllables.remove(mConfirmedSyllables.size() - 1);
+                mConfirmedDigitCount -= last.cnt;
+                if (mConfirmedDigitCount < 0) mConfirmedDigitCount = 0;
+                mCandidatePage = 0;
+                updateUI();
+                return;
+            }
+
             mPreedit.deleteCharAt(mCursor - 1);
             mCursor--;
             mCandidatePage = 0;
@@ -608,7 +623,44 @@ public class SimeInputMethodService extends InputMethodService {
 
     private void consumePreedit(int matchedLen) {
         if (mKeyboardMode == KeyboardMode.T9) {
-            resetComposition();
+            // matchedLen is pinyin bytes (includes apostrophes).
+            // Convert to digit count: subtract apostrophe count.
+            int digitCount = matchedLen;
+            // Count apostrophes in the matched portion of the pinyin string
+            // Build the same pinyin string as updateT9UI for consistency
+            StringBuilder pyBuilder = new StringBuilder();
+            for (SimeEngine.PinyinCandidate c : mConfirmedSyllables) {
+                for (String syl : c.pinyin.split(" ")) {
+                    if (!syl.isEmpty()) {
+                        if (pyBuilder.length() > 0) pyBuilder.append('\'');
+                        pyBuilder.append(syl);
+                    }
+                }
+            }
+            if (mT9PinyinOptions.length > 0) {
+                String remaining = mT9PinyinOptions[0].pinyin;
+                if (pyBuilder.length() > 0) pyBuilder.append('\'');
+                pyBuilder.append(remaining);
+            }
+            String fullPinyin = pyBuilder.toString();
+            int end = Math.min(matchedLen, fullPinyin.length());
+            for (int i = 0; i < end; i++) {
+                if (fullPinyin.charAt(i) == '\'') digitCount--;
+            }
+
+            // Apply to digit preedit
+            int totalDigits = mConfirmedDigitCount +
+                (mPreedit.length() - mConfirmedDigitCount);
+            if (digitCount >= totalDigits) {
+                resetComposition();
+            } else {
+                mPreedit.delete(0, digitCount);
+                mCursor = mPreedit.length();
+                mConfirmedSyllables.clear();
+                mConfirmedDigitCount = 0;
+                mCandidatePage = 0;
+                updateUI();
+            }
         } else {
             if (matchedLen >= mPreedit.length()) {
                 resetComposition();
@@ -629,7 +681,9 @@ public class SimeInputMethodService extends InputMethodService {
         mCandidates.clear();
         mCandidatePage = 0;
         mSelectedPinyinIndex = 0;
-        mT9PinyinOptions = new String[0];
+        mT9PinyinOptions = new SimeEngine.PinyinCandidate[0];
+        mConfirmedSyllables.clear();
+        mConfirmedDigitCount = 0;
         if (mPreeditView != null) {
             mPreeditView.setText("");
             mPreeditView.setVisibility(View.GONE);
@@ -678,33 +732,59 @@ public class SimeInputMethodService extends InputMethodService {
     }
 
     private void updateT9UI() {
-        String digits = mPreedit.toString();
+        String allDigits = mPreedit.toString();
         if (!mEngine.isReady()) return;
 
-        // Get pinyin interpretations
-        mT9PinyinOptions = mEngine.decodeT9Pinyin(digits, T9_PINYIN_COUNT);
-        if (mSelectedPinyinIndex >= mT9PinyinOptions.length) {
-            mSelectedPinyinIndex = 0;
+        // Remaining digits = full digits minus confirmed portion
+        String remainingDigits = allDigits.substring(mConfirmedDigitCount);
+        // Build prefix pinyin array from confirmed syllables
+        java.util.List<String> prefixList = new java.util.ArrayList<>();
+        for (SimeEngine.PinyinCandidate c : mConfirmedSyllables) {
+            for (String syl : c.pinyin.split(" ")) {
+                if (!syl.isEmpty()) prefixList.add(syl);
+            }
+        }
+        String[] prefix = prefixList.toArray(new String[0]);
+
+        // Single decode: prefix + remaining digits → pinyin + hanzi
+        SimeEngine.T9Result t9 = mEngine.decodeT9(prefix, remainingDigits, MAX_CANDIDATES);
+        mT9PinyinOptions = t9.pinyin;
+        mSelectedPinyinIndex = 0;
+
+        // Build preedit: confirmed part + best remaining parse
+        StringBuilder preeditBuilder = new StringBuilder();
+        int confirmedLen = 0;
+        for (String py : prefixList) {
+            if (preeditBuilder.length() > 0) preeditBuilder.append('\'');
+            preeditBuilder.append(py);
+        }
+        confirmedLen = preeditBuilder.length();
+
+        // Append best full-match pinyin for remaining digits
+        if (mT9PinyinOptions.length > 0 && mT9PinyinOptions[0].cnt == remainingDigits.length()) {
+            // First result is full match — use its pinyin for remaining display
+            if (confirmedLen > 0) preeditBuilder.append('\'');
+            preeditBuilder.append(mT9PinyinOptions[0].pinyin);
+        } else if (remainingDigits.length() > 0) {
+            if (confirmedLen > 0) preeditBuilder.append('\'');
+            preeditBuilder.append(remainingDigits);
         }
 
-        // Update preedit with selected pinyin
-        String preeditText = digits;
-        if (mT9PinyinOptions.length > 0) {
-            preeditText = mT9PinyinOptions[mSelectedPinyinIndex];
-        }
+        // Highlight confirmed portion
+        String preeditText = preeditBuilder.toString();
         SpannableString ss = new SpannableString(preeditText);
+        if (confirmedLen > 0) {
+            ss.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
+                       0, confirmedLen, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
         ss.setSpan(new UnderlineSpan(), 0, preeditText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         mPreeditView.setText(ss);
         mPreeditView.setVisibility(View.VISIBLE);
 
-        // Populate mCandidates from the selected pinyin
+        // Populate mCandidates from hanzi results
         mCandidates.clear();
-        if (mT9PinyinOptions.length > 0) {
-            String selectedPinyin = mT9PinyinOptions[mSelectedPinyinIndex];
-            SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(selectedPinyin, MAX_CANDIDATES);
-            for (SimeEngine.Candidate c : hanzi) {
-                mCandidates.add(c);
-            }
+        for (SimeEngine.Candidate c : t9.hanzi) {
+            mCandidates.add(c);
         }
 
         // Show hanzi in horizontal candidate bar
@@ -722,7 +802,7 @@ public class SimeInputMethodService extends InputMethodService {
         if (mPreedit.length() > 0 && mT9PinyinOptions.length > 0) {
             // Show pinyin candidates
             for (int i = 0; i < mT9PinyinOptions.length; i++) {
-                String pinyin = mT9PinyinOptions[i].replace(" ", "'");
+                String pinyin = mT9PinyinOptions[i].pinyin.replace(" ", "'");
                 boolean isSelected = (i == mSelectedPinyinIndex);
 
                 TextView tv = new TextView(this);
@@ -744,22 +824,12 @@ public class SimeInputMethodService extends InputMethodService {
 
                 final int idx = i;
                 tv.setOnClickListener(v -> {
-                    mSelectedPinyinIndex = idx;
+                    // Confirm this syllable and re-decode remaining digits
+                    SimeEngine.PinyinCandidate selected = mT9PinyinOptions[idx];
+                    mConfirmedSyllables.add(selected);
+                    mConfirmedDigitCount += selected.cnt;
                     mCandidatePage = 0;
-                    // Refresh hanzi for selected pinyin
-                    mCandidates.clear();
-                    SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(
-                        mT9PinyinOptions[idx], MAX_CANDIDATES);
-                    for (SimeEngine.Candidate c : hanzi) {
-                        mCandidates.add(c);
-                    }
-                    // Update preedit
-                    String py = mT9PinyinOptions[idx];
-                    SpannableString s = new SpannableString(py);
-                    s.setSpan(new UnderlineSpan(), 0, py.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    mPreeditView.setText(s);
-                    showCandidatePage();
-                    populateT9LeftColumn();
+                    updateT9UI();
                 });
                 mT9LeftCol.addView(tv);
             }
@@ -788,19 +858,33 @@ public class SimeInputMethodService extends InputMethodService {
         }
     }
 
-    /** T9 分词: cycle to next pinyin interpretation */
+    /** T9 分词: cycle to next full-match pinyin interpretation */
     private void handleT9Fenci() {
+        // Only works when no syllables are confirmed yet
+        if (!mConfirmedSyllables.isEmpty()) return;
         if (mT9PinyinOptions.length <= 1) return;
-        mSelectedPinyinIndex = (mSelectedPinyinIndex + 1) % mT9PinyinOptions.length;
+
+        // Find next full-match result (cnt == total digits)
+        String allDigits = mPreedit.toString();
+        int totalLen = allDigits.length();
+        int start = mSelectedPinyinIndex;
+        for (int step = 1; step < mT9PinyinOptions.length; step++) {
+            int next = (start + step) % mT9PinyinOptions.length;
+            if (mT9PinyinOptions[next].cnt == totalLen) {
+                mSelectedPinyinIndex = next;
+                break;
+            }
+        }
+
+        // Re-decode hanzi for the selected full-match pinyin
         mCandidatePage = 0;
-        // Refresh
         mCandidates.clear();
-        SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(
-            mT9PinyinOptions[mSelectedPinyinIndex], MAX_CANDIDATES);
+        String selectedPy = mT9PinyinOptions[mSelectedPinyinIndex].pinyin.replace(" ", "'");
+        SimeEngine.Candidate[] hanzi = mEngine.decodeSentence(selectedPy, MAX_CANDIDATES);
         for (SimeEngine.Candidate c : hanzi) {
             mCandidates.add(c);
         }
-        String py = mT9PinyinOptions[mSelectedPinyinIndex];
+        String py = mT9PinyinOptions[mSelectedPinyinIndex].pinyin;
         SpannableString s = new SpannableString(py);
         s.setSpan(new UnderlineSpan(), 0, py.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         mPreeditView.setText(s);
