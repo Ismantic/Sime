@@ -146,74 +146,84 @@ Java_com_isma_sime_SimeEngine_nativeSegmentPinyin(
     return env->NewStringUTF(segmented.c_str());
 }
 
-// 6. Nine-key: digits → hanzi candidates.
-//    Returns String[] same format as DecodeSentence.
+// 6. Nine-key: digits → hanzi + pinyin candidates.
+//    prefixPinyin: confirmed syllables (e.g. ["pie", "mo"]), may be empty.
+//    Returns String[]:
+//      [0]           = hanzi_count (as string)
+//      [1..2*hc]     = hanzi pairs: text, matched_len
+//      [2*hc+1..]    = pinyin pairs: pinyin_str, cnt
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     JNIEnv* env, jclass /*clazz*/,
-    jstring digits, jint num) {
+    jobjectArray prefixPinyin, jstring digits, jint num) {
 
     jclass stringClass = env->FindClass("java/lang/String");
 
-    if (!g_interpreter || !g_interpreter->Ready() ||
-        !g_interpreter->NineReady()) {
+    if (!g_interpreter || !g_interpreter->NineReady()) {
         return env->NewObjectArray(0, stringClass, nullptr);
     }
 
-    auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeNine(
-        d, static_cast<std::size_t>(num));
-
-    auto arr = env->NewObjectArray(
-        static_cast<jsize>(results.size() * 2), stringClass, nullptr);
-    for (std::size_t i = 0; i < results.size(); ++i) {
-        auto text = u32ToUtf8(results[i].text);
-        auto lenStr = std::to_string(results[i].matched_len);
-        env->SetObjectArrayElement(arr, static_cast<jsize>(i * 2),
-                                   env->NewStringUTF(text.c_str()));
-        env->SetObjectArrayElement(arr, static_cast<jsize>(i * 2 + 1),
-                                   env->NewStringUTF(lenStr.c_str()));
-    }
-    return arr;
-}
-
-// 7. Nine-key: digits → pinyin candidates.
-//    Returns String[] of space-separated pinyin strings, one per interpretation.
-JNIEXPORT jobjectArray JNICALL
-Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
-    JNIEnv* env, jclass /*clazz*/,
-    jstring digits, jint num) {
-
-    jclass stringClass = env->FindClass("java/lang/String");
-
-    if (!g_interpreter || !g_interpreter->Ready() ||
-        !g_interpreter->NineReady()) {
-        return env->NewObjectArray(0, stringClass, nullptr);
-    }
-
-    auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeNinePinyin(
-        d, static_cast<std::size_t>(num));
-
-    auto arr = env->NewObjectArray(
-        static_cast<jsize>(results.size()), stringClass, nullptr);
-
-    for (std::size_t i = 0; i < results.size(); ++i) {
-        std::string pinyin;
-        for (const auto& unit : results[i].units) {
-            const char* py = sime::UnitData::Decode(unit);
-            if (py) {
-                if (!pinyin.empty()) pinyin += ' ';
-                pinyin += py;
+    // Convert prefix pinyin strings to Units
+    std::vector<sime::Unit> prefix;
+    if (prefixPinyin) {
+        jsize plen = env->GetArrayLength(prefixPinyin);
+        for (jsize i = 0; i < plen; ++i) {
+            auto js = (jstring)env->GetObjectArrayElement(prefixPinyin, i);
+            auto s = jstringToString(env, js);
+            sime::Unit u = sime::UnitData::Encode(s.c_str());
+            if (u.value != 0) {
+                prefix.push_back(u);
             }
         }
-        env->SetObjectArrayElement(arr, static_cast<jsize>(i),
-                                   env->NewStringUTF(pinyin.c_str()));
     }
+
+    auto d = jstringToString(env, digits);
+    auto nine = g_interpreter->DecodeNine(
+        d, prefix, static_cast<std::size_t>(num));
+
+    const auto& hanzi = nine.hanzi;
+    const auto& pinyin = nine.pinyin;
+    const jsize hc = static_cast<jsize>(hanzi.size());
+    const jsize pc = static_cast<jsize>(pinyin.size());
+    const jsize total = 1 + hc * 2 + pc * 2;
+
+    auto arr = env->NewObjectArray(total, stringClass, nullptr);
+    jsize idx = 0;
+
+    // [0] hanzi count
+    env->SetObjectArrayElement(arr, idx++,
+        env->NewStringUTF(std::to_string(hc).c_str()));
+
+    // Hanzi pairs
+    for (jsize i = 0; i < hc; ++i) {
+        auto text = u32ToUtf8(hanzi[i].text);
+        auto lenStr = std::to_string(hanzi[i].matched_len);
+        env->SetObjectArrayElement(arr, idx++,
+                                   env->NewStringUTF(text.c_str()));
+        env->SetObjectArrayElement(arr, idx++,
+                                   env->NewStringUTF(lenStr.c_str()));
+    }
+
+    // Pinyin pairs
+    for (jsize i = 0; i < pc; ++i) {
+        std::string py;
+        for (const auto& unit : pinyin[i].units) {
+            const char* syl = sime::UnitData::Decode(unit);
+            if (syl) {
+                if (!py.empty()) py += ' ';
+                py += syl;
+            }
+        }
+        env->SetObjectArrayElement(arr, idx++,
+                                   env->NewStringUTF(py.c_str()));
+        env->SetObjectArrayElement(arr, idx++,
+            env->NewStringUTF(std::to_string(pinyin[i].cnt).c_str()));
+    }
+
     return arr;
 }
 
-// 8. Check if engine is ready.
+// 7. Check if engine is ready.
 JNIEXPORT jboolean JNICALL
 Java_com_isma_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {

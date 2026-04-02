@@ -38,13 +38,17 @@ public:
     bool LoadNine(const std::filesystem::path& pinyin_model_path);
     bool NineReady() const { return nine_.Ready(); }
 
-    // Nine: decode digit sequence → hanzi candidates.
-    std::vector<SentenceResult> DecodeNine(
-        std::string_view digits, std::size_t num = 18) const;
+    struct NineResult {
+        std::vector<NineDecoder::Result> pinyin;  // pinyin candidates
+        std::vector<SentenceResult> hanzi;         // hanzi candidates
+    };
 
-    // Nine: decode digit sequence → pinyin only (no hanzi lookup).
-    std::vector<NineDecoder::Result> DecodeNinePinyin(
-        std::string_view digits, std::size_t num = 5) const;
+    // Nine: decode digit sequence → pinyin + hanzi candidates.
+    // prefix: locked confirmed syllables (empty for initial decode).
+    NineResult DecodeNine(
+        std::string_view digits,
+        const std::vector<Unit>& prefix = {},
+        std::size_t num = 18) const;
 
     bool Ready() const { return ready_; }
 
