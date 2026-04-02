@@ -122,6 +122,22 @@ int main(int argc, char** argv) {
             if (has_hanzi) {
                 // Full pipeline: digits → pinyin + hanzi
                 auto nine_result = interpreter.DecodeNine(line, {}, opts.num);
+                // Show best pinyin and candidates
+                std::cout << "  最佳: " << nine_result.best_pinyin << "\n";
+                std::cout << "  拼音:\n";
+                for (std::size_t idx = 0; idx < nine_result.pinyin.size(); ++idx) {
+                    const auto& p = nine_result.pinyin[idx];
+                    std::string pinyin;
+                    for (const auto& u : p.units) {
+                        if (!pinyin.empty()) pinyin += '\'';
+                        const char* syl = sime::UnitData::Decode(u);
+                        if (syl) pinyin += syl;
+                    }
+                    std::cout << "    [" << idx << "] " << pinyin
+                              << " (score " << std::fixed << std::setprecision(3) << p.score
+                              << ", cnt " << p.cnt << ")\n";
+                }
+                // Show hanzi candidates
                 const auto& results = nine_result.hanzi;
                 if (results.empty()) {
                     std::cout << "  (没有候选)\n";

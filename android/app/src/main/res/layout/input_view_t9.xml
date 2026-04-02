@@ -69,16 +69,23 @@
         android:paddingTop="6dp"
         android:paddingBottom="3dp">
 
-        <!-- Left column: punctuation / pinyin candidates -->
-        <LinearLayout
-            android:id="@+id/t9_left_col"
+        <!-- Left column: punctuation / pinyin candidates (scrollable) -->
+        <ScrollView
+            android:id="@+id/t9_left_scroll"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="0.9"
-            android:orientation="vertical"
             android:layout_marginEnd="3dp"
             android:background="@drawable/key_bg"
-            android:gravity="center" />
+            android:scrollbars="none"
+            android:fillViewport="true">
+            <LinearLayout
+                android:id="@+id/t9_left_col"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center" />
+        </ScrollView>
 
         <!-- Center 3×3 T9 keys -->
         <LinearLayout
