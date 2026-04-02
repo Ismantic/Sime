@@ -82,7 +82,7 @@ const char* UnitData::Decode(Unit unit,
     if (a) {
         *a = As[ai];
     }
-    static char buffer[128];
+    thread_local char buffer[128];
     Compose(Is[ii], As[ai], buffer, sizeof(buffer));
     if (const UnitEntry* entry = GetEntry(buffer)) {
         return entry->text;
