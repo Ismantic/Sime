@@ -106,10 +106,12 @@ public class SimeEngine {
     /** T9 result: hanzi candidates + pinyin candidates from a single decode. */
     public static class T9Result {
         public final Candidate[] hanzi;
-        public final PinyinCandidate[] pinyin;
+        public final String bestPinyin;        // beam search best (for preedit/hanzi)
+        public final PinyinCandidate[] pinyin;  // exact-match syllable candidates
 
-        T9Result(Candidate[] hanzi, PinyinCandidate[] pinyin) {
+        T9Result(Candidate[] hanzi, String bestPinyin, PinyinCandidate[] pinyin) {
             this.hanzi = hanzi;
+            this.bestPinyin = bestPinyin;
             this.pinyin = pinyin;
         }
     }
@@ -126,11 +128,12 @@ public class SimeEngine {
     }
 
     /** T9: decode digit string to hanzi + pinyin candidates.
-     *  prefixPinyin: confirmed syllables (e.g. ["pie", "mo"]), may be empty. */
+     *  prefixPinyin: confirmed syllables (e.g. ["pie", "mo"]), may be empty.
+     *  Return format: [hanzi_count, ...hanzi pairs..., best_pinyin, ...candidate pairs...] */
     public T9Result decodeT9(String[] prefixPinyin, String digits, int num) {
-        if (!isReady()) return new T9Result(new Candidate[0], new PinyinCandidate[0]);
+        if (!isReady()) return new T9Result(new Candidate[0], "", new PinyinCandidate[0]);
         String[] raw = nativeDecodeT9(prefixPinyin, digits, num);
-        if (raw.length == 0) return new T9Result(new Candidate[0], new PinyinCandidate[0]);
+        if (raw.length == 0) return new T9Result(new Candidate[0], "", new PinyinCandidate[0]);
 
         int hc = Integer.parseInt(raw[0]);
         Candidate[] hanzi = new Candidate[hc];
@@ -141,7 +144,11 @@ public class SimeEngine {
             );
         }
 
-        int pinyinStart = 1 + hc * 2;
+        // best_pinyin sits right after hanzi pairs
+        int bestIdx = 1 + hc * 2;
+        String bestPinyin = (bestIdx < raw.length) ? raw[bestIdx] : "";
+
+        int pinyinStart = bestIdx + 1;
         int pc = (raw.length - pinyinStart) / 2;
         PinyinCandidate[] pinyin = new PinyinCandidate[pc];
         for (int i = 0; i < pc; i++) {
@@ -151,7 +158,7 @@ public class SimeEngine {
             );
         }
 
-        return new T9Result(hanzi, pinyin);
+        return new T9Result(hanzi, bestPinyin, pinyin);
     }
 
     /**

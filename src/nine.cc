@@ -212,23 +212,23 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
     return results;
 }
 
-std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
+NineDecoder::SentenceResult NineDecoder::DecodeSentence(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
 
-    std::vector<Result> results;
+    SentenceResult sr;
     if (!ready_ || num == 0) {
-        return results;
+        return sr;
     }
     if (digits.empty() && prefix.empty()) {
-        return results;
+        return sr;
     }
 
     // Validate digits
     for (char c : digits) {
         if (c < '2' || c > '9') {
-            return results;
+            return sr;
         }
     }
 
@@ -236,16 +236,14 @@ std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
     std::vector<TokenID> prefix_tokens;
     for (const auto& u : prefix) {
         auto it = unit_to_token_.find(u.value);
-        if (it == unit_to_token_.end()) return results;
+        if (it == unit_to_token_.end()) return sr;
         prefix_tokens.push_back(it->second);
     }
 
     const std::size_t p = prefix.size();
     const std::size_t d = digits.size();
 
-    // --- First result: best full-match via beam search ---
-    // Lattice: p prefix columns + d digit columns + 1 SentenceToken column
-    // Total columns: p + d + 2
+    // --- best: beam search with tail expansion ---
     if (p + d > 0) {
         struct Link {
             std::size_t end = 0;
@@ -279,6 +277,23 @@ std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
                     }
                 }
             }
+
+            // Tail expansion: only when digits[start..d) has no exact match,
+            // find longer keys that start with it (auto-complete).
+            std::string tail(digits.substr(start));
+            if (tail.size() < 6 &&
+                digit_map_.find(tail) == digit_map_.end()) {
+                for (const auto& [dkey, entries] : digit_map_) {
+                    if (dkey.size() > tail.size() &&
+                        dkey.compare(0, tail.size(), tail) == 0) {
+                        for (const auto& entry : entries) {
+                            net[col].links.push_back(
+                                {p + d, entry.token_id});
+                        }
+                    }
+                }
+            }
+
             if (net[col].links.empty()) {
                 net[col].links.push_back({col + 1, ScoreNotToken});
             }
@@ -316,7 +331,7 @@ std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
         // Backtrace from final column — take ONE best
         auto tail_states = net.back().states.GetStates();
         for (std::size_t rank = 0;
-             rank < tail_states.size() && results.empty(); ++rank) {
+             rank < tail_states.size() && sr.best.units.empty(); ++rank) {
             std::vector<TokenID> tokens;
             const State* state = &tail_states[rank];
             while (state->backtrace_state != nullptr) {
@@ -330,49 +345,42 @@ std::vector<NineDecoder::Result> NineDecoder::DecodeSentence(
             std::reverse(tokens.begin(), tokens.end());
             if (tokens.empty()) continue;
 
-            Result result;
-            result.score = -tail_states[rank].score;
-            result.cnt = d;  // all digits consumed
+            sr.best.score = -tail_states[rank].score;
+            sr.best.cnt = d;
             for (TokenID tid : tokens) {
                 std::size_t idx = tid - StartToken;
                 if (idx < token_to_unit_.size()) {
-                    result.units.push_back(token_to_unit_[idx]);
+                    sr.best.units.push_back(token_to_unit_[idx]);
                 }
-            }
-            if (!result.units.empty()) {
-                results.push_back(std::move(result));
             }
         }
     }
 
-    // --- Remaining: single-syllable lookups from digit prefixes, long→short ---
-    for (std::size_t len = d; len >= 1 && results.size() < num; --len) {
+    // --- candidates: single-syllable exact matches, long→short ---
+    auto try_add = [&](const SyllableEntry& entry, std::size_t cnt) {
+        for (const auto& existing : sr.candidates) {
+            if (existing.units.size() == 1 &&
+                existing.units[0] == entry.unit) {
+                return;
+            }
+        }
+        Result result;
+        result.units.push_back(entry.unit);
+        result.cnt = cnt;
+        sr.candidates.push_back(std::move(result));
+    };
+
+    for (std::size_t len = d; len >= 1 && sr.candidates.size() < num; --len) {
         std::string key(digits.substr(0, len));
         auto it = digit_map_.find(key);
         if (it == digit_map_.end()) continue;
-
         for (const auto& entry : it->second) {
-            if (results.size() >= num) break;
-
-            // Deduplicate against existing results (single-unit match)
-            bool dup = false;
-            for (const auto& existing : results) {
-                if (existing.units.size() == 1 &&
-                    existing.units[0] == entry.unit) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (dup) continue;
-
-            Result result;
-            result.units.push_back(entry.unit);
-            result.cnt = len;
-            results.push_back(std::move(result));
+            if (sr.candidates.size() >= num) break;
+            try_add(entry, len);
         }
     }
 
-    return results;
+    return sr;
 }
 
 } // namespace sime

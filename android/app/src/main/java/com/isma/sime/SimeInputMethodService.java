@@ -80,8 +80,14 @@ public class SimeInputMethodService extends InputMethodService {
     // T9 left column and pinyin candidate state
     private LinearLayout mT9LeftCol;
     private SimeEngine.PinyinCandidate[] mT9PinyinOptions = new SimeEngine.PinyinCandidate[0];
+    private String mT9BestPinyin = "";
     private int mSelectedPinyinIndex = 0;
     private static final int T9_PINYIN_COUNT = 8;
+
+    // T9 digit-to-letters map
+    private static final String[] T9_LETTERS = {
+        "", "", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
+    };
 
     // T9 confirmed pinyin state: each entry = (syllables, digit count)
     private final java.util.List<SimeEngine.PinyinCandidate> mConfirmedSyllables = new java.util.ArrayList<>();
@@ -749,14 +755,15 @@ public class SimeInputMethodService extends InputMethodService {
         // Single decode: prefix + remaining digits → pinyin + hanzi
         SimeEngine.T9Result t9 = mEngine.decodeT9(prefix, remainingDigits, MAX_CANDIDATES);
         mT9PinyinOptions = t9.pinyin;
+        mT9BestPinyin = t9.bestPinyin;
         mSelectedPinyinIndex = 0;
 
-        // Preedit: use first result's pinyin directly (includes prefix + remaining)
+        // Preedit: use best_pinyin (includes prefix + remaining)
         String preeditText = allDigits;
         int confirmedLen = 0;
-        if (mT9PinyinOptions.length > 0) {
-            // First result's pinyin is space-separated; replace with apostrophe
-            preeditText = mT9PinyinOptions[0].pinyin.replace(' ', '\'');
+        if (!mT9BestPinyin.isEmpty()) {
+            // best_pinyin uses apostrophe separators
+            preeditText = mT9BestPinyin.replace(' ', '\'');
             // Compute confirmed portion length for highlighting
             if (!prefixList.isEmpty()) {
                 StringBuilder cb = new StringBuilder();
@@ -789,41 +796,43 @@ public class SimeInputMethodService extends InputMethodService {
         populateT9LeftColumn();
     }
 
-    /** Populate the T9 left column with punctuation (idle) or pinyin candidates (typing). */
+    /** Populate the T9 left column with punctuation (idle) or mixed candidates (typing). */
     private void populateT9LeftColumn() {
         if (mT9LeftCol == null) return;
         mT9LeftCol.removeAllViews();
 
-        if (mPreedit.length() > 0 && mT9PinyinOptions.length > 1) {
-            // Show pinyin candidates: skip first (full match, shown in preedit), max 4
-            int maxShow = Math.min(mT9PinyinOptions.length, 5);
-            for (int i = 1; i < maxShow; i++) {
+        if (mPreedit.length() > 0) {
+            // Collect all candidates in order, deduplicating by display text
+            java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+
+            // 1. Syllable candidates (exact matches from engine)
+            for (int i = 0; i < mT9PinyinOptions.length; i++) {
                 String pinyin = mT9PinyinOptions[i].pinyin.replace(" ", "'");
+                seen.add(pinyin);
+            }
 
-                TextView tv = new TextView(this);
-                tv.setText(pinyin);
-                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                tv.setGravity(Gravity.CENTER);
-                tv.setSingleLine(true);
-                tv.setPadding(dp(2), dp(4), dp(2), dp(4));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-                tv.setLayoutParams(lp);
-                tv.setTextColor(getColor(R.color.key_text_secondary));
+            // 2. T9 letters for first remaining digit: lowercase, uppercase, digit
+            String remaining = mPreedit.toString().substring(mConfirmedDigitCount);
+            if (!remaining.isEmpty()) {
+                int digit = remaining.charAt(0) - '0';
+                if (digit >= 2 && digit <= 9) {
+                    String letters = T9_LETTERS[digit];
+                    for (int i = 0; i < letters.length(); i++) {
+                        seen.add(String.valueOf(letters.charAt(i)));
+                    }
+                    for (int i = 0; i < letters.length(); i++) {
+                        seen.add(String.valueOf(Character.toUpperCase(letters.charAt(i))));
+                    }
+                    seen.add(String.valueOf(remaining.charAt(0)));
+                }
+            }
 
-                final int idx = i;
-                tv.setOnClickListener(v -> {
-                    // Confirm this syllable and re-decode remaining digits
-                    SimeEngine.PinyinCandidate selected = mT9PinyinOptions[idx];
-                    mConfirmedSyllables.add(selected);
-                    mConfirmedDigitCount += selected.cnt;
-                    mCandidatePage = 0;
-                    updateT9UI();
-                });
-                mT9LeftCol.addView(tv);
+            // Build views
+            for (String label : seen) {
+                addT9LeftItem(label);
             }
         } else {
-            // Show default punctuation
+            // Idle — show default punctuation
             for (String punc : T9_DEFAULT_PUNCTUATION) {
                 TextView tv = new TextView(this);
                 tv.setText(punc);
@@ -832,7 +841,7 @@ public class SimeInputMethodService extends InputMethodService {
                 tv.setPadding(dp(2), dp(4), dp(2), dp(4));
                 tv.setTextColor(getColor(R.color.key_text));
                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+                    LinearLayout.LayoutParams.MATCH_PARENT, getT9LeftItemHeight());
                 tv.setLayoutParams(lp);
 
                 final String symbol = punc;
@@ -845,6 +854,67 @@ public class SimeInputMethodService extends InputMethodService {
                 mT9LeftCol.addView(tv);
             }
         }
+    }
+
+    /** Get the height for each left-column item (1/4 of column). */
+    private int getT9LeftItemHeight() {
+        View scroll = mInputView != null ? mInputView.findViewById(R.id.t9_left_scroll) : null;
+        int colHeight = scroll != null ? scroll.getHeight() : 0;
+        if (colHeight <= 0) colHeight = dp(160); // fallback
+        return colHeight / 4;
+    }
+
+    /** Add an item to the T9 left column. Syllable → confirm; letter/digit → commit. */
+    private void addT9LeftItem(String label) {
+        // Check if this label matches a syllable candidate
+        int syllableIdx = -1;
+        for (int i = 0; i < mT9PinyinOptions.length; i++) {
+            String pinyin = mT9PinyinOptions[i].pinyin.replace(" ", "'");
+            if (pinyin.equals(label)) {
+                syllableIdx = i;
+                break;
+            }
+        }
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tv.setGravity(Gravity.CENTER);
+        tv.setSingleLine(true);
+        tv.setPadding(dp(2), dp(4), dp(2), dp(4));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, getT9LeftItemHeight());
+        tv.setLayoutParams(lp);
+        tv.setTextColor(getColor(R.color.key_text_secondary));
+
+        if (syllableIdx >= 0) {
+            // Syllable candidate — confirm and re-decode
+            final int idx = syllableIdx;
+            tv.setOnClickListener(v -> {
+                SimeEngine.PinyinCandidate selected = mT9PinyinOptions[idx];
+                mConfirmedSyllables.add(selected);
+                mConfirmedDigitCount += selected.cnt;
+                mCandidatePage = 0;
+                updateT9UI();
+            });
+        } else {
+            // Letter/digit — commit directly and consume one digit
+            tv.setOnClickListener(v -> {
+                InputConnection ic = getCurrentInputConnection();
+                if (ic != null) {
+                    ic.commitText(label, 1);
+                    if (mPreedit.length() > mConfirmedDigitCount) {
+                        mPreedit.deleteCharAt(mConfirmedDigitCount);
+                        if (mPreedit.length() == mConfirmedDigitCount) {
+                            resetComposition();
+                        } else {
+                            updateT9UI();
+                        }
+                    }
+                }
+            });
+        }
+        mT9LeftCol.addView(tv);
     }
 
     /** T9 分词: cycle to next full-match pinyin interpretation */

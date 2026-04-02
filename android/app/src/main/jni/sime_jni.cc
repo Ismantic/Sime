@@ -185,7 +185,8 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     const auto& pinyin = nine.pinyin;
     const jsize hc = static_cast<jsize>(hanzi.size());
     const jsize pc = static_cast<jsize>(pinyin.size());
-    const jsize total = 1 + hc * 2 + pc * 2;
+    // Format: [hanzi_count, ...hanzi pairs..., best_pinyin, ...candidate pairs...]
+    const jsize total = 1 + hc * 2 + 1 + pc * 2;
 
     auto arr = env->NewObjectArray(total, stringClass, nullptr);
     jsize idx = 0;
@@ -204,7 +205,11 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
                                    env->NewStringUTF(lenStr.c_str()));
     }
 
-    // Pinyin pairs
+    // best_pinyin (beam search best parse)
+    env->SetObjectArrayElement(arr, idx++,
+        env->NewStringUTF(nine.best_pinyin.c_str()));
+
+    // Pinyin candidate pairs (exact matches only)
     for (jsize i = 0; i < pc; ++i) {
         std::string py;
         for (const auto& unit : pinyin[i].units) {
