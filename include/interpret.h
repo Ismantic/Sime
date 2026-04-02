@@ -107,7 +107,6 @@ private:
     Scorer scorer_;
     Dict dict_;
     T9Decoder t9_;
-    float_t dict_boost_ = 0.0;
     bool ready_ = false;
 };
 
