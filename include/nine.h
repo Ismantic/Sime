@@ -19,13 +19,19 @@ public:
     bool Ready() const { return ready_; }
 
     struct Result {
-        std::vector<Unit> pinyin;
+        std::vector<Unit> units;
         float_t score = 0.0;
+        std::size_t cnt = 0; // digits consumed (0 = all)
     };
 
-    // Decode digit sequence into ranked pinyin parses.
+    // Decode digit sequence into ranked pinyin parses (full match only).
     std::vector<Result> Decode(std::string_view digits,
                                std::size_t num = 5) const;
+
+    // First result = best full-match parse (beam search).
+    // Remaining = single-syllable candidates from digit prefixes (long→short).
+    std::vector<Result> DecodeSentence(std::string_view digits,
+                                       std::size_t num = 18) const;
 
 private:
     struct SyllableEntry {
