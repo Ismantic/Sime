@@ -72,7 +72,7 @@ Java_com_isma_sime_SimeEngine_nativeLoadResources(
     return JNI_TRUE;
 }
 
-// 2. Load T9 pinyin model. Returns true on success.
+// 2. Load nine-key pinyin model. Returns true on success.
 JNIEXPORT jboolean JNICALL
 Java_com_isma_sime_SimeEngine_nativeLoadT9(
     JNIEnv* env, jclass /*clazz*/,
@@ -80,11 +80,11 @@ Java_com_isma_sime_SimeEngine_nativeLoadT9(
 
     if (!g_interpreter) return JNI_FALSE;
     auto path = jstringToString(env, pinyinModelPath);
-    if (!g_interpreter->LoadT9(path)) {
-        LOGE("Failed to load T9 model: %s", path.c_str());
+    if (!g_interpreter->LoadNine(path)) {
+        LOGE("Failed to load nine-key model: %s", path.c_str());
         return JNI_FALSE;
     }
-    LOGI("T9 model loaded: %s", path.c_str());
+    LOGI("Nine-key model loaded: %s", path.c_str());
     return JNI_TRUE;
 }
 
@@ -146,7 +146,7 @@ Java_com_isma_sime_SimeEngine_nativeSegmentPinyin(
     return env->NewStringUTF(segmented.c_str());
 }
 
-// 6. T9: digits → hanzi candidates.
+// 6. Nine-key: digits → hanzi candidates.
 //    Returns String[] same format as DecodeSentence.
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeT9(
@@ -156,12 +156,12 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     jclass stringClass = env->FindClass("java/lang/String");
 
     if (!g_interpreter || !g_interpreter->Ready() ||
-        !g_interpreter->T9Ready()) {
+        !g_interpreter->NineReady()) {
         return env->NewObjectArray(0, stringClass, nullptr);
     }
 
     auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeT9(
+    auto results = g_interpreter->DecodeNine(
         d, static_cast<std::size_t>(num));
 
     auto arr = env->NewObjectArray(
@@ -177,7 +177,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     return arr;
 }
 
-// 7. T9: digits → pinyin candidates.
+// 7. Nine-key: digits → pinyin candidates.
 //    Returns String[] of space-separated pinyin strings, one per interpretation.
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
@@ -187,12 +187,12 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9Pinyin(
     jclass stringClass = env->FindClass("java/lang/String");
 
     if (!g_interpreter || !g_interpreter->Ready() ||
-        !g_interpreter->T9Ready()) {
+        !g_interpreter->NineReady()) {
         return env->NewObjectArray(0, stringClass, nullptr);
     }
 
     auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeT9Pinyin(
+    auto results = g_interpreter->DecodeNinePinyin(
         d, static_cast<std::size_t>(num));
 
     auto arr = env->NewObjectArray(

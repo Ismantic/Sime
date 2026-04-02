@@ -1,5 +1,5 @@
 #include "interpret.h"
-#include "t9.h"
+#include "nine.h"
 #include "unit.h"
 #include "ustr.h"
 
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
     }
 
     if (!opts.t9model.empty()) {
-        if (interpreter.LoadT9(opts.t9model)) {
+        if (interpreter.LoadNine(opts.t9model)) {
             std::cout << "T9Model: " << opts.t9model << "\n";
         } else {
             std::cerr << "Warning: failed to load T9 model: " << opts.t9model << "\n";
@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
         if (opts.t9) {
             if (has_hanzi) {
                 // Full pipeline: digits → pinyin → hanzi
-                auto results = interpreter.DecodeT9(line, opts.num);
+                auto results = interpreter.DecodeNine(line, opts.num);
                 if (results.empty()) {
                     std::cout << "  (没有候选)\n";
                     continue;
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
                 }
             } else {
                 // Pinyin only: digits → pinyin
-                auto parses = interpreter.DecodeT9Pinyin(line, opts.num);
+                auto parses = interpreter.DecodeNinePinyin(line, opts.num);
                 if (parses.empty()) {
                     std::cout << "  (没有候选)\n";
                     continue;

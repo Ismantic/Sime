@@ -1,4 +1,4 @@
-#include "t9.h"
+#include "nine.h"
 
 #include "state.h"
 
@@ -8,7 +8,7 @@
 
 namespace sime {
 
-char T9Decoder::LetterToDigit(char c) {
+char NineDecoder::LetterToDigit(char c) {
     switch (c) {
     case 'a': case 'b': case 'c': return '2';
     case 'd': case 'e': case 'f': return '3';
@@ -22,7 +22,7 @@ char T9Decoder::LetterToDigit(char c) {
     }
 }
 
-std::string T9Decoder::PinyinToDigits(const char* pinyin) {
+std::string NineDecoder::PinyinToDigits(const char* pinyin) {
     std::string result;
     for (const char* p = pinyin; *p; ++p) {
         char d = LetterToDigit(static_cast<char>(
@@ -34,7 +34,7 @@ std::string T9Decoder::PinyinToDigits(const char* pinyin) {
     return result;
 }
 
-void T9Decoder::BuildDigitMap() {
+void NineDecoder::BuildDigitMap() {
     digit_map_.clear();
     token_to_unit_.clear();
 
@@ -66,7 +66,7 @@ void T9Decoder::BuildDigitMap() {
     }
 }
 
-bool T9Decoder::Load(const std::filesystem::path& pinyin_model_path) {
+bool NineDecoder::Load(const std::filesystem::path& pinyin_model_path) {
     BuildDigitMap();
     if (!scorer_.Load(pinyin_model_path)) {
         ready_ = false;
@@ -76,7 +76,7 @@ bool T9Decoder::Load(const std::filesystem::path& pinyin_model_path) {
     return true;
 }
 
-std::vector<T9Decoder::Result> T9Decoder::Decode(
+std::vector<NineDecoder::Result> NineDecoder::Decode(
     std::string_view digits,
     std::size_t num) const {
 
