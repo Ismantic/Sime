@@ -115,7 +115,7 @@ void SimeEngine::initInterpreter() {
                 }
             }
         }
-        if (!udPath.empty() && interpreter_->LoadUserDict(udPath)) {
+        if (!udPath.empty() && interpreter_->LoadDict(udPath)) {
             FCITX_INFO() << "Sime: user dict loaded from " << udPath;
         }
     }

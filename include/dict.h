@@ -13,7 +13,7 @@
 
 namespace sime {
 
-class UserDict {
+class Dict {
 public:
     // Load user dict entries and compute LM scores using trie + scorer.
     bool Load(const std::filesystem::path& path,
