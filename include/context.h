@@ -88,4 +88,4 @@ private:
 
 } // namespace sime
 
-#endif // SIME_SELECTION_MANAGER_H
+#endif // SIME_CONTEXT_H

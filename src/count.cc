@@ -3,7 +3,6 @@
 #include <array>
 #include <cstddef>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -278,25 +277,19 @@ void RunImpl(const CountOptions& options) {
     runs.reserve(16);
 
     TokenMap token_map;
-    std::cerr << "Loading dict..." << std::flush;
     if (!LoadTokenMap(options.dict, token_map)) {
         throw std::runtime_error("Failed to load dict: " + options.dict.string());
     }
-    std::cerr << "done (" << token_map.size() << " tokens)\n";
 
     for (const auto& input : options.inputs) {
-        std::cerr << "Processing " << input << "..." << std::flush;
         ProcessTextFile<N>(input, token_map, options.count_max, swap, runs);
-        std::cerr << "done\n";
     }
 
     swap.close();
-    std::cerr << "Merging..." << std::flush;
     MergeRuns<N>(options.swap, runs, options.output);
-    std::cerr << "done\n";
 }
 
-} // namesace
+} // namespace sime
 
 void RunCount(const CountOptions& options) {
     if (options.num == 1) {

@@ -49,4 +49,4 @@ private:
     std::vector<const char32_t*> token_strs_;
 };
 
-} /// namespace sime
+} // namespace sime
