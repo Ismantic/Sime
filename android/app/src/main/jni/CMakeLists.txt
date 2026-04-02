@@ -22,7 +22,7 @@ add_library(sime_core STATIC
     ${SIME_SRC}/trie.cc
     ${SIME_SRC}/state.cc
     ${SIME_SRC}/interpret.cc
-    ${SIME_SRC}/userdict.cc
+    ${SIME_SRC}/dict.cc
     ${SIME_SRC}/t9.cc
     ${SIME_SRC}/context.cc
 )

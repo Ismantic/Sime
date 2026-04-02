@@ -81,10 +81,10 @@ int main(int argc, char** argv) {
     }
 
     if (!opts.userdict.empty()) {
-        if (interpreter.LoadUserDict(opts.userdict)) {
-            std::cout << "UserDict: " << opts.userdict << "\n";
+        if (interpreter.LoadDict(opts.userdict)) {
+            std::cout << "Dict: " << opts.userdict << "\n";
         } else {
-            std::cerr << "Warning: failed to load user dict: " << opts.userdict << "\n";
+            std::cerr << "Warning: failed to load dict: " << opts.userdict << "\n";
         }
     }
 

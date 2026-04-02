@@ -1,4 +1,4 @@
-#include "userdict.h"
+#include "dict.h"
 #include "ustr.h"
 
 #include <cstring>
@@ -7,7 +7,7 @@
 
 namespace sime {
 
-bool UserDict::Load(const std::filesystem::path& path,
+bool Dict::Load(const std::filesystem::path& path,
                     const Trie& trie,
                     const Scorer& scorer) {
     dict_.clear();
@@ -59,7 +59,7 @@ bool UserDict::Load(const std::filesystem::path& path,
     return !entries_.empty();
 }
 
-std::vector<std::size_t> UserDict::Lookup(
+std::vector<std::size_t> Dict::Lookup(
     const Unit* units, std::size_t len) const {
     std::string key = MakeKey(units, len);
     auto it = dict_.find(key);
@@ -67,15 +67,15 @@ std::vector<std::size_t> UserDict::Lookup(
     return it->second;
 }
 
-const std::u32string& UserDict::TextAt(std::size_t local_id) const {
+const std::u32string& Dict::TextAt(std::size_t local_id) const {
     return entries_[local_id].text;
 }
 
-float_t UserDict::ScoreAt(std::size_t local_id) const {
+float_t Dict::ScoreAt(std::size_t local_id) const {
     return entries_[local_id].score;
 }
 
-std::string UserDict::MakeKey(const Unit* units, std::size_t len) {
+std::string Dict::MakeKey(const Unit* units, std::size_t len) {
     std::string key;
     key.resize(len * sizeof(std::uint32_t));
     for (std::size_t i = 0; i < len; ++i) {
@@ -85,7 +85,7 @@ std::string UserDict::MakeKey(const Unit* units, std::size_t len) {
     return key;
 }
 
-std::vector<TokenID> UserDict::Tokenize(
+std::vector<TokenID> Dict::Tokenize(
     const std::u32string& text,
     const std::unordered_map<std::u32string, TokenID>& text_to_id) {
     std::vector<TokenID> result;
@@ -114,7 +114,7 @@ std::vector<TokenID> UserDict::Tokenize(
     return result;
 }
 
-float_t UserDict::ScoreTokens(const std::vector<TokenID>& tokens,
+float_t Dict::ScoreTokens(const std::vector<TokenID>& tokens,
                                const Scorer& scorer) {
     float_t total = 0.0;
     Scorer::Pos pos{};  // BOS

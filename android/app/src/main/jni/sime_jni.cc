@@ -96,11 +96,11 @@ Java_com_isma_sime_SimeEngine_nativeLoadUserDict(
 
     if (!g_interpreter) return JNI_FALSE;
     auto path = jstringToString(env, userDictPath);
-    if (!g_interpreter->LoadUserDict(path)) {
-        LOGE("Failed to load user dict: %s", path.c_str());
+    if (!g_interpreter->LoadDict(path)) {
+        LOGE("Failed to load dict: %s", path.c_str());
         return JNI_FALSE;
     }
-    LOGI("User dict loaded: %s", path.c_str());
+    LOGI("Dict loaded: %s", path.c_str());
     return JNI_TRUE;
 }
 

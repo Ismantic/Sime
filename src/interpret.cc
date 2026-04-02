@@ -19,7 +19,7 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
         ready_ = false;
         return false;
     }
-    userdict_boost_ = std::abs(scorer_.UnknownPenalty()) * 0.1;
+    dict_boost_ = std::abs(scorer_.UnknownPenalty()) * 0.1;
     ready_ = true;
     return true;
 }
@@ -85,9 +85,9 @@ std::vector<T9Decoder::Result> Interpreter::DecodeT9Pinyin(
     return t9_.Decode(digits, num);
 }
 
-bool Interpreter::LoadUserDict(const std::filesystem::path& path) {
+bool Interpreter::LoadDict(const std::filesystem::path& path) {
     if (!ready_) return false;
-    return userdict_.Load(path, trie_, scorer_);
+    return dict_.Load(path, trie_, scorer_);
 }
 
 std::vector<DecodeResult> Interpreter::DecodeText(
@@ -512,10 +512,10 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
               });
 
     // === User dict: inject matches directly, bypassing beam search ===
-    if (!userdict_.Empty()) {
+    if (!dict_.Empty()) {
         const std::size_t n = units.size();
         for (std::size_t len = 1; len <= n; ++len) {
-            auto matches = userdict_.Lookup(units.data(), len);
+            auto matches = dict_.Lookup(units.data(), len);
             if (matches.empty()) continue;
 
             std::size_t matched_bytes =
@@ -531,8 +531,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
             }
 
             for (std::size_t idx : matches) {
-                const auto& text = userdict_.TextAt(idx);
-                float_t score = -(userdict_.ScoreAt(idx) - userdict_boost_)
+                const auto& text = dict_.TextAt(idx);
+                float_t score = -(dict_.ScoreAt(idx) - dict_boost_)
                                 - dist_penalty;
 
                 // Check if this word already exists in results.

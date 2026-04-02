@@ -5,7 +5,7 @@
 #include "state.h"
 #include "t9.h"
 #include "trie.h"
-#include "userdict.h"
+#include "dict.h"
 
 #include <filesystem>
 #include <string>
@@ -33,7 +33,7 @@ public:
     bool LoadResources(const std::filesystem::path& trie_path,
                        const std::filesystem::path& model_path);
 
-    bool LoadUserDict(const std::filesystem::path& path);
+    bool LoadDict(const std::filesystem::path& path);
 
     bool LoadT9(const std::filesystem::path& pinyin_model_path);
     bool T9Ready() const { return t9_.Ready(); }
@@ -105,9 +105,9 @@ private:
 private:
     Trie trie_;
     Scorer scorer_;
-    UserDict userdict_;
+    Dict dict_;
     T9Decoder t9_;
-    float_t userdict_boost_ = 0.0;
+    float_t dict_boost_ = 0.0;
     bool ready_ = false;
 };
 
