@@ -15,14 +15,13 @@ struct Options {
     std::filesystem::path trie;
     std::filesystem::path model;
     std::filesystem::path userdict;
-    std::filesystem::path t9model;
+    std::filesystem::path nine;
     std::size_t num = 5;
     bool sentence = false;
-    bool t9 = false;
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--userdict <user.dict>] [--t9model <pinyin_model.bin>] [--num N] [--sentence] [--t9]\n";
+    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--userdict <user.dict>] [--nine <pinyin_model.bin>] [--num N] [--sentence]\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -38,10 +37,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--sentence" || arg == "-s") {
             opts.sentence = true;
-        } else if (arg == "--t9") {
-            opts.t9 = true;
-        } else if (arg == "--t9model" && i + 1 < argc) {
-            opts.t9model = argv[++i];
+        } else if (arg == "--nine" && i + 1 < argc) {
+            opts.nine = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -51,8 +48,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    // --t9 alone only needs --t9model
-    if (!opts.t9 && (opts.trie.empty() || opts.model.empty())) {
+    // Need either --nine or trie+model
+    if (opts.nine.empty() && (opts.trie.empty() || opts.model.empty())) {
         PrintUsage();
         return false;
     }
@@ -73,12 +70,16 @@ int main(int argc, char** argv) {
     sime::Interpreter interpreter;
     sime::NineDecoder nine;
     bool has_hanzi = false;
+    bool has_nine = false;
+
     if (!opts.trie.empty() && !opts.model.empty()) {
         if (!interpreter.LoadResources(opts.trie, opts.model)) {
             std::cerr << "Load failed: " << opts.trie << ", " << opts.model << "\n";
             return 1;
         }
         has_hanzi = true;
+        std::cout << "Trie: " << opts.trie << "\n"
+                  << "Model: " << opts.model << "\n";
     }
 
     if (!opts.userdict.empty()) {
@@ -89,25 +90,21 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (!opts.t9model.empty()) {
-        if (!nine.Load(opts.t9model)) {
-            std::cerr << "Warning: failed to load T9 model: " << opts.t9model << "\n";
-            opts.t9 = false;
+    if (!opts.nine.empty()) {
+        if (!nine.Load(opts.nine)) {
+            std::cerr << "Failed to load nine model: " << opts.nine << "\n";
+            if (!has_hanzi) return 1;
         } else {
-            std::cout << "T9Model: " << opts.t9model << "\n";
-            if (has_hanzi) interpreter.LoadNine(opts.t9model);
+            has_nine = true;
+            std::cout << "Nine: " << opts.nine << "\n";
+            if (has_hanzi) interpreter.LoadNine(opts.nine);
         }
-    } else if (opts.t9) {
-        std::cerr << "Error: --t9 requires --t9model\n";
-        return 1;
     }
 
-    std::cout << "Dict: " << opts.trie << "\n"
-              << "LanguageModel: " << opts.model << "\n";
-    if (opts.t9) {
-        std::cout << "模式: T9 (输入数字 2-9)\n";
+    if (has_nine) {
+        std::cout << "模式: 九宫格 (输入数字 2-9)\n";
     }
-    std::cout << "输入" << (opts.t9 ? "数字" : "拼音") << "，使用 :quit 退出。\n";
+    std::cout << "输入" << (has_nine ? "数字" : "拼音") << "，使用 :quit 退出。\n";
 
     std::string line;
     while (true) {
@@ -121,7 +118,7 @@ int main(int argc, char** argv) {
         if (line.empty()) {
             continue;
         }
-        if (opts.t9) {
+        if (has_nine) {
             if (has_hanzi) {
                 // Full pipeline: digits → pinyin + hanzi
                 auto nine_result = interpreter.DecodeNine(line, {}, opts.num);
@@ -137,7 +134,7 @@ int main(int argc, char** argv) {
                               << " (score " << std::fixed << std::setprecision(3) << r.score << ")\n";
                 }
             } else {
-                // Pinyin only: digits → pinyin (NineDecoder directly)
+                // Pinyin only: digits → pinyin
                 auto parses = nine.Decode(line, opts.num);
                 if (parses.empty()) {
                     std::cout << "  (没有候选)\n";
