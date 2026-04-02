@@ -19,7 +19,6 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
         ready_ = false;
         return false;
     }
-    userdict_.SetBaseTokenID(trie_.TokenCount());
     userdict_boost_ = std::abs(scorer_.UnknownPenalty()) * 0.1;
     ready_ = true;
     return true;
@@ -88,7 +87,6 @@ std::vector<T9Decoder::Result> Interpreter::DecodeT9Pinyin(
 
 bool Interpreter::LoadUserDict(const std::filesystem::path& path) {
     if (!ready_) return false;
-    userdict_.SetBaseTokenID(trie_.TokenCount());
     return userdict_.Load(path, trie_, scorer_);
 }
 
@@ -532,10 +530,9 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 dist_penalty = static_cast<float_t>(n - len) * penalty_per_unit;
             }
 
-            for (const auto& m : matches) {
-                std::size_t local = m.id - userdict_.BaseTokenID();
-                const auto& text = userdict_.TextAt(local);
-                float_t score = -(userdict_.ScoreAt(local) - userdict_boost_)
+            for (std::size_t idx : matches) {
+                const auto& text = userdict_.TextAt(idx);
+                float_t score = -(userdict_.ScoreAt(idx) - userdict_boost_)
                                 - dist_penalty;
 
                 // Check if this word already exists in results.

@@ -59,17 +59,12 @@ bool UserDict::Load(const std::filesystem::path& path,
     return !entries_.empty();
 }
 
-std::vector<UserDict::Match> UserDict::Lookup(
+std::vector<std::size_t> UserDict::Lookup(
     const Unit* units, std::size_t len) const {
-    std::vector<Match> result;
     std::string key = MakeKey(units, len);
     auto it = dict_.find(key);
-    if (it == dict_.end()) return result;
-
-    for (std::size_t idx : it->second) {
-        result.push_back({base_id_ + static_cast<TokenID>(idx)});
-    }
-    return result;
+    if (it == dict_.end()) return {};
+    return it->second;
 }
 
 const std::u32string& UserDict::TextAt(std::size_t local_id) const {
