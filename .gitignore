@@ -33,7 +33,7 @@ __pycache__/
 
 # Misc local files
 TODO
-*.py
+/*.py
 freq_dict.txt
 pinyin_dict.txt
 pinyin_token_dict.txt
