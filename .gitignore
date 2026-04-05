@@ -32,10 +32,10 @@ __pycache__/
 scripts/
 
 # Android
-android/app/src/main/assets/*.bin
-android/app/build/
-android/app/.cxx/
-android/build/
-android/.gradle/
-android/local.properties
-android/gradle/wrapper/gradle-wrapper.jar
+Android/app/src/main/assets/*.bin
+Android/app/build/
+Android/app/.cxx/
+Android/build/
+Android/.gradle/
+Android/local.properties
+Android/gradle/wrapper/gradle-wrapper.jar
