@@ -178,7 +178,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     }
 
     auto d = jstringToString(env, digits);
-    auto nine = g_interpreter->DecodeNine(
+    auto nine = g_interpreter->DecodeStream(
         d, prefix, static_cast<std::size_t>(num));
 
     const auto& hanzi = nine.hanzi;

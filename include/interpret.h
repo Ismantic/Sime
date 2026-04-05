@@ -6,10 +6,12 @@
 #include "nine.h"
 #include "trie.h"
 #include "dict.h"
+#include "unit.h"
 
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace sime {
@@ -37,6 +39,7 @@ public:
 
     bool LoadNine(const std::filesystem::path& pinyin_model_path);
     bool NineReady() const { return nine_.Ready(); }
+    bool NineDigitsReady() const { return !digit_map_.empty(); }
 
     struct NineResult {
         std::string best_pinyin;                   // beam search best (for preedit/hanzi)
@@ -44,9 +47,18 @@ public:
         std::vector<SentenceResult> hanzi;         // hanzi candidates
     };
 
-    // Nine: decode digit sequence → pinyin + hanzi candidates.
+    // Stream: two-step decode (digits → pinyin model → hanzi model).
     // prefix: locked confirmed syllables (empty for initial decode).
-    NineResult DecodeNine(
+    NineResult DecodeStream(
+        std::string_view digits,
+        const std::vector<Unit>& prefix = {},
+        std::size_t num = 18) const;
+
+    // Nine: joint decode (digits → expand all pinyin → hanzi model).
+    // No pinyin model needed, only dict + cnt.
+    // prefix: confirmed pinyin syllables providing LM context.
+    // digits: remaining digit sequence to decode.
+    std::vector<SentenceResult> DecodeNine(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
@@ -87,7 +99,6 @@ private:
                  std::vector<Node>& net,
                  const std::vector<Unit>& tail_expansions = {}) const;
 
-
     void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
@@ -107,11 +118,18 @@ private:
         std::vector<std::size_t>& unit_byte_end,
         std::vector<Unit>& tail_expansions);
 
+    // Build digit → pinyin Unit mapping from built-in syllable table
+    void BuildDigitMap();
+
+    static char LetterToDigit(char c);
+    static std::string PinyinToDigits(const char* pinyin);
+
 private:
     Trie trie_;
     Scorer scorer_;
     Dict dict_;
     NineDecoder nine_;
+    std::unordered_map<std::string, std::vector<Unit>> digit_map_;
     bool ready_ = false;
 };
 

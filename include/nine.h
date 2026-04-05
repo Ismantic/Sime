@@ -40,11 +40,15 @@ public:
                                   const std::vector<Unit>& prefix = {},
                                   std::size_t num = 18) const;
 
-private:
     struct SyllableEntry {
         TokenID token_id = 0;
         Unit unit;
     };
+
+    const std::unordered_map<std::string, std::vector<SyllableEntry>>&
+    DigitMap() const { return digit_map_; }
+
+private:
 
     void BuildDigitMap();
 

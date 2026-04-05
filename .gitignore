@@ -21,6 +21,15 @@ pinyin_model.bin
 output/
 output_*/
 
+# Sime training data and intermediates
+sime/*.txt
+sime/count
+sime/count.bin
+sime/iscut
+sime/output/
+sime/nine/*.txt
+sime/nine/output/
+
 # Package build artifacts
 package/*.pkg.tar.zst
 package/src/
