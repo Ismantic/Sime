@@ -31,6 +31,15 @@ package/*.bin
 # Python
 __pycache__/
 
+# Misc local files
+TODO
+*.py
+freq_dict.txt
+pinyin_dict.txt
+pinyin_token_dict.txt
+test_inputs.txt
+trie_conv.cc
+
 # Scripts (training/debug utilities)
 scripts/
 
