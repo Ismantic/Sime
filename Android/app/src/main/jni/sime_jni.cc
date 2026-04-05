@@ -72,20 +72,15 @@ Java_com_isma_sime_SimeEngine_nativeLoadResources(
     return JNI_TRUE;
 }
 
-// 2. Load nine-key pinyin model. Returns true on success.
+// 2. Load nine-key pinyin model (no longer needed — digit map built from dict).
 JNIEXPORT jboolean JNICALL
 Java_com_isma_sime_SimeEngine_nativeLoadT9(
-    JNIEnv* env, jclass /*clazz*/,
-    jstring pinyinModelPath) {
+    JNIEnv* /*env*/, jclass /*clazz*/,
+    jstring /*pinyinModelPath*/) {
 
     if (!g_interpreter) return JNI_FALSE;
-    auto path = jstringToString(env, pinyinModelPath);
-    if (!g_interpreter->LoadNine(path)) {
-        LOGE("Failed to load nine-key model: %s", path.c_str());
-        return JNI_FALSE;
-    }
-    LOGI("Nine-key model loaded: %s", path.c_str());
-    return JNI_TRUE;
+    // No-op: DecodeStream now uses built-in digit map, no pinyin model needed.
+    return g_interpreter->NineDigitsReady() ? JNI_TRUE : JNI_FALSE;
 }
 
 // 3. Load user dictionary. Returns true on success.
@@ -159,7 +154,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
 
     jclass stringClass = env->FindClass("java/lang/String");
 
-    if (!g_interpreter || !g_interpreter->NineReady()) {
+    if (!g_interpreter || !g_interpreter->NineDigitsReady()) {
         return env->NewObjectArray(0, stringClass, nullptr);
     }
 

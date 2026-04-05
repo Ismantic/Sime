@@ -3,7 +3,6 @@
 #include "common.h"
 #include "score.h"
 #include "state.h"
-#include "nine.h"
 #include "trie.h"
 #include "dict.h"
 #include "unit.h"
@@ -37,18 +36,21 @@ public:
 
     bool LoadDict(const std::filesystem::path& path);
 
-    bool LoadNine(const std::filesystem::path& pinyin_model_path);
-    bool NineReady() const { return nine_.Ready(); }
     bool NineDigitsReady() const { return !digit_map_.empty(); }
 
-    struct NineResult {
-        std::string best_pinyin;                   // beam search best (for preedit/hanzi)
-        std::vector<NineDecoder::Result> pinyin;   // exact-match syllable candidates
-        std::vector<SentenceResult> hanzi;         // hanzi candidates
+    struct PinyinCandidate {
+        std::vector<Unit> units;
+        std::size_t cnt = 0;  // digits consumed
     };
 
-    // Stream: two-step decode (digits → pinyin model → hanzi model).
-    // prefix: locked confirmed syllables (empty for initial decode).
+    struct NineResult {
+        std::string best_pinyin;
+        std::vector<PinyinCandidate> pinyin;
+        std::vector<SentenceResult> hanzi;
+    };
+
+    // Stream: joint decode with progressive input (digits, possibly incomplete).
+    // prefix: confirmed pinyin syllables providing LM context.
     NineResult DecodeStream(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
@@ -128,7 +130,6 @@ private:
     Trie trie_;
     Scorer scorer_;
     Dict dict_;
-    NineDecoder nine_;
     std::unordered_map<std::string, std::vector<Unit>> digit_map_;
     bool ready_ = false;
 };
