@@ -69,7 +69,7 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
 }
 
 bool Constructor::IsBreaker(TokenID i) const {
-    return i == SentenceToken;
+    return i == SentenceStart || i == SentenceEnd;
 }
 
 template <typename Level>

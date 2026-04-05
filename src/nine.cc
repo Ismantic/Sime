@@ -98,7 +98,7 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
 
     const std::size_t n = digits.size();
 
-    // Build lattice: n+2 columns (0..n for digits, n→n+1 for SentenceToken)
+    // Build lattice: n+2 columns (0..n for digits, n→n+1 for SentenceEnd)
     struct Link {
         std::size_t end = 0;
         TokenID token_id = 0;
@@ -128,8 +128,8 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
             net[start].links.push_back({start + 1, ScoreNotToken});
         }
     }
-    // SentenceToken at end
-    net[n].links.push_back({n + 1, SentenceToken});
+    // SentenceEnd at end
+    net[n].links.push_back({n + 1, SentenceEnd});
 
     // Set beam width
     const std::size_t beam = std::max<std::size_t>(num * 2, 16);
@@ -172,7 +172,7 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
         const State* state = &tail_states[rank];
         while (state->backtrace_state != nullptr) {
             TokenID tid = state->backtrace_token;
-            if (tid != SentenceToken && tid != ScoreNotToken &&
+            if (tid != SentenceEnd && tid != ScoreNotToken &&
                 tid != NotToken) {
                 tokens.push_back(tid);
             }
@@ -299,8 +299,8 @@ NineDecoder::SentenceResult NineDecoder::DecodeSentence(
             }
         }
 
-        // SentenceToken at end
-        net[n].links.push_back({n + 1, SentenceToken});
+        // SentenceEnd at end
+        net[n].links.push_back({n + 1, SentenceEnd});
 
         // Beam search
         const std::size_t beam = std::max<std::size_t>(16, 16);
@@ -336,7 +336,7 @@ NineDecoder::SentenceResult NineDecoder::DecodeSentence(
             const State* state = &tail_states[rank];
             while (state->backtrace_state != nullptr) {
                 TokenID tid = state->backtrace_token;
-                if (tid != SentenceToken && tid != ScoreNotToken &&
+                if (tid != SentenceEnd && tid != ScoreNotToken &&
                     tid != NotToken) {
                     tokens.push_back(tid);
                 }
