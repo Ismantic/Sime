@@ -15,10 +15,10 @@ struct Options {
     std::filesystem::path trie;
     std::filesystem::path model;
     std::filesystem::path userdict;
-    std::filesystem::path nine;  // pinyin model for DecodeStream (legacy)
     std::size_t num = 5;
     bool sentence = false;
     bool nine_mode = false;
+    bool stream_mode = false;
 };
 
 void PrintUsage() {
@@ -42,10 +42,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.sentence = true;
         } else if (arg == "--nine") {
             opts.nine_mode = true;
-            // Optional: pinyin model path for legacy DecodeStream
-            if (i + 1 < argc && argv[i + 1][0] != '-') {
-                opts.nine = argv[++i];
-            }
+        } else if (arg == "--stream") {
+            opts.stream_mode = true;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -90,16 +88,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (!opts.nine.empty()) {
-        if (interpreter.LoadNine(opts.nine)) {
-            std::cout << "Nine (legacy): " << opts.nine << "\n";
-        }
-    }
-
-    if (opts.nine_mode) {
+    if (opts.stream_mode) {
+        std::cout << "Mode: stream (digits 2-9, progressive)\n";
+    } else if (opts.nine_mode) {
         std::cout << "Mode: nine (digits 2-9)\n";
     }
-    std::cout << "Input " << (opts.nine_mode ? "digits" : "pinyin")
+    bool digit_mode = opts.nine_mode || opts.stream_mode;
+    std::cout << "Input " << (digit_mode ? "digits" : "pinyin")
               << ", :quit to exit.\n";
 
     std::string line;
@@ -115,7 +110,37 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (opts.nine_mode) {
+        if (opts.stream_mode) {
+            auto nine_result = interpreter.DecodeStream(line, {}, opts.num);
+            // Pinyin candidates
+            if (!nine_result.pinyin.empty()) {
+                std::cout << "  pinyin:";
+                for (const auto& p : nine_result.pinyin) {
+                    std::string py;
+                    for (const auto& u : p.units) {
+                        if (!py.empty()) py += '\'';
+                        const char* syl = sime::UnitData::Decode(u);
+                        if (syl) py += syl;
+                    }
+                    std::cout << " " << py << "(" << p.cnt << ")";
+                }
+                std::cout << "\n";
+            }
+            // Hanzi candidates
+            const auto& results = nine_result.hanzi;
+            if (results.empty()) {
+                std::cout << "  (no candidates)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& r = results[idx];
+                std::string utf8 = sime::ustr::FromU32(r.text);
+                std::cout << "  [" << idx << "] " << utf8
+                          << " (score " << std::fixed << std::setprecision(3)
+                          << r.score << ", matched " << r.matched_len
+                          << "/" << line.size() << ")\n";
+            }
+        } else if (opts.nine_mode) {
             auto results = interpreter.DecodeNine(line, {}, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
