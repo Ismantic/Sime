@@ -95,6 +95,13 @@ private:
         NetStates states;
     };
 
+    // Search parameters (aligned with LibIME defaults)
+    static constexpr std::size_t NodeSize = 40;  // max candidates per span per lattice position
+    static constexpr std::size_t BeamSize = 20;  // max states per position in beam search
+
+    // Prune edges at a position to top-NodeSize by unigram score.
+    void PruneNode(std::vector<Link>& edges) const;
+
     // Original net: SentenceToken only at end
     // tail_expansions: if non-empty, fan out at the end for incomplete syllable
     void InitNet(const std::vector<Unit>& units,

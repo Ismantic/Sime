@@ -196,6 +196,91 @@ float_t Scorer::UnknownPenalty() const {
     return pro_table_[node_levels_[0][0].pro];
 }
 
+std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
+    std::vector<NGram> results;
+    if (level < 1 || level > num_) return results;
+
+    // Helper: get token path from root to a node
+    // For level 1 (unigram): just the token at that node
+    // For level 2 (bigram): parent token + child token
+    // For level 3 (trigram): grandparent + parent + leaf token
+
+    // Model structure: node_levels_[0] = root (1 node)
+    //   its children in node_levels_[1] = unigram entries
+    //   their children in node_levels_[2] (if num>=3) or leave_level_ = bigram
+    //   leave_level_ = trigram (if num==3)
+
+    if (level == 1) {
+        // Unigram: children of root node (node_levels_[0][0])
+        // They are in node_levels_[1] (range: root.down to root+1.down)
+        if (num_ < 2 || node_levels_.size() < 2) return results;
+        const auto& root = node_levels_[0];
+        const auto& unigrams = node_levels_[1];
+        auto begin = root[0].down;
+        auto end = (root.size() > 1) ? root[1].down : unigrams.size();
+        for (auto i = begin; i < end && i < unigrams.size(); ++i) {
+            NGram ng;
+            ng.tokens.push_back(unigrams[i].token);
+            ng.pro = pro_table_[unigrams[i].pro];
+            results.push_back(std::move(ng));
+        }
+    } else if (level == 2) {
+        // Bigram: for each unigram, enumerate its children
+        if (num_ < 2 || node_levels_.size() < 2) return results;
+        const auto& unigrams = node_levels_[1];
+        if (num_ == 2) {
+            // Children are in leave_level_
+            for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
+                auto begin = unigrams[i].down;
+                auto end = unigrams[i + 1].down;
+                for (auto j = begin; j < end && j < leave_level_.size(); ++j) {
+                    NGram ng;
+                    ng.tokens.push_back(unigrams[i].token);
+                    ng.tokens.push_back(leave_level_[j].token);
+                    ng.pro = pro_table_[leave_level_[j].pro];
+                    results.push_back(std::move(ng));
+                }
+            }
+        } else {
+            // num_ >= 3: children are in node_levels_[2]
+            const auto& bigrams = node_levels_[2];
+            for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
+                auto begin = unigrams[i].down;
+                auto end = unigrams[i + 1].down;
+                for (auto j = begin; j < end && j + 1 < bigrams.size(); ++j) {
+                    NGram ng;
+                    ng.tokens.push_back(unigrams[i].token);
+                    ng.tokens.push_back(bigrams[j].token);
+                    ng.pro = pro_table_[bigrams[j].pro];
+                    results.push_back(std::move(ng));
+                }
+            }
+        }
+    } else if (level == 3 && num_ >= 3) {
+        // Trigram: unigram → bigram → leaf
+        const auto& unigrams = node_levels_[1];
+        const auto& bigrams = node_levels_[2];
+        for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
+            auto bi_begin = unigrams[i].down;
+            auto bi_end = unigrams[i + 1].down;
+            for (auto j = bi_begin; j < bi_end && j + 1 < bigrams.size(); ++j) {
+                auto leaf_begin = bigrams[j].down;
+                auto leaf_end = bigrams[j + 1].down;
+                for (auto k = leaf_begin; k < leaf_end && k < leave_level_.size(); ++k) {
+                    NGram ng;
+                    ng.tokens.push_back(unigrams[i].token);
+                    ng.tokens.push_back(bigrams[j].token);
+                    ng.tokens.push_back(leave_level_[k].token);
+                    ng.pro = pro_table_[leave_level_[k].pro];
+                    results.push_back(std::move(ng));
+                }
+            }
+        }
+    }
+
+    return results;
+}
+
 std::size_t Scorer::GetNode(int level,
                             std::size_t begin,
                             std::size_t end,

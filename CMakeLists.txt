@@ -45,6 +45,9 @@ target_link_libraries(sime-compact PRIVATE sime_core)
 add_executable(ime_interpreter ${NEW_ROOT}/app/interpreter.cc)
 target_link_libraries(ime_interpreter PRIVATE sime_core)
 
+add_executable(sime-dump ${NEW_ROOT}/app/dump.cc)
+target_link_libraries(sime-dump PRIVATE sime_core)
+
 # Compare tool (optional, requires libime)
 find_library(LIBIME_PINYIN IMEPinyin)
 find_library(LIBIME_CORE IMECore)
@@ -59,6 +62,7 @@ set(_sime_targets
     sime-construct
     sime-converter
     sime-compact
+    sime-dump
     ime_interpreter
 )
 
