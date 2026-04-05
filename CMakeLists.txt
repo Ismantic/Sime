@@ -68,5 +68,5 @@ endforeach()
 
 option(SIME_ENABLE_FCITX5 "Build fcitx5 input method plugin" OFF)
 if(SIME_ENABLE_FCITX5)
-    add_subdirectory(fcitx5)
+    add_subdirectory(Linux/fcitx5)
 endif()
