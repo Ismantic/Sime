@@ -1,3 +1,6 @@
+# Docs (kept locally, not tracked)
+docs/
+
 # Build
 build/
 build_fcitx5/
