@@ -1,6 +1,9 @@
 # Docs (kept locally, not tracked)
 docs/
 
+# Dict (kept locally, not tracked)
+dict/
+
 # Build
 build/
 build_fcitx5/
