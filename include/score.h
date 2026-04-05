@@ -38,6 +38,18 @@ public:
     void Back(Pos& pos) const;
     float_t UnknownPenalty() const;
 
+    // Accessors for dump tool
+    int Num() const { return num_; }
+    int LevelSize(int level) const { return sizes_[static_cast<std::size_t>(level)]; }
+    int LeaveSize() const { return sizes_.back(); }
+
+    struct NGram {
+        std::vector<TokenID> tokens;
+        float pro = 0;
+    };
+
+    std::vector<NGram> DumpLevel(int level) const;
+
 private:
     struct NodeEntry {
         TokenID token = 0;

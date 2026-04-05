@@ -215,9 +215,8 @@ Interpreter::NineResult Interpreter::DecodeStream(
 
     // SentenceEnd at full-match position only
     net[d].es.push_back({d, full_col, SentenceEnd});
-    const std::size_t beam = std::max<std::size_t>(num * 5, 128);
     for (auto& col : net) {
-        col.states.SetMaxTop(beam);
+        col.states.SetMaxTop(BeamSize);
     }
     State init(init_score, 0, init_pos, nullptr, 0);
     net[0].states.Insert(init);
@@ -478,15 +477,14 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
     net[d].es.push_back({d, d + 1, SentenceEnd});
 
     // Beam search
-    const std::size_t beam = std::max<std::size_t>(num * 3, 32);
     for (auto& col : net) {
-        col.states.SetMaxTop(beam);
+        col.states.SetMaxTop(BeamSize);
     }
     State init(init_score, 0, init_pos, nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
-    // Backtrace — collect hanzi results
+    // Backtrace from final column
     auto tail_states = net.back().states.GetStates();
     for (std::size_t rank = 0;
          rank < tail_states.size() && results.size() < num; ++rank) {
@@ -504,7 +502,6 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
         }
         if (text.empty()) continue;
 
-        // Deduplicate
         bool dup = false;
         for (const auto& existing : results) {
             if (existing.text == text) { dup = true; break; }
@@ -564,9 +561,8 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     InitNet(units, net);
 
     const std::size_t max_top = num == 0 ? 1 : num;
-    const std::size_t beam = max_top * 2;
     for (auto& column : net) {
-        column.states.SetMaxTop(beam);
+        column.states.SetMaxTop(BeamSize);
     }
     State init_state(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init_state);
@@ -579,7 +575,7 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
     }
 
     const std::size_t total =
-        std::min<std::size_t>(beam, tail_states.size());
+        std::min<std::size_t>(BeamSize, tail_states.size());
     for (std::size_t rank = 0; rank < total && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], net.size() - 1);
         if (path.empty()) {
@@ -663,8 +659,63 @@ void Interpreter::InitNet(const std::vector<Unit>& units,
         }
     }
 
+    // Prune each position
+    for (std::size_t i = 0; i < effective_n; ++i) {
+        PruneNode(net[i].es);
+    }
+
     net[effective_n].es.push_back(
         {effective_n, effective_n + 1, SentenceEnd});
+}
+
+void Interpreter::PruneNode(std::vector<Link>& edges) const {
+    if (edges.size() <= NodeSize) return;
+
+    // Group edges by span length, prune each group independently.
+    std::unordered_map<std::size_t, std::vector<std::size_t>> groups;
+    for (std::size_t i = 0; i < edges.size(); ++i) {
+        groups[edges[i].end - edges[i].start].push_back(i);
+    }
+
+    std::vector<Link> pruned;
+    pruned.reserve(edges.size());
+
+    for (auto& [span, indices] : groups) {
+        if (indices.size() <= NodeSize) {
+            for (auto idx : indices) {
+                pruned.push_back(edges[idx]);
+            }
+            continue;
+        }
+
+        // Score by unigram, keep top NodeSize
+        std::vector<std::pair<float_t, std::size_t>> scored;
+        scored.reserve(indices.size());
+        for (auto idx : indices) {
+            if (edges[idx].id == ScoreNotToken ||
+                edges[idx].id == SentenceEnd) {
+                scored.push_back({0.0, idx});
+                continue;
+            }
+            Scorer::Pos dummy{};
+            float_t s = scorer_.ScoreMove(Scorer::Pos{}, edges[idx].id, dummy);
+            scored.push_back({s, idx});
+        }
+
+        std::partial_sort(
+            scored.begin(),
+            scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
+            scored.end(),
+            [](const auto& a, const auto& b) {
+                return a.first < b.first; // smaller cost = higher probability
+            });
+
+        for (std::size_t i = 0; i < NodeSize; ++i) {
+            pruned.push_back(edges[scored[i].second]);
+        }
+    }
+
+    edges = std::move(pruned);
 }
 
 void Interpreter::Process(std::vector<Node>& net) const {
@@ -701,7 +752,6 @@ std::vector<Interpreter::Link> Interpreter::Backtrace(
     }
     return path;
 }
-
 std::u32string Interpreter::ToText(const Link& n,
                                    const std::vector<Unit>& units) const {
     if (n.id == ScoreNotToken || n.id == NotToken) {
@@ -839,9 +889,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     const bool has_exp = !tail_expansions.empty();
     const std::size_t effective_n = has_exp ? units.size() + 1 : units.size();
     InitNet(units, net, tail_expansions);
-    // Wider beam than DecodeText: Layer 2 needs good states at intermediate cols
-    const std::size_t beam = std::max<std::size_t>(max_top * 3, 40);
-    for (auto& col : net) col.states.SetMaxTop(beam);
+    // BeamSize applies to all decode functions uniformly
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
@@ -849,10 +898,9 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // === Layer 1: Full sentence N-best (covers all input) ===
     {
         const auto tail = net.back().states.GetStates();
-        // libime uses nbest=2 for full sentences by default
-        constexpr std::size_t kNBest = 2;
-        const std::size_t scan = std::min<std::size_t>(beam, tail.size());
-        for (std::size_t rank = 0; rank < scan && results.size() < kNBest; ++rank) {
+        const std::size_t full_limit = std::max<std::size_t>(max_top / 2, 3);
+        const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
+        for (std::size_t rank = 0; rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::u32string composed;
@@ -882,9 +930,10 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
 
     {
 
-        // Collect candidates at each column (including full match for overflow
-        // beyond kNBest). Distance penalty = 0 for full matches.
-        for (std::size_t col = 1; col <= effective_n; ++col) {
+        // Collect partial candidates from intermediate columns only.
+        // Full match already handled by Layer 1.
+        constexpr std::size_t kPerPrefix = 15;
+        for (std::size_t col = effective_n - 1; col >= 1; --col) {
             const auto& col_states = net[col].states.GetStates();
             if (col_states.empty()) continue;
 
@@ -895,12 +944,8 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 (col <= unit_byte_end.size()) ? unit_byte_end[col - 1]
                                               : total_bytes;
 
-            // Full-match column: unlimited. Partial: cap per prefix.
-            constexpr std::size_t kPerPrefix = 15;
             const std::size_t col_scan =
-                (col == effective_n)
-                    ? col_states.size()
-                    : std::min<std::size_t>(kPerPrefix, col_states.size());
+                std::min<std::size_t>(kPerPrefix, col_states.size());
             for (std::size_t rank = 0; rank < col_scan; ++rank) {
                 const auto& st = col_states[rank];
 
