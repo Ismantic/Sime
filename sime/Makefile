@@ -3,7 +3,7 @@ MIN_COUNT = 16
 COUNT_MAX = 83886080
 SIME = ../build
 
-CORPUS = data.cut.txt
+CORPUS = sentences.cut.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.dict.txt 2>/dev/null || echo 0)
 

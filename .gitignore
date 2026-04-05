@@ -23,6 +23,10 @@ output_*/
 
 # Sime training data and intermediates
 sime/*.txt
+!sime/cases.*.txt
+
+# Local-only app files
+app/compare.cc
 sime/count
 sime/count.bin
 sime/iscut

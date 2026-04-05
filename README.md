@@ -33,7 +33,7 @@ cmake --build build
 
 ## 训练
 
-训练流程在 `sime/` 目录下，依赖已经做好切分的数据文件 `data.cut.txt`。
+训练流程在 `sime/` 目录下，依赖已经做好切分的数据文件 `sentences.cut.txt`。
 
 ### 前置准备
 
