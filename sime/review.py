@@ -3,7 +3,7 @@
 
 评测集格式: 拼音\t汉字（每行一条）
 
-用法: python3 eval.py [--cases cases.1.txt] [--exe ../build/ime_interpreter] [--dict output/sime.dict] [--cnt output/sime.cnt]
+用法: python3 review.py [--cases cases.1.txt] [--exe ../build/ime_interpreter] [--dict output/sime.dict] [--cnt output/sime.cnt]
 """
 import argparse
 import subprocess
