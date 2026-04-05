@@ -20,14 +20,55 @@ bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
         return false;
     }
     ready_ = true;
+    BuildDigitMap();
     return true;
+}
+
+char Interpreter::LetterToDigit(char c) {
+    switch (c) {
+    case 'a': case 'b': case 'c': return '2';
+    case 'd': case 'e': case 'f': return '3';
+    case 'g': case 'h': case 'i': return '4';
+    case 'j': case 'k': case 'l': return '5';
+    case 'm': case 'n': case 'o': return '6';
+    case 'p': case 'q': case 'r': case 's': return '7';
+    case 't': case 'u': case 'v': return '8';
+    case 'w': case 'x': case 'y': case 'z': return '9';
+    default: return '0';
+    }
+}
+
+std::string Interpreter::PinyinToDigits(const char* pinyin) {
+    std::string result;
+    for (const char* p = pinyin; *p; ++p) {
+        char d = LetterToDigit(static_cast<char>(
+            std::tolower(static_cast<unsigned char>(*p))));
+        if (d != '0') {
+            result.push_back(d);
+        }
+    }
+    return result;
+}
+
+void Interpreter::BuildDigitMap() {
+    digit_map_.clear();
+    std::size_t count = 0;
+    const UnitEntry* entries = UnitData::GetDict(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        Unit unit(entries[i].value);
+        if (!unit.Full()) continue;
+        std::string digits = PinyinToDigits(entries[i].text);
+        if (!digits.empty()) {
+            digit_map_[digits].push_back(unit);
+        }
+    }
 }
 
 bool Interpreter::LoadNine(const std::filesystem::path& pinyin_model_path) {
     return nine_.Load(pinyin_model_path);
 }
 
-Interpreter::NineResult Interpreter::DecodeNine(
+Interpreter::NineResult Interpreter::DecodeStream(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
@@ -62,6 +103,185 @@ Interpreter::NineResult Interpreter::DecodeNine(
     result.pinyin = std::move(nine.candidates);
 
     return result;
+}
+
+std::vector<SentenceResult> Interpreter::DecodeNine(
+    std::string_view digits,
+    const std::vector<Unit>& prefix,
+    std::size_t num) const {
+    std::vector<SentenceResult> results;
+    if (!ready_ || digit_map_.empty() || digits.empty()) {
+        return results;
+    }
+
+    // Validate: only digits 2-9
+    for (char c : digits) {
+        if (c < '2' || c > '9') return results;
+    }
+
+    // Build initial scorer state from prefix (confirmed pinyin context)
+    Scorer::Pos init_pos{};
+    float_t init_score = 0.0;
+    if (!prefix.empty()) {
+        // Walk prefix through Trie to get token IDs, feed to scorer
+        const Trie::Node* pnode = trie_.Root();
+        for (const auto& u : prefix) {
+            pnode = trie_.DoMove(pnode, u);
+            if (!pnode) break;
+            std::uint32_t count = 0;
+            const std::uint32_t* tokens = trie_.GetToken(pnode, count);
+            if (count > 0) {
+                // Use first (best) token for context
+                TokenID tid = static_cast<TokenID>(tokens[0]);
+                Scorer::Pos next_pos{};
+                init_score += scorer_.ScoreMove(init_pos, tid, next_pos);
+                scorer_.Back(next_pos);
+                init_pos = next_pos;
+                pnode = trie_.Root(); // reset Trie for next syllable
+            }
+        }
+    }
+
+    const std::size_t d = digits.size();
+    const std::size_t net_size = d + 2;
+    std::vector<Node> net(net_size);
+
+    // Build lattice: for each digit span, enumerate pinyin syllables,
+    // then for each syllable (or syllable sequence), query Trie for hanzi tokens.
+    // We need to try all possible pinyin segmentations implicitly through the lattice.
+
+    // digit_map_ maps digit_string → syllable entries (from NineDecoder)
+    // For each starting position, try digit substrings of length 1..6,
+    // map to pinyin syllables, then walk the Trie to find hanzi tokens.
+
+    for (std::size_t start = 0; start < d; ++start) {
+        auto& bucket = net[start].es;
+        bool inserted = false;
+        std::string key;
+
+        for (std::size_t end = start + 1; end <= std::min(start + 6, d); ++end) {
+            key.push_back(digits[end - 1]);
+            // Find all pinyin syllables matching this digit substring
+            auto it = digit_map_.find(key);
+            if (it == digit_map_.end()) continue;
+
+            for (const auto& unit : it->second) {
+                // Walk Trie with this single syllable from root
+                const Trie::Node* node = trie_.DoMove(trie_.Root(), unit);
+                if (!node) continue;
+
+                // Single-syllable hanzi matches
+                std::uint32_t count = 0;
+                const std::uint32_t* tokens = trie_.GetToken(node, count);
+                for (std::uint32_t idx = 0; idx < count; ++idx) {
+                    TokenID wid = static_cast<TokenID>(tokens[idx]);
+                    bucket.push_back({start, end, wid});
+                    inserted = true;
+                }
+
+                // Try extending with next digit spans for multi-syllable words
+                // (e.g., "zhong" + "guo" → "中国")
+                std::string key2;
+                for (std::size_t end2 = end + 1;
+                     end2 <= std::min(end + 6, d); ++end2) {
+                    key2.push_back(digits[end2 - 1]);
+                    auto it2 = digit_map_.find(key2);
+                    if (it2 == digit_map_.end()) continue;
+
+                    for (const auto& unit2 : it2->second) {
+                        const Trie::Node* node2 =
+                            trie_.DoMove(node, unit2);
+                        if (!node2) continue;
+
+                        std::uint32_t count2 = 0;
+                        const std::uint32_t* tokens2 =
+                            trie_.GetToken(node2, count2);
+                        for (std::uint32_t idx = 0; idx < count2; ++idx) {
+                            TokenID wid = static_cast<TokenID>(tokens2[idx]);
+                            bucket.push_back({start, end2, wid});
+                            inserted = true;
+                        }
+
+                        // Try third syllable for 3-char words
+                        std::string key3;
+                        for (std::size_t end3 = end2 + 1;
+                             end3 <= std::min(end2 + 6, d); ++end3) {
+                            key3.push_back(digits[end3 - 1]);
+                            auto it3 = digit_map_.find(key3);
+                            if (it3 == digit_map_.end()) continue;
+
+                            for (const auto& unit3 : it3->second) {
+                                const Trie::Node* node3 =
+                                    trie_.DoMove(node2, unit3);
+                                if (!node3) continue;
+
+                                std::uint32_t count3 = 0;
+                                const std::uint32_t* tokens3 =
+                                    trie_.GetToken(node3, count3);
+                                for (std::uint32_t idx = 0; idx < count3;
+                                     ++idx) {
+                                    TokenID wid =
+                                        static_cast<TokenID>(tokens3[idx]);
+                                    bucket.push_back({start, end3, wid});
+                                    inserted = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!inserted) {
+            bucket.push_back({start, start + 1, ScoreNotToken});
+        }
+    }
+
+    // SentenceEnd
+    net[d].es.push_back({d, d + 1, SentenceEnd});
+
+    // Beam search
+    const std::size_t beam = std::max<std::size_t>(num * 3, 32);
+    for (auto& col : net) {
+        col.states.SetMaxTop(beam);
+    }
+    State init(init_score, 0, init_pos, nullptr, 0);
+    net[0].states.Insert(init);
+    Process(net);
+
+    // Backtrace — collect hanzi results
+    auto tail_states = net.back().states.GetStates();
+    for (std::size_t rank = 0;
+         rank < tail_states.size() && results.size() < num; ++rank) {
+        auto path = Backtrace(tail_states[rank], d + 1);
+        if (path.empty()) continue;
+
+        std::u32string text;
+        for (const auto& link : path) {
+            if (link.id == ScoreNotToken || link.id == NotToken) continue;
+            const char32_t* chars = trie_.TokenAt(link.id);
+            if (!chars) continue;
+            for (std::size_t i = 0; chars[i] != 0; ++i) {
+                text.push_back(chars[i]);
+            }
+        }
+        if (text.empty()) continue;
+
+        // Deduplicate
+        bool dup = false;
+        for (const auto& existing : results) {
+            if (existing.text == text) { dup = true; break; }
+        }
+        if (dup) continue;
+
+        SentenceResult sr;
+        sr.text = std::move(text);
+        sr.score = -tail_states[rank].score;
+        sr.matched_len = d;
+        results.push_back(std::move(sr));
+    }
+
+    return results;
 }
 
 bool Interpreter::LoadDict(const std::filesystem::path& path) {
