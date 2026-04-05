@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -32,10 +33,13 @@ bool LoadTokenMap(const std::filesystem::path& path, TokenMap& token_map) {
         if (line.empty()) {
             continue;
         }
-        auto tab = line.find('\t');
+        auto sep = line.find('\t');
+        if (sep == std::string::npos) {
+            sep = line.find(' ');
+        }
         std::string token;
-        if (tab != std::string::npos) {
-            token = line.substr(0, tab);
+        if (sep != std::string::npos) {
+            token = line.substr(0, sep);
         } else {
             token = line;
         }
@@ -132,19 +136,13 @@ void ProcessTextFile(const std::filesystem::path& path,
     };
 
     std::string line;
-    bool first_line = true;
+    std::size_t line_count = 0;
     while (std::getline(input, line)) {
         if (line.empty()) {
-            feed_ngram(SentenceToken);
-            filled = 0;
-            first_line = true;
             continue;
         }
-        if (!first_line) {
-            feed_ngram(SentenceToken);
-            filled = 0;
-        }
-        first_line = false;
+
+        feed_ngram(SentenceStart);
 
         std::istringstream iss(line);
         std::string token;
@@ -152,10 +150,24 @@ void ProcessTextFile(const std::filesystem::path& path,
             auto it = token_map.find(token);
             if (it != token_map.end()) {
                 feed_ngram(it->second);
+            } else {
+                feed_ngram(UnknownToken);
             }
+        }
+
+        feed_ngram(SentenceEnd);
+        filled = 0;
+
+        if (++line_count % 200000 == 0) {
+            std::cerr << "  " << line_count << " lines, "
+                      << counts.size() << " ngrams, "
+                      << runs.size() << " flushes\n";
         }
     }
 
+    std::cerr << "  " << line_count << " lines, "
+              << counts.size() << " ngrams, "
+              << runs.size() << " flushes\n";
     FlushCounts(counts, swap, runs);
 }
 
@@ -280,13 +292,17 @@ void RunImpl(const CountOptions& options) {
     if (!LoadTokenMap(options.dict, token_map)) {
         throw std::runtime_error("Failed to load dict: " + options.dict.string());
     }
+    std::cerr << "loaded " << token_map.size() << " tokens from dict\n";
 
     for (const auto& input : options.inputs) {
+        std::cerr << "processing " << input.string() << " ...\n";
         ProcessTextFile<N>(input, token_map, options.count_max, swap, runs);
     }
 
     swap.close();
+    std::cerr << "merging " << runs.size() << " runs ...\n";
     MergeRuns<N>(options.swap, runs, options.output);
+    std::cerr << "done\n";
 }
 
 } // namespace sime

@@ -21,17 +21,17 @@ struct Options {
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --trie <trie.bin> --model <model.bin> [--userdict <user.dict>] [--nine <pinyin_model.bin>] [--num N] [--sentence]\n";
+    std::cerr << "Usage: ime-interpreter --dict <trie.bin> --cnt <model.bin> [--user <user.dict>] [--nine <pinyin_model.bin>] [--num N] [--sentence]\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if ((arg == "--trie" || arg == "-t") && i + 1 < argc) {
+        if ((arg == "--dict" || arg == "-d") && i + 1 < argc) {
             opts.trie = argv[++i];
-        } else if ((arg == "--model" || arg == "-m") && i + 1 < argc) {
+        } else if ((arg == "--cnt" || arg == "-c") && i + 1 < argc) {
             opts.model = argv[++i];
-        } else if ((arg == "--userdict" || arg == "-u") && i + 1 < argc) {
+        } else if ((arg == "--user" || arg == "-u") && i + 1 < argc) {
             opts.userdict = argv[++i];
         } else if (arg == "--num" && i + 1 < argc) {
             opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));

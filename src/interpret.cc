@@ -207,7 +207,7 @@ void Interpreter::InitNet(const std::vector<Unit>& units,
     }
 
     net[effective_n].es.push_back(
-        {effective_n, effective_n + 1, SentenceToken});
+        {effective_n, effective_n + 1, SentenceEnd});
 }
 
 void Interpreter::Process(std::vector<Node>& net) const {
@@ -447,16 +447,16 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
             for (std::size_t rank = 0; rank < col_scan; ++rank) {
                 const auto& st = col_states[rank];
 
-                // Score the SentenceToken transition from this state
+                // Score the SentenceEnd transition from this state
                 Scorer::Pos sent_pos{};
                 float_t sent_step =
-                    scorer_.ScoreMove(st.pos, SentenceToken, sent_pos);
+                    scorer_.ScoreMove(st.pos, SentenceEnd, sent_pos);
                 float_t raw_score = -(st.score + sent_step);
                 float_t adjusted = raw_score - dist_penalty;
 
                 // Backtrace to get the text.
                 // Pass SIZE_MAX as end so Backtrace won't strip the last link
-                // (that stripping is for removing the SentenceToken link,
+                // (that stripping is for removing the SentenceEnd link,
                 //  which doesn't apply here since we're at an intermediate column).
                 auto path = Backtrace(st, SIZE_MAX);
                 if (path.empty()) continue;
