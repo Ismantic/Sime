@@ -84,4 +84,4 @@ make convert
 
 ## License
 
-MIT
+GPL-3.0
