@@ -21,14 +21,27 @@ cmake --build build
 ## 使用
 
 ```bash
-./build/ime_interpreter --dict output/sime.dict --cnt output/sime.cnt
+# 拼音模式
+./build/sime-interpreter --trie output/sime.trie --cnt output/sime.cnt
+
+# 拼音句子模式（支持部分匹配）
+./build/sime-interpreter --trie output/sime.trie --cnt output/sime.cnt -s
+
+# 九宫格模式
+./build/sime-interpreter --trie output/sime.trie --cnt output/sime.cnt --num
+
+# 九宫格句子模式
+./build/sime-interpreter --trie output/sime.trie --cnt output/sime.cnt --num -s
+
+# NineDecoder 独立测试（拼音解码）
+./build/sime-interpreter --nine nine/output/sime.nine
 ```
 
 ```
 > nihao
-  [0] 你好 (score -15.234)
+  [0] 你好 [ni'hao] (score -18.962)
 > zhonghuarenmingongheguo
-  [0] 中华人民共和国 (score -24.935)
+  [0] 中华人民共和国 [zhong'hua'ren'min'gong'he'guo] (score -24.935)
 ```
 
 ## 训练
@@ -37,7 +50,7 @@ cmake --build build
 
 ### 前置准备
 
-- `data.cut.txt` — 切词后的语料（空格分隔）
+- `sentences.cut.txt` — 切词后的语料（空格分隔）
 - `chinese_units.txt` — 拼音词典
 
 ### 训练步骤
@@ -57,15 +70,15 @@ make count
 # 4. 构建语言模型
 make construct
 
-# 5. 量化压缩
-make compact
-
-# 6. 编译拼音 Trie
+# 5. 编译拼音 Trie
 make convert
+
+# 6. 量化压缩
+make compact
 ```
 
 产出文件在 `sime/output/`：
-- `sime.dict` — 拼音 Trie（二进制）
+- `sime.trie` — 拼音 Trie（二进制）
 - `sime.cnt` — 压缩语言模型（二进制）
 
 ### 参数调整
