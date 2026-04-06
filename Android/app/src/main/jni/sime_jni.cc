@@ -130,15 +130,14 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
     return arr;
 }
 
-// 5. Segment raw pinyin → spaced syllables. e.g. "zenmele" → "zen me le"
+// 5. Segment raw pinyin (deprecated — use pinyin from decode results instead).
 JNIEXPORT jstring JNICALL
 Java_com_isma_sime_SimeEngine_nativeSegmentPinyin(
     JNIEnv* env, jclass /*clazz*/,
     jstring input) {
 
     auto raw = jstringToString(env, input);
-    auto segmented = sime::Interpreter::SegmentPinyin(raw);
-    return env->NewStringUTF(segmented.c_str());
+    return env->NewStringUTF(raw.c_str());
 }
 
 // 6. Nine-key: digits → hanzi + pinyin candidates.
