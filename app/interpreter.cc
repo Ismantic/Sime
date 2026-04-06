@@ -12,38 +12,48 @@
 namespace {
 
 struct Options {
-    std::filesystem::path trie;
-    std::filesystem::path model;
+    std::filesystem::path dict;
+    std::filesystem::path cnt;
     std::filesystem::path userdict;
-    std::size_t num = 5;
+    std::filesystem::path nine_model;
+    std::size_t n = 5;
     bool sentence = false;
-    bool nine_mode = false;
-    bool stream_mode = false;
+    bool num = false;
+    bool nine = false;
 };
 
 void PrintUsage() {
-    std::cerr << "Usage: ime-interpreter --dict <trie.bin> --cnt <model.bin> "
-                 "[--user <user.dict>] [--nine [pinyin_model.bin]] "
-                 "[--num N] [--sentence]\n";
+    std::cerr << "Usage:\n"
+              << "  sime-interpreter --dict <trie> --cnt <model> [options]\n"
+              << "  sime-interpreter --nine <nine_model> [options]\n"
+              << "\nOptions:\n"
+              << "  --dict, -d <path>   Interpreter trie dict\n"
+              << "  --cnt,  -c <path>   Interpreter LM model\n"
+              << "  --user, -u <path>   User dictionary\n"
+              << "  -n <N>              Number of results (default 5)\n"
+              << "  --sentence, -s      Sentence mode (partial match)\n"
+              << "  --num               Num-key mode (digits 2-9)\n"
+              << "  --nine <path>       NineDecoder standalone (digits -> pinyin)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
         if ((arg == "--dict" || arg == "-d") && i + 1 < argc) {
-            opts.trie = argv[++i];
+            opts.dict = argv[++i];
         } else if ((arg == "--cnt" || arg == "-c") && i + 1 < argc) {
-            opts.model = argv[++i];
+            opts.cnt = argv[++i];
         } else if ((arg == "--user" || arg == "-u") && i + 1 < argc) {
             opts.userdict = argv[++i];
-        } else if (arg == "--num" && i + 1 < argc) {
-            opts.num = static_cast<std::size_t>(std::stoul(argv[++i]));
+        } else if (arg == "-n" && i + 1 < argc) {
+            opts.n = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--sentence" || arg == "-s") {
             opts.sentence = true;
-        } else if (arg == "--nine") {
-            opts.nine_mode = true;
-        } else if (arg == "--stream") {
-            opts.stream_mode = true;
+        } else if (arg == "--num") {
+            opts.num = true;
+        } else if (arg == "--nine" && i + 1 < argc) {
+            opts.nine = true;
+            opts.nine_model = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -53,12 +63,12 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    if (opts.trie.empty() || opts.model.empty()) {
+    if (!opts.nine && (opts.dict.empty() || opts.cnt.empty())) {
         PrintUsage();
         return false;
     }
-    if (opts.num == 0) {
-        opts.num = 1;
+    if (opts.n == 0) {
+        opts.n = 1;
     }
     return true;
 }
@@ -71,13 +81,53 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    sime::Interpreter interpreter(opts.trie, opts.model);
+    // --nine: standalone NineDecoder mode
+    if (opts.nine) {
+        sime::NineDecoder nine_decoder;
+        if (!nine_decoder.Load(opts.nine_model)) {
+            std::cerr << "Nine model load failed: " << opts.nine_model << "\n";
+            return 1;
+        }
+        std::cout << "Nine: " << opts.nine_model << "\n"
+                  << "Mode: nine (NineDecoder, digits 2-9)\n"
+                  << "Input digits, :quit to exit.\n";
+
+        std::string line;
+        while (true) {
+            std::cout << "> " << std::flush;
+            if (!std::getline(std::cin, line)) break;
+            if (line == ":quit" || line == ":q") break;
+            if (line.empty()) continue;
+
+            auto results = nine_decoder.Decode(line, opts.n);
+            if (results.empty()) {
+                std::cout << "  (no candidates)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& r = results[idx];
+                std::string pinyin;
+                for (const auto& u : r.units) {
+                    if (!pinyin.empty()) pinyin += '\'';
+                    const char* text = sime::UnitData::Decode(u);
+                    if (text) pinyin += text;
+                }
+                std::cout << "  [" << idx << "] " << pinyin
+                          << " (score " << std::fixed << std::setprecision(3)
+                          << r.score << ")\n";
+            }
+        }
+        return 0;
+    }
+
+    // Interpreter mode
+    sime::Interpreter interpreter(opts.dict, opts.cnt);
     if (!interpreter.Ready()) {
-        std::cerr << "Load failed: " << opts.trie << ", " << opts.model << "\n";
+        std::cerr << "Load failed: " << opts.dict << ", " << opts.cnt << "\n";
         return 1;
     }
-    std::cout << "Dict: " << opts.trie << "\n"
-              << "Model: " << opts.model << "\n";
+    std::cout << "Dict: " << opts.dict << "\n"
+              << "Model: " << opts.cnt << "\n";
 
     if (!opts.userdict.empty()) {
         if (interpreter.LoadDict(opts.userdict)) {
@@ -87,84 +137,47 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (opts.stream_mode) {
-        std::cout << "Mode: stream (digits 2-9, progressive)\n";
-    } else if (opts.nine_mode) {
-        std::cout << "Mode: nine (digits 2-9)\n";
+    if (opts.num && opts.sentence) {
+        std::cout << "Mode: num+sentence (digits 2-9, progressive)\n";
+    } else if (opts.num) {
+        std::cout << "Mode: num (digits 2-9)\n";
+    } else if (opts.sentence) {
+        std::cout << "Mode: sentence\n";
     }
-    bool digit_mode = opts.nine_mode || opts.stream_mode;
-    std::cout << "Input " << (digit_mode ? "digits" : "pinyin")
+    std::cout << "Input " << (opts.num ? "digits" : "pinyin")
               << ", :quit to exit.\n";
 
     std::string line;
     while (true) {
         std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
-            break;
-        }
-        if (line == ":quit" || line == ":q") {
-            break;
-        }
-        if (line.empty()) {
-            continue;
+        if (!std::getline(std::cin, line)) break;
+        if (line == ":quit" || line == ":q") break;
+        if (line.empty()) continue;
+
+        std::vector<sime::DecodeResult> results;
+        if (opts.num && opts.sentence) {
+            results = interpreter.DecodeNumSentence(line, {}, opts.n);
+        } else if (opts.num) {
+            results = interpreter.DecodeNumStr(line, {}, opts.n);
+        } else if (opts.sentence) {
+            results = interpreter.DecodeSentence(line, opts.n);
+        } else {
+            results = interpreter.DecodeStr(line, opts.n);
         }
 
-        if (opts.stream_mode) {
-            auto results = interpreter.DecodeNumSentence(line, {}, opts.num);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                const auto& utf8 = r.text;
-                std::cout << "  [" << idx << "] " << utf8
-                          << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ", matched " << r.cnt
-                          << "/" << line.size() << ")\n";
-            }
-        } else if (opts.nine_mode) {
-            auto results = interpreter.DecodeNumStr(line, {}, opts.num);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                const auto& utf8 = r.text;
-                std::cout << "  [" << idx << "] " << utf8
-                          << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ")\n";
-            }
-        } else if (opts.sentence) {
-            auto results = interpreter.DecodeSentence(line, opts.num);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                const auto& utf8 = r.text;
-                std::cout << "  [" << idx << "] " << utf8;
-                if (!r.units.empty()) std::cout << " [" << r.units << "]";
-                std::cout << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ", matched " << r.cnt
-                          << "/" << line.size() << ")\n";
-            }
-        } else {
-            auto results = interpreter.DecodeStr(line, opts.num);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                const auto& utf8 = r.text;
-                std::cout << "  [" << idx << "] " << utf8;
-                if (!r.units.empty()) std::cout << " [" << r.units << "]";
-                std::cout << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ")\n";
-            }
+        if (results.empty()) {
+            std::cout << "  (no candidates)\n";
+            continue;
+        }
+        for (std::size_t idx = 0; idx < results.size(); ++idx) {
+            const auto& r = results[idx];
+            std::cout << "  [" << idx << "] " << r.text;
+            if (!r.units.empty()) std::cout << " [" << r.units << "]";
+            std::cout << " (score " << std::fixed << std::setprecision(3)
+                      << r.score;
+            if (opts.sentence || (opts.num && opts.sentence))
+                std::cout << ", matched " << r.cnt << "/" << line.size();
+            std::cout << ")\n";
         }
     }
     return 0;

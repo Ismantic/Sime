@@ -8,7 +8,7 @@
 
 namespace sime {
 
-char NineDecoder::LetterToDigit(char c) {
+char NineDecoder::LetterToNum(char c) {
     switch (c) {
     case 'a': case 'b': case 'c': return '2';
     case 'd': case 'e': case 'f': return '3';
@@ -22,10 +22,10 @@ char NineDecoder::LetterToDigit(char c) {
     }
 }
 
-std::string NineDecoder::PinyinToDigits(const char* pinyin) {
+std::string NineDecoder::UnitToNum(const char* unit) {
     std::string result;
-    for (const char* p = pinyin; *p; ++p) {
-        char d = LetterToDigit(static_cast<char>(
+    for (const char* p = unit; *p; ++p) {
+        char d = LetterToNum(static_cast<char>(
             std::tolower(static_cast<unsigned char>(*p))));
         if (d != '0') {
             result.push_back(d);
@@ -34,8 +34,8 @@ std::string NineDecoder::PinyinToDigits(const char* pinyin) {
     return result;
 }
 
-void NineDecoder::BuildDigitMap() {
-    digit_map_.clear();
+void NineDecoder::BuildNumMap() {
+    num_map_.clear();
     token_to_unit_.clear();
     unit_to_token_.clear();
 
@@ -51,12 +51,12 @@ void NineDecoder::BuildDigitMap() {
         }
 
         TokenID tid = next_id++;
-        std::string digits = PinyinToDigits(entries[i].text);
-        if (digits.empty()) {
+        std::string nums = UnitToNum(entries[i].text);
+        if (nums.empty()) {
             continue;
         }
 
-        digit_map_[digits].push_back({tid, unit});
+        num_map_[nums].push_back({tid, unit});
 
         // Grow token_to_unit_ to accommodate this token
         std::size_t idx = tid - StartToken;
@@ -71,7 +71,7 @@ void NineDecoder::BuildDigitMap() {
 }
 
 bool NineDecoder::Load(const std::filesystem::path& pinyin_model_path) {
-    BuildDigitMap();
+    BuildNumMap();
     if (!scorer_.Load(pinyin_model_path)) {
         ready_ = false;
         return false;
@@ -81,22 +81,22 @@ bool NineDecoder::Load(const std::filesystem::path& pinyin_model_path) {
 }
 
 std::vector<NineDecoder::Result> NineDecoder::Decode(
-    std::string_view digits,
+    std::string_view nums,
     std::size_t num) const {
 
     std::vector<Result> results;
-    if (!ready_ || digits.empty()) {
+    if (!ready_ || nums.empty()) {
         return results;
     }
 
     // Validate: only digits 2-9
-    for (char c : digits) {
+    for (char c : nums) {
         if (c < '2' || c > '9') {
             return results;
         }
     }
 
-    const std::size_t n = digits.size();
+    const std::size_t n = nums.size();
 
     // Build lattice: n+2 columns (0..n for digits, n→n+1 for SentenceEnd)
     struct Link {
@@ -111,13 +111,13 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
 
     std::vector<Column> net(n + 2);
 
-    // Build edges from digit substrings
+    // Build edges from num substrings
     for (std::size_t start = 0; start < n; ++start) {
         std::string key;
         for (std::size_t end = start + 1; end <= std::min(start + 6, n); ++end) {
-            key.push_back(digits[end - 1]);
-            auto it = digit_map_.find(key);
-            if (it != digit_map_.end()) {
+            key.push_back(nums[end - 1]);
+            auto it = num_map_.find(key);
+            if (it != num_map_.end()) {
                 for (const auto& entry : it->second) {
                     net[start].links.push_back({end, entry.token_id});
                 }
@@ -210,177 +210,6 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
     }
 
     return results;
-}
-
-NineDecoder::SentenceResult NineDecoder::DecodeSentence(
-    std::string_view digits,
-    const std::vector<Unit>& prefix,
-    std::size_t num) const {
-
-    SentenceResult sr;
-    if (!ready_ || num == 0) {
-        return sr;
-    }
-    if (digits.empty() && prefix.empty()) {
-        return sr;
-    }
-
-    // Validate digits
-    for (char c : digits) {
-        if (c < '2' || c > '9') {
-            return sr;
-        }
-    }
-
-    // Validate prefix: every unit must have a known TokenID
-    std::vector<TokenID> prefix_tokens;
-    for (const auto& u : prefix) {
-        auto it = unit_to_token_.find(u.value);
-        if (it == unit_to_token_.end()) return sr;
-        prefix_tokens.push_back(it->second);
-    }
-
-    const std::size_t p = prefix.size();
-    const std::size_t d = digits.size();
-
-    // --- best: beam search with tail expansion ---
-    if (p + d > 0) {
-        struct Link {
-            std::size_t end = 0;
-            TokenID token_id = 0;
-        };
-        struct Column {
-            std::vector<Link> links;
-            NetStates states;
-        };
-
-        const std::size_t n = p + d;
-        std::vector<Column> net(n + 2);
-
-        // Prefix columns: fixed single edge each
-        for (std::size_t i = 0; i < p; ++i) {
-            net[i].links.push_back({i + 1, prefix_tokens[i]});
-        }
-
-        // Digit columns: normal digit_map_ expansion
-        for (std::size_t start = 0; start < d; ++start) {
-            std::string key;
-            std::size_t col = p + start;
-            for (std::size_t end = start + 1;
-                 end <= std::min(start + 6, d); ++end) {
-                key.push_back(digits[end - 1]);
-                auto it = digit_map_.find(key);
-                if (it != digit_map_.end()) {
-                    for (const auto& entry : it->second) {
-                        net[col].links.push_back(
-                            {p + end, entry.token_id});
-                    }
-                }
-            }
-
-            // Tail expansion: only when digits[start..d) has no exact match,
-            // find longer keys that start with it (auto-complete).
-            std::string tail(digits.substr(start));
-            if (tail.size() < 6 &&
-                digit_map_.find(tail) == digit_map_.end()) {
-                for (const auto& [dkey, entries] : digit_map_) {
-                    if (dkey.size() > tail.size() &&
-                        dkey.compare(0, tail.size(), tail) == 0) {
-                        for (const auto& entry : entries) {
-                            net[col].links.push_back(
-                                {p + d, entry.token_id});
-                        }
-                    }
-                }
-            }
-
-            if (net[col].links.empty()) {
-                net[col].links.push_back({col + 1, ScoreNotToken});
-            }
-        }
-
-        // SentenceEnd at end
-        net[n].links.push_back({n + 1, SentenceEnd});
-
-        // Beam search
-        const std::size_t beam = std::max<std::size_t>(16, 16);
-        for (auto& col : net) {
-            col.states.SetMaxTop(beam);
-        }
-        State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
-        net[0].states.Insert(init);
-
-        for (std::size_t col = 0; col < net.size(); ++col) {
-            auto& column = net[col];
-            for (auto it = column.states.begin();
-                 it != column.states.end(); ++it) {
-                const auto& state = *it;
-                for (const auto& link : column.links) {
-                    Scorer::Pos next_pos{};
-                    float_t step = scorer_.ScoreMove(
-                        state.pos, link.token_id, next_pos);
-                    scorer_.Back(next_pos);
-                    float_t next_cost = state.score + step;
-                    State next(next_cost, link.end, next_pos,
-                               &state, link.token_id);
-                    net[link.end].states.Insert(next);
-                }
-            }
-        }
-
-        // Backtrace from final column — take ONE best
-        auto tail_states = net.back().states.GetStates();
-        for (std::size_t rank = 0;
-             rank < tail_states.size() && sr.best.units.empty(); ++rank) {
-            std::vector<TokenID> tokens;
-            const State* state = &tail_states[rank];
-            while (state->backtrace_state != nullptr) {
-                TokenID tid = state->backtrace_token;
-                if (tid != SentenceEnd && tid != ScoreNotToken &&
-                    tid != NotToken) {
-                    tokens.push_back(tid);
-                }
-                state = state->backtrace_state;
-            }
-            std::reverse(tokens.begin(), tokens.end());
-            if (tokens.empty()) continue;
-
-            sr.best.score = -tail_states[rank].score;
-            sr.best.cnt = d;
-            for (TokenID tid : tokens) {
-                std::size_t idx = tid - StartToken;
-                if (idx < token_to_unit_.size()) {
-                    sr.best.units.push_back(token_to_unit_[idx]);
-                }
-            }
-        }
-    }
-
-    // --- candidates: single-syllable exact matches, long→short ---
-    auto try_add = [&](const SyllableEntry& entry, std::size_t cnt) {
-        for (const auto& existing : sr.candidates) {
-            if (existing.units.size() == 1 &&
-                existing.units[0] == entry.unit) {
-                return;
-            }
-        }
-        Result result;
-        result.units.push_back(entry.unit);
-        result.cnt = cnt;
-        sr.candidates.push_back(std::move(result));
-    };
-
-    for (std::size_t len = d; len >= 1 && sr.candidates.size() < num; --len) {
-        std::string key(digits.substr(0, len));
-        auto it = digit_map_.find(key);
-        if (it == digit_map_.end()) continue;
-        for (const auto& entry : it->second) {
-            if (sr.candidates.size() >= num) break;
-            try_add(entry, len);
-        }
-    }
-
-    return sr;
 }
 
 } // namespace sime

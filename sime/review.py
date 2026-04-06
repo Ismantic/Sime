@@ -7,7 +7,7 @@
 
 用法:
   python3 review.py --cases cases.1.txt
-  python3 review.py --cases cases.num.1.txt --nine
+  python3 review.py --cases cases.num.1.txt --num
 """
 import argparse
 import subprocess
@@ -17,10 +17,10 @@ import sys
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default="cases.1.txt")
-    parser.add_argument("--exe", default="../build/ime_interpreter")
+    parser.add_argument("--exe", default="../build/sime-interpreter")
     parser.add_argument("--dict", default="output/sime.dict")
     parser.add_argument("--cnt", default="output/sime.cnt")
-    parser.add_argument("--nine", action="store_true", help="num-key mode")
+    parser.add_argument("--num", action="store_true", help="num-key mode")
     parser.add_argument("--errors", type=int, default=10)
     args = parser.parse_args()
 
@@ -34,7 +34,7 @@ def main():
             if not line or "\t" not in line:
                 continue
             parts = line.split("\t")
-            if args.nine and len(parts) >= 3:
+            if args.num and len(parts) >= 3:
                 queries.append(parts[0])
                 pinyins.append(parts[1])
                 golds.append(parts[2])
@@ -43,14 +43,14 @@ def main():
                 pinyins.append(parts[0])
                 golds.append(parts[1])
 
-    mode = "nine" if args.nine else "pinyin"
+    mode = "num" if args.num else "pinyin"
     print(f"Test set: {args.cases} ({len(queries)} cases, mode={mode})",
           file=sys.stderr)
 
     # Run Sime decoder
-    cmd = [args.exe, "--dict", args.dict, "--cnt", args.cnt, "--num", "1"]
-    if args.nine:
-        cmd.append("--nine")
+    cmd = [args.exe, "--dict", args.dict, "--cnt", args.cnt, "-n", "1"]
+    if args.num:
+        cmd.extend(["--num", "-s"])
 
     proc = subprocess.Popen(
         cmd,
@@ -118,7 +118,7 @@ def main():
                 break
             if predictions[i] != golds[i]:
                 print(f"  [{i}] query:  {queries[i][:60]}")
-                if args.nine:
+                if args.num:
                     print(f"       pinyin: {pinyins[i][:60]}")
                 print(f"       gold:   {golds[i]}")
                 print(f"       pred:   {predictions[i]}")
