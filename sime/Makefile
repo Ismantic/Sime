@@ -7,7 +7,7 @@ CORPUS = sentences.cut.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.dict.txt 2>/dev/null || echo 0)
 
-all: sime.dict.txt
+all: $(OUT)/sime.trie $(OUT)/sime.cnt
 
 # Step 1: count all tokens in corpus
 chars: count.bin $(CORPUS)
@@ -41,7 +41,7 @@ construct: $(OUT)/raw.3gram sime.dict.txt
 
 # Step 5: convert pinyin dict to trie
 convert: sime.dict.txt
-	$(SIME)/sime-converter sime.dict.txt $(OUT)/sime.dict
+	$(SIME)/sime-converter sime.dict.txt $(OUT)/sime.trie
 
 # Step 6: compact (quantize + compress)
 compact: $(OUT)/raw.slm
