@@ -8,20 +8,17 @@
 
 namespace sime {
 
-bool Interpreter::LoadResources(const std::filesystem::path& trie_path,
-                                const std::filesystem::path& model_path) {
-    if (!trie_.Load(trie_path)) {
-        ready_ = false;
-        return false;
+Interpreter::Interpreter(const std::filesystem::path& dict_path,
+                         const std::filesystem::path& model_path) {
+    if (!trie_.Load(dict_path)) {
+        return;
     }
     if (!scorer_.Load(model_path)) {
         trie_.Clear();
-        ready_ = false;
-        return false;
+        return;
     }
     ready_ = true;
     BuildDigitMap();
-    return true;
 }
 
 char Interpreter::LetterToDigit(char c) {

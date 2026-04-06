@@ -93,8 +93,9 @@ void SimeEngine::reloadConfig() {
 }
 
 void SimeEngine::initInterpreter() {
-    interpreter_ = std::make_unique<sime::Interpreter>();
-    if (!interpreter_->LoadResources(*config_.dictPath, *config_.lmPath)) {
+    interpreter_ = std::make_unique<sime::Interpreter>(
+        *config_.dictPath, *config_.lmPath);
+    if (!interpreter_->Ready()) {
         FCITX_ERROR() << "Sime: failed to load resources"
                       << " dict=" << *config_.dictPath
                       << " lm=" << *config_.lmPath;
