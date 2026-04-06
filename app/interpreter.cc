@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
                 const auto& utf8 = r.text;
                 std::cout << "  [" << idx << "] " << utf8
                           << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ", matched " << r.matched_len
+                          << r.score << ", matched " << r.cnt
                           << "/" << line.size() << ")\n";
             }
         } else if (opts.nine_mode) {
@@ -146,9 +146,9 @@ int main(int argc, char** argv) {
                 const auto& r = results[idx];
                 const auto& utf8 = r.text;
                 std::cout << "  [" << idx << "] " << utf8;
-                if (!r.pinyin.empty()) std::cout << " [" << r.pinyin << "]";
+                if (!r.units.empty()) std::cout << " [" << r.units << "]";
                 std::cout << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ", matched " << r.matched_len
+                          << r.score << ", matched " << r.cnt
                           << "/" << line.size() << ")\n";
             }
         } else {
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
                 const auto& r = results[idx];
                 const auto& utf8 = r.text;
                 std::cout << "  [" << idx << "] " << utf8;
-                if (!r.pinyin.empty()) std::cout << " [" << r.pinyin << "]";
+                if (!r.units.empty()) std::cout << " [" << r.units << "]";
                 std::cout << " (score " << std::fixed << std::setprecision(3)
                           << r.score << ")\n";
             }

@@ -192,8 +192,8 @@ void SimeEngine::updateUI(InputContext *ic) {
     // Build preedit: committed hanzi + remaining pinyin
     std::string committed = st->committedText();
     std::string remaining_display;
-    if (!results.empty() && !results[0].pinyin.empty()) {
-        remaining_display = results[0].pinyin;
+    if (!results.empty() && !results[0].units.empty()) {
+        remaining_display = results[0].units;
         for (auto &ch : remaining_display) {
             if (ch == '\'') ch = ' ';
         }
@@ -262,7 +262,7 @@ void SimeEngine::updateUI(InputContext *ic) {
     for (const auto &r : results) {
         const auto& text = r.text;
         if (seen.insert(text).second) {
-            cl->append<SimeCandidateWord>(this, text, r.pinyin, r.matched_len);
+            cl->append<SimeCandidateWord>(this, text, r.units, r.cnt);
         }
     }
 
