@@ -210,6 +210,11 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         }
     }
 
+    // Prune each position
+    for (std::size_t i = 0; i < d; ++i) {
+        PruneNode(net[i].es);
+    }
+
     // SentenceEnd at full-match position only
     net[d].es.push_back({d, full_col, SentenceEnd});
     for (auto& col : net) {
@@ -412,6 +417,11 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         if (!inserted) {
             bucket.push_back({start, start + 1, ScoreNotToken});
         }
+    }
+
+    // Prune each position
+    for (std::size_t i = 0; i < d; ++i) {
+        PruneNode(net[i].es);
     }
 
     // SentenceEnd
