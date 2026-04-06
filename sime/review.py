@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""评测 Sime 输入法的拼音→汉字准确率
+"""评测 Sime 输入法准确率
 
-评测集格式: 拼音\t汉字（每行一条）
+评测集格式:
+  拼音模式: pinyin\thanzi
+  数字模式: nums\tpinyin\thanzi
 
-用法: python3 review.py [--cases cases.1.txt] [--exe ../build/ime_interpreter] [--dict output/sime.dict] [--cnt output/sime.cnt]
+用法:
+  python3 review.py --cases cases.1.txt
+  python3 review.py --cases cases.num.1.txt --nine
 """
 import argparse
 import subprocess
@@ -12,30 +16,44 @@ import sys
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cases", default="cases.1.txt", help="test cases file (pinyin\\thanzi)")
+    parser.add_argument("--cases", default="cases.1.txt")
     parser.add_argument("--exe", default="../build/ime_interpreter")
     parser.add_argument("--dict", default="output/sime.dict")
     parser.add_argument("--cnt", default="output/sime.cnt")
-    parser.add_argument("--errors", type=int, default=10, help="number of errors to show")
+    parser.add_argument("--nine", action="store_true", help="num-key mode")
+    parser.add_argument("--errors", type=int, default=10)
     args = parser.parse_args()
 
     # Read test cases
     queries = []
+    pinyins = []
     golds = []
     with open(args.cases) as f:
         for line in f:
             line = line.rstrip("\n")
             if not line or "\t" not in line:
                 continue
-            py, gold = line.split("\t", 1)
-            queries.append(py)
-            golds.append(gold)
+            parts = line.split("\t")
+            if args.nine and len(parts) >= 3:
+                queries.append(parts[0])
+                pinyins.append(parts[1])
+                golds.append(parts[2])
+            elif len(parts) >= 2:
+                queries.append(parts[0])
+                pinyins.append(parts[0])
+                golds.append(parts[1])
 
-    print(f"Test set: {args.cases} ({len(queries)} cases)", file=sys.stderr)
+    mode = "nine" if args.nine else "pinyin"
+    print(f"Test set: {args.cases} ({len(queries)} cases, mode={mode})",
+          file=sys.stderr)
 
     # Run Sime decoder
+    cmd = [args.exe, "--dict", args.dict, "--cnt", args.cnt, "--num", "1"]
+    if args.nine:
+        cmd.append("--nine")
+
     proc = subprocess.Popen(
-        [args.exe, "--dict", args.dict, "--cnt", args.cnt, "--num", "1"],
+        cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -50,8 +68,10 @@ def main():
         line = line.strip()
         if "[0]" in line:
             text = line.split("[0]", 1)[1].strip()
+            # Remove [pinyin] bracket and (score ...)
+            if " [" in text:
+                text = text[:text.index(" [")]
             text = text.split("(score")[0].strip()
-            text = text.replace("[", "").replace("]", "")
             predictions.append(text)
         elif "no candidates" in line:
             predictions.append("")
@@ -97,9 +117,11 @@ def main():
             if shown >= args.errors:
                 break
             if predictions[i] != golds[i]:
-                print(f"  [{i}] query: {queries[i][:60]}")
-                print(f"       gold: {golds[i]}")
-                print(f"       pred: {predictions[i]}")
+                print(f"  [{i}] query:  {queries[i][:60]}")
+                if args.nine:
+                    print(f"       pinyin: {pinyins[i][:60]}")
+                print(f"       gold:   {golds[i]}")
+                print(f"       pred:   {predictions[i]}")
                 shown += 1
 
 
