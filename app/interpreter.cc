@@ -71,9 +71,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    sime::Interpreter interpreter;
-
-    if (!interpreter.LoadResources(opts.trie, opts.model)) {
+    sime::Interpreter interpreter(opts.trie, opts.model);
+    if (!interpreter.Ready()) {
         std::cerr << "Load failed: " << opts.trie << ", " << opts.model << "\n";
         return 1;
     }

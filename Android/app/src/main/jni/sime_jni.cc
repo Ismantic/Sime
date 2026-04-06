@@ -62,8 +62,8 @@ Java_com_isma_sime_SimeEngine_nativeLoadResources(
     auto trie = jstringToString(env, triePath);
     auto model = jstringToString(env, modelPath);
 
-    g_interpreter = std::make_unique<sime::Interpreter>();
-    if (!g_interpreter->LoadResources(trie, model)) {
+    g_interpreter = std::make_unique<sime::Interpreter>(trie, model);
+    if (!g_interpreter->Ready()) {
         LOGE("Failed to load resources: trie=%s model=%s", trie.c_str(), model.c_str());
         g_interpreter.reset();
         return JNI_FALSE;
@@ -80,7 +80,7 @@ Java_com_isma_sime_SimeEngine_nativeLoadT9(
 
     if (!g_interpreter) return JNI_FALSE;
     // No-op: DecodeStream now uses built-in digit map, no pinyin model needed.
-    return g_interpreter->NineDigitsReady() ? JNI_TRUE : JNI_FALSE;
+    return g_interpreter->Ready() ? JNI_TRUE : JNI_FALSE;
 }
 
 // 3. Load user dictionary. Returns true on success.
@@ -153,7 +153,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
 
     jclass stringClass = env->FindClass("java/lang/String");
 
-    if (!g_interpreter || !g_interpreter->NineDigitsReady()) {
+    if (!g_interpreter || !g_interpreter->Ready()) {
         return env->NewObjectArray(0, stringClass, nullptr);
     }
 

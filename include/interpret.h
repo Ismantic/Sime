@@ -32,13 +32,11 @@ struct SentenceResult {
 class Interpreter {
 public:
     Interpreter() = default;
+    Interpreter(const std::filesystem::path& dict_path,
+                const std::filesystem::path& model_path);
 
-    bool LoadResources(const std::filesystem::path& trie_path,
-                       const std::filesystem::path& model_path);
-
+    bool Ready() const { return ready_; }
     bool LoadDict(const std::filesystem::path& path);
-
-    bool NineDigitsReady() const { return !digit_map_.empty(); }
 
     struct PinyinCandidate {
         std::vector<Unit> units;
@@ -66,8 +64,6 @@ public:
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
-
-    bool Ready() const { return ready_; }
 
     // Original: decode full input, return n-best
     std::vector<DecodeResult> DecodeText(std::string_view input,
