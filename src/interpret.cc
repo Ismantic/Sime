@@ -62,21 +62,21 @@ void Interpreter::BuildDigitMap() {
 }
 
 
-Interpreter::NineResult Interpreter::DecodeStream(
+std::vector<DecodeResult> Interpreter::DecodeStream(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
-    NineResult result;
+    std::vector<DecodeResult> results;
     if (!ready_ || digit_map_.empty()) {
-        return result;
+        return results;
     }
     if (digits.empty() && prefix.empty()) {
-        return result;
+        return results;
     }
 
     // Validate digits
     for (char c : digits) {
-        if (c < '2' || c > '9') return result;
+        if (c < '2' || c > '9') return results;
     }
 
     // Build initial scorer state from prefix
@@ -238,14 +238,14 @@ Interpreter::NineResult Interpreter::DecodeStream(
     auto add_result = [&](const std::u32string& text, float_t score,
                           std::size_t matched) -> bool {
         if (text.empty()) return false;
-        for (const auto& existing : result.hanzi) {
+        for (const auto& existing : results) {
             if (existing.text == text) return false;
         }
-        SentenceResult sr;
+        DecodeResult sr;
         sr.text = text;
         sr.score = score;
         sr.matched_len = matched;
-        result.hanzi.push_back(std::move(sr));
+        results.push_back(std::move(sr));
         return true;
     };
 
@@ -254,7 +254,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
         auto states = net[full_col].states.GetStates();
         const std::size_t full_limit = std::max<std::size_t>(num / 2, 5);
         for (std::size_t rank = 0;
-             rank < states.size() && result.hanzi.size() < full_limit;
+             rank < states.size() && results.size() < full_limit;
              ++rank) {
             auto path = Backtrace(states[rank], full_col);
             auto text = extract(path);
@@ -264,7 +264,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
 
     // Partial matches: from each intermediate position
     const std::size_t per_pos = std::max<std::size_t>(num / 4, 2);
-    for (std::size_t pos = d - 1; pos >= 1 && result.hanzi.size() < num;
+    for (std::size_t pos = d - 1; pos >= 1 && results.size() < num;
          --pos) {
         auto states = net[pos].states.GetStates();
         std::size_t added = 0;
@@ -279,70 +279,14 @@ Interpreter::NineResult Interpreter::DecodeStream(
     }
 
     // --- Build best_pinyin from top hanzi result ---
-    // (For preedit display — take the best result's matched digits
-    //  and try to reconstruct the pinyin string)
-    // This is approximate; the exact pinyin comes from user selection.
-
-    // --- Pinyin candidates: single-syllable matches, long→short ---
-    for (std::size_t len = d; len >= 1 && result.pinyin.size() < num;
-         --len) {
-        std::string dkey(digits.substr(0, len));
-        auto it = digit_map_.find(dkey);
-        if (it == digit_map_.end()) continue;
-        for (const auto& unit : it->second) {
-            if (result.pinyin.size() >= num) break;
-            // Deduplicate
-            bool dup = false;
-            for (const auto& existing : result.pinyin) {
-                if (existing.units.size() == 1 &&
-                    existing.units[0] == unit) {
-                    dup = true;
-                    break;
-                }
-            }
-            if (dup) continue;
-            PinyinCandidate pr;
-            pr.units.push_back(unit);
-            pr.cnt = len;
-            result.pinyin.push_back(std::move(pr));
-        }
-    }
-
-    // Tail expansion pinyin candidates (incomplete last syllable)
-    if (d > 0) {
-        std::string tail(digits);
-        for (const auto& [dkey, units] : digit_map_) {
-            if (result.pinyin.size() >= num) break;
-            if (dkey.size() > tail.size() &&
-                dkey.compare(0, tail.size(), tail) == 0) {
-                for (const auto& unit : units) {
-                    if (result.pinyin.size() >= num) break;
-                    bool dup = false;
-                    for (const auto& existing : result.pinyin) {
-                        if (existing.units.size() == 1 &&
-                            existing.units[0] == unit) {
-                            dup = true;
-                            break;
-                        }
-                    }
-                    if (dup) continue;
-                    PinyinCandidate pr;
-                    pr.units.push_back(unit);
-                    pr.cnt = d;
-                    result.pinyin.push_back(std::move(pr));
-                }
-            }
-        }
-    }
-
-    return result;
+    return results;
 }
 
-std::vector<SentenceResult> Interpreter::DecodeNum(
+std::vector<DecodeResult> Interpreter::DecodeNum(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
-    std::vector<SentenceResult> results;
+    std::vector<DecodeResult> results;
     if (!ready_ || digit_map_.empty() || digits.empty()) {
         return results;
     }
@@ -505,7 +449,7 @@ std::vector<SentenceResult> Interpreter::DecodeNum(
         }
         if (dup) continue;
 
-        SentenceResult sr;
+        DecodeResult sr;
         sr.text = std::move(text);
         sr.score = -tail_states[rank].score;
         sr.matched_len = d;
@@ -583,7 +527,6 @@ std::vector<DecodeResult> Interpreter::Decode(
         std::u32string composed;
         composed.reserve(path.size() * 4);
         for (const auto& word : path) {
-            result.tokens.push_back(word.id);
             composed += ToText(word, units);
             // Build pinyin
             std::string seg = SliceToUnits(units, word.start, word.end);
@@ -870,10 +813,10 @@ bool Interpreter::ParseWithBoundaries(
     return !units.empty();
 }
 
-std::vector<SentenceResult> Interpreter::DecodeSentence(
+std::vector<DecodeResult> Interpreter::DecodeSentence(
     std::string_view input,
     std::size_t num) const {
-    std::vector<SentenceResult> results;
+    std::vector<DecodeResult> results;
     if (!ready_) return results;
 
     // 1. Parse input with byte boundary tracking
@@ -922,7 +865,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
             for (const auto& e : results)
                 if (e.text == composed) { dup = true; break; }
             if (!dup) {
-                SentenceResult r;
+                DecodeResult r;
                 r.text = std::move(composed);
                 r.pinyin = std::move(py);
                 r.score = -tail[rank].score;
@@ -993,7 +936,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                         dup = true; break;
                     }
                 if (!dup) {
-                    SentenceResult r;
+                    DecodeResult r;
                     r.text = std::move(composed);
                     r.pinyin = std::move(py);
                     r.score = adjusted;
@@ -1008,7 +951,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
     // Layer 1 (full matches) already sorted by LM score and stays in front.
     std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
               results.end(),
-              [](const SentenceResult& a, const SentenceResult& b) {
+              [](const DecodeResult& a, const DecodeResult& b) {
                   return a.score > b.score;
               });
 
@@ -1036,7 +979,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                     }
                 }
 
-                SentenceResult r;
+                DecodeResult r;
                 r.text = text;
                 r.score = 1e9;  // always top
                 r.matched_len = matched_bytes;

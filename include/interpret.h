@@ -17,16 +17,9 @@ namespace sime {
 
 struct DecodeResult {
     std::u32string text;
-    std::string pinyin;         // segmented pinyin (e.g. "ni'hao")
-    float_t score = 0.0;       // larger is better (negative log probability negated)
-    std::vector<TokenID> tokens;
-};
-
-struct SentenceResult {
-    std::u32string text;
-    std::string pinyin;
-    float_t score = 0.0;        // larger is better
-    std::size_t matched_len = 0; // bytes of input consumed
+    std::string pinyin;          // segmented pinyin (e.g. "ni'hao")
+    float_t score = 0.0;        // larger is better (negative log probability negated)
+    std::size_t matched_len = 0; // bytes of input consumed (0 = full match)
 };
 
 class Interpreter {
@@ -38,20 +31,9 @@ public:
     bool Ready() const { return ready_; }
     bool LoadDict(const std::filesystem::path& path);
 
-    struct PinyinCandidate {
-        std::vector<Unit> units;
-        std::size_t cnt = 0;  // digits consumed
-    };
-
-    struct NineResult {
-        std::string best_pinyin;
-        std::vector<PinyinCandidate> pinyin;
-        std::vector<SentenceResult> hanzi;
-    };
-
     // Stream: joint decode with progressive input (digits, possibly incomplete).
     // prefix: confirmed pinyin syllables providing LM context.
-    NineResult DecodeStream(
+    std::vector<DecodeResult> DecodeStream(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
@@ -60,7 +42,7 @@ public:
     // No pinyin model needed, only dict + cnt.
     // prefix: confirmed pinyin syllables providing LM context.
     // digits: remaining digit sequence to decode.
-    std::vector<SentenceResult> DecodeNum(
+    std::vector<DecodeResult> DecodeNum(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
@@ -74,7 +56,7 @@ public:
 
     // Sentence: single-lattice decode returning candidates at all prefix lengths.
     // Candidates from different prefix lengths compete by LM score.
-    std::vector<SentenceResult> DecodeSentence(
+    std::vector<DecodeResult> DecodeSentence(
         std::string_view input, std::size_t num = 18) const;
 
 
