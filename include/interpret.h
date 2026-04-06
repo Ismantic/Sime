@@ -73,7 +73,7 @@ public:
     std::vector<DecodeResult> DecodeText(std::string_view input,
                                          std::size_t num = 5) const;
 
-    std::vector<DecodeResult> DecodeUnits(const std::vector<Unit>& units,
+    std::vector<DecodeResult> Decode(const std::vector<Unit>& units,
                                           std::size_t num = 5) const;
 
     // Sentence: single-lattice decode returning candidates at all prefix lengths.
