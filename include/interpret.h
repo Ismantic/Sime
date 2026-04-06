@@ -34,7 +34,7 @@ public:
     // Stream: joint decode with progressive input (digits, possibly incomplete).
     // prefix: confirmed pinyin syllables providing LM context.
     std::vector<DecodeResult> DecodeNumSentence(
-        std::string_view digits,
+        std::string_view nums,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
 
@@ -43,7 +43,7 @@ public:
     // prefix: confirmed pinyin syllables providing LM context.
     // digits: remaining digit sequence to decode.
     std::vector<DecodeResult> DecodeNumStr(
-        std::string_view digits,
+        std::string_view nums,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
 
@@ -108,16 +108,16 @@ private:
         std::vector<Unit>& tail_expansions);
 
     // Build digit → pinyin Unit mapping from built-in syllable table
-    void BuildDigitMap();
+    void BuildNumMap();
 
-    static char LetterToDigit(char c);
-    static std::string UnitToDigits(const char* pinyin);
+    static char LetterToNum(char c);
+    static std::string UnitToNum(const char* pinyin);
 
 private:
     Trie trie_;
     Scorer scorer_;
     Dict dict_;
-    std::unordered_map<std::string, std::vector<Unit>> digit_map_;
+    std::unordered_map<std::string, std::vector<Unit>> num_map_;
     bool ready_ = false;
 };
 

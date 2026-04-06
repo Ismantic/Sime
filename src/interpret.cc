@@ -18,10 +18,10 @@ Interpreter::Interpreter(const std::filesystem::path& dict_path,
         return;
     }
     ready_ = true;
-    BuildDigitMap();
+    BuildNumMap();
 }
 
-char Interpreter::LetterToDigit(char c) {
+char Interpreter::LetterToNum(char c) {
     switch (c) {
     case 'a': case 'b': case 'c': return '2';
     case 'd': case 'e': case 'f': return '3';
@@ -35,10 +35,10 @@ char Interpreter::LetterToDigit(char c) {
     }
 }
 
-std::string Interpreter::UnitToDigits(const char* pinyin) {
+std::string Interpreter::UnitToNum(const char* pinyin) {
     std::string result;
     for (const char* p = pinyin; *p; ++p) {
-        char d = LetterToDigit(static_cast<char>(
+        char d = LetterToNum(static_cast<char>(
             std::tolower(static_cast<unsigned char>(*p))));
         if (d != '0') {
             result.push_back(d);
@@ -47,35 +47,35 @@ std::string Interpreter::UnitToDigits(const char* pinyin) {
     return result;
 }
 
-void Interpreter::BuildDigitMap() {
-    digit_map_.clear();
+void Interpreter::BuildNumMap() {
+    num_map_.clear();
     std::size_t count = 0;
     const UnitEntry* entries = UnitData::GetDict(count);
     for (std::size_t i = 0; i < count; ++i) {
         Unit unit(entries[i].value);
         if (!unit.Full()) continue;
-        std::string digits = UnitToDigits(entries[i].text);
-        if (!digits.empty()) {
-            digit_map_[digits].push_back(unit);
+        std::string nums = UnitToNum(entries[i].text);
+        if (!nums.empty()) {
+            num_map_[nums].push_back(unit);
         }
     }
 }
 
 
 std::vector<DecodeResult> Interpreter::DecodeNumSentence(
-    std::string_view digits,
+    std::string_view nums,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
     std::vector<DecodeResult> results;
-    if (!ready_ || digit_map_.empty()) {
+    if (!ready_ || num_map_.empty()) {
         return results;
     }
-    if (digits.empty() && prefix.empty()) {
+    if (nums.empty() && prefix.empty()) {
         return results;
     }
 
     // Validate digits
-    for (char c : digits) {
+    for (char c : nums) {
         if (c < '2' || c > '9') return results;
     }
 
@@ -100,7 +100,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         }
     }
 
-    const std::size_t d = digits.size();
+    const std::size_t d = nums.size();
     const std::size_t full_col = d + 1; // for full-match SentenceEnd
     std::vector<Node> net(full_col + 1);
 
@@ -112,9 +112,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
         for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d);
              ++end) {
-            key.push_back(digits[end - 1]);
-            auto it = digit_map_.find(key);
-            if (it == digit_map_.end()) continue;
+            key.push_back(nums[end - 1]);
+            auto it = num_map_.find(key);
+            if (it == num_map_.end()) continue;
 
             for (const auto& unit : it->second) {
                 const Trie::Node* node = trie_.DoMove(trie_.Root(), unit);
@@ -133,9 +133,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                 std::string key2;
                 for (std::size_t end2 = end + 1;
                      end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
-                    key2.push_back(digits[end2 - 1]);
-                    auto it2 = digit_map_.find(key2);
-                    if (it2 == digit_map_.end()) continue;
+                    key2.push_back(nums[end2 - 1]);
+                    auto it2 = num_map_.find(key2);
+                    if (it2 == num_map_.end()) continue;
                     for (const auto& unit2 : it2->second) {
                         const Trie::Node* node2 =
                             trie_.DoMove(node, unit2);
@@ -154,9 +154,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
                              end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
-                            key3.push_back(digits[end3 - 1]);
-                            auto it3 = digit_map_.find(key3);
-                            if (it3 == digit_map_.end()) continue;
+                            key3.push_back(nums[end3 - 1]);
+                            auto it3 = num_map_.find(key3);
+                            if (it3 == num_map_.end()) continue;
                             for (const auto& unit3 : it3->second) {
                                 const Trie::Node* node3 =
                                     trie_.DoMove(node2, unit3);
@@ -181,10 +181,10 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         // --- Tail expansion ---
         // When remaining digits don't form a complete syllable,
         // try all syllables whose digit sequence starts with the tail.
-        std::string tail(digits.substr(start));
+        std::string tail(nums.substr(start));
         if (tail.size() <= MaxSyllableLen &&
-            digit_map_.find(tail) == digit_map_.end()) {
-            for (const auto& [dkey, units] : digit_map_) {
+            num_map_.find(tail) == num_map_.end()) {
+            for (const auto& [dkey, units] : num_map_) {
                 if (dkey.size() > tail.size() &&
                     dkey.compare(0, tail.size(), tail) == 0) {
                     for (const auto& unit : units) {
@@ -288,16 +288,16 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 }
 
 std::vector<DecodeResult> Interpreter::DecodeNumStr(
-    std::string_view digits,
+    std::string_view nums,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
     std::vector<DecodeResult> results;
-    if (!ready_ || digit_map_.empty() || digits.empty()) {
+    if (!ready_ || num_map_.empty() || nums.empty()) {
         return results;
     }
 
     // Validate: only digits 2-9
-    for (char c : digits) {
+    for (char c : nums) {
         if (c < '2' || c > '9') return results;
     }
 
@@ -324,7 +324,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         }
     }
 
-    const std::size_t d = digits.size();
+    const std::size_t d = nums.size();
     const std::size_t net_size = d + 2;
     std::vector<Node> net(net_size);
 
@@ -332,7 +332,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
     // then for each syllable (or syllable sequence), query Trie for hanzi tokens.
     // We need to try all possible pinyin segmentations implicitly through the lattice.
 
-    // digit_map_ maps digit_string → syllable entries (from NineDecoder)
+    // num_map_ maps digit_string → syllable entries (from NineDecoder)
     // For each starting position, try digit substrings of length 1..6,
     // map to pinyin syllables, then walk the Trie to find hanzi tokens.
 
@@ -342,10 +342,10 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         std::string key;
 
         for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d); ++end) {
-            key.push_back(digits[end - 1]);
+            key.push_back(nums[end - 1]);
             // Find all pinyin syllables matching this digit substring
-            auto it = digit_map_.find(key);
-            if (it == digit_map_.end()) continue;
+            auto it = num_map_.find(key);
+            if (it == num_map_.end()) continue;
 
             for (const auto& unit : it->second) {
                 // Walk Trie with this single syllable from root
@@ -366,9 +366,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
                 std::string key2;
                 for (std::size_t end2 = end + 1;
                      end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
-                    key2.push_back(digits[end2 - 1]);
-                    auto it2 = digit_map_.find(key2);
-                    if (it2 == digit_map_.end()) continue;
+                    key2.push_back(nums[end2 - 1]);
+                    auto it2 = num_map_.find(key2);
+                    if (it2 == num_map_.end()) continue;
 
                     for (const auto& unit2 : it2->second) {
                         const Trie::Node* node2 =
@@ -388,9 +388,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
                              end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
-                            key3.push_back(digits[end3 - 1]);
-                            auto it3 = digit_map_.find(key3);
-                            if (it3 == digit_map_.end()) continue;
+                            key3.push_back(nums[end3 - 1]);
+                            auto it3 = num_map_.find(key3);
+                            if (it3 == num_map_.end()) continue;
 
                             for (const auto& unit3 : it3->second) {
                                 const Trie::Node* node3 =
