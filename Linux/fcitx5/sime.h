@@ -41,8 +41,9 @@ public:
         return result;
     }
 
-    // 供 SimeCandidateWord 调用
-    void consumePreedit(InputContext *ic, std::size_t n);
+    // Called by SimeCandidateWord on selection
+    void selectCandidate(InputContext *ic, const std::string& text,
+                         const std::string& pinyin, std::size_t matchedLen);
 
 private:
     void initInterpreter();

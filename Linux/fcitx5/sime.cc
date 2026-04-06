@@ -37,7 +37,7 @@ static std::string u32ToUtf8(const std::u32string &u32str) {
     return utf8;
 }
 
-// ===== 标点映射 (特性1) =====
+// ===== Punctuation mapping =====
 
 static const char *chinesePunc(KeySym sym) {
     switch (sym) {
@@ -55,27 +55,28 @@ static const char *chinesePunc(KeySym sym) {
     }
 }
 
-// ===== 候选词 =====
-// 存 text + matchedLen，select() 提交文字并消耗 matchedLen 个字节的 preedit
+// ===== Candidate word =====
 
 class SimeCandidateWord : public CandidateWord {
 public:
-    SimeCandidateWord(SimeEngine *engine, std::string text, std::size_t matchedLen)
+    SimeCandidateWord(SimeEngine *engine, std::string text,
+                      std::string pinyin, std::size_t matchedLen)
         : CandidateWord(Text(text)), engine_(engine),
-          text_(std::move(text)), matchedLen_(matchedLen) {}
+          text_(std::move(text)), pinyin_(std::move(pinyin)),
+          matchedLen_(matchedLen) {}
 
     void select(InputContext *ic) const override {
-        ic->commitString(text_);
-        engine_->consumePreedit(ic, matchedLen_);
+        engine_->selectCandidate(ic, text_, pinyin_, matchedLen_);
     }
 
 private:
     SimeEngine *engine_;
     std::string text_;
+    std::string pinyin_;
     std::size_t matchedLen_;
 };
 
-// ===== 引擎 =====
+// ===== Engine =====
 
 SimeEngine::SimeEngine(Instance *instance)
     : instance_(instance),
@@ -100,10 +101,8 @@ void SimeEngine::initInterpreter() {
         interpreter_.reset();
     } else {
         FCITX_INFO() << "Sime: resources loaded";
-        // Load user dictionary
         std::string udPath = *config_.userDictPath;
         if (udPath.empty()) {
-            // Default: ~/.local/share/fcitx5/sime/user.dict
             const char* xdg = std::getenv("XDG_DATA_HOME");
             if (xdg && xdg[0]) {
                 udPath = std::string(xdg) + "/fcitx5/sime/user.dict";
@@ -144,14 +143,22 @@ void SimeEngine::resetState(InputContext *ic) {
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
-// 特性4：消耗 n 个字节的 preedit，剩余部分继续输入
-void SimeEngine::consumePreedit(InputContext *ic, std::size_t n) {
+// Called when user selects a candidate
+void SimeEngine::selectCandidate(InputContext *ic, const std::string& text,
+                                  const std::string& pinyin,
+                                  std::size_t matchedLen) {
     auto *st = state(ic);
-    if (n >= st->preedit.size()) {
+
+    // Record selection
+    st->select(text, pinyin, matchedLen);
+
+    // If all input consumed, commit everything
+    if (st->fullySelected()) {
+        ic->commitString(st->committedText());
         resetState(ic);
     } else {
-        st->preedit = st->preedit.substr(n);
-        st->cursor = st->preedit.size(); // cursor to end after consume
+        // Move cursor to end of remaining
+        st->cursor = st->buffer.size();
         updateUI(ic);
     }
 }
@@ -161,7 +168,7 @@ void SimeEngine::updateUI(InputContext *ic) {
     auto &panel = ic->inputPanel();
     panel.reset();
 
-    if (st->preedit.empty()) {
+    if (st->empty()) {
         ic->updatePreedit();
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
         return;
@@ -173,51 +180,65 @@ void SimeEngine::updateUI(InputContext *ic) {
         return;
     }
 
-    // Decode first, then use top candidate's pinyin for preedit display
-    std::string_view decodeInput = st->preedit;
-    if (st->cursor < st->preedit.size()) {
-        decodeInput = std::string_view(st->preedit).substr(0, st->cursor);
+    // Decode only the remaining (unselected) input
+    std::string rem = st->remaining();
+    std::vector<sime::SentenceResult> results;
+    if (!rem.empty()) {
+        results = interpreter_->DecodeSentence(
+            rem, static_cast<std::size_t>(*config_.nbest));
     }
-    auto results = interpreter_->DecodeSentence(
-        decodeInput, static_cast<std::size_t>(*config_.nbest));
 
-    // Preedit: use first candidate's pinyin, fallback to raw input
-    std::string preedit_display;
+    // Build preedit: committed hanzi + remaining pinyin
+    std::string committed = st->committedText();
+    std::string remaining_display;
     if (!results.empty() && !results[0].pinyin.empty()) {
-        // Convert apostrophe-separated to space-separated for display
-        preedit_display = results[0].pinyin;
-        for (auto &ch : preedit_display) {
+        remaining_display = results[0].pinyin;
+        for (auto &ch : remaining_display) {
             if (ch == '\'') ch = ' ';
         }
     } else {
-        preedit_display = std::string(decodeInput);
+        remaining_display = rem;
     }
 
-    // Map raw cursor to preedit display position
-    int displayCursor = static_cast<int>(preedit_display.size());
-    {
-        std::size_t rawIdx = 0;
-        std::size_t dispIdx = 0;
-        while (rawIdx < decodeInput.size() && dispIdx < preedit_display.size()) {
-            if (rawIdx == st->cursor) {
-                displayCursor = static_cast<int>(dispIdx);
+    std::string full_display = committed + remaining_display;
+
+    // Cursor position: at the boundary between committed and remaining,
+    // adjusted for user's cursor within remaining
+    std::size_t sel_len = st->selectedLength();
+    int displayCursor = static_cast<int>(full_display.size());
+    if (st->cursor >= sel_len) {
+        // Map raw cursor (within remaining) to display position
+        std::size_t raw_offset = st->cursor - sel_len;
+        std::size_t disp_offset = 0;
+        std::size_t raw_idx = 0;
+        while (raw_idx < rem.size() && disp_offset < remaining_display.size()) {
+            if (raw_idx == raw_offset) {
+                displayCursor = static_cast<int>(committed.size() + disp_offset);
                 break;
             }
-            if (preedit_display[dispIdx] == ' ' &&
-                (rawIdx >= decodeInput.size() || decodeInput[rawIdx] != ' ')) {
-                ++dispIdx;
+            if (remaining_display[disp_offset] == ' ' &&
+                (raw_idx >= rem.size() || rem[raw_idx] != ' ')) {
+                ++disp_offset;
                 continue;
             }
-            ++rawIdx;
-            ++dispIdx;
+            ++raw_idx;
+            ++disp_offset;
         }
-        if (rawIdx == st->cursor)
-            displayCursor = static_cast<int>(dispIdx);
+        if (raw_idx == raw_offset) {
+            displayCursor = static_cast<int>(committed.size() + disp_offset);
+        }
+    } else {
+        displayCursor = static_cast<int>(committed.size());
     }
 
     Text preeditText;
-    preeditText.append(preedit_display,
-                       TextFormatFlags{TextFormatFlag::Underline});
+    if (!committed.empty()) {
+        preeditText.append(committed, TextFormatFlags{TextFormatFlag::HighLight});
+    }
+    if (!remaining_display.empty()) {
+        preeditText.append(remaining_display,
+                           TextFormatFlags{TextFormatFlag::Underline});
+    }
     preeditText.setCursor(displayCursor);
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
@@ -229,6 +250,7 @@ void SimeEngine::updateUI(InputContext *ic) {
         panel.setPreedit(preeditText);
     }
 
+    // Build candidate list from remaining input
     auto cl = std::make_unique<CommonCandidateList>();
     cl->setPageSize(*config_.pageSize);
     cl->setLayoutHint(CandidateLayoutHint::Horizontal);
@@ -239,7 +261,7 @@ void SimeEngine::updateUI(InputContext *ic) {
     for (const auto &r : results) {
         auto text = u32ToUtf8(r.text);
         if (seen.insert(text).second) {
-            cl->append<SimeCandidateWord>(this, text, r.matched_len);
+            cl->append<SimeCandidateWord>(this, text, r.pinyin, r.matched_len);
         }
     }
 
@@ -261,8 +283,8 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     auto &panel = ic->inputPanel();
     auto *cl = panel.candidateList().get();
 
-    // 数字 1-9 选词
-    if (!st->preedit.empty() && sym >= FcitxKey_1 && sym <= FcitxKey_9) {
+    // Number 1-9: select candidate
+    if (!st->empty() && sym >= FcitxKey_1 && sym <= FcitxKey_9) {
         int localIdx = sym - FcitxKey_1;
         if (cl && localIdx < cl->size()) {
             cl->candidate(localIdx).select(ic);
@@ -271,8 +293,8 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 空格选当前高亮候选（默认第一个）
-    if (!st->preedit.empty() && sym == FcitxKey_space) {
+    // Space: select current highlighted candidate (default first)
+    if (!st->empty() && sym == FcitxKey_space) {
         if (cl && cl->size() > 0) {
             int idx = cl->cursorIndex();
             if (idx < 0 || idx >= cl->size()) idx = 0;
@@ -282,28 +304,34 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 回车：提交原始拼音
-    if (!st->preedit.empty() &&
+    // Enter: commit raw pinyin
+    if (!st->empty() &&
         (sym == FcitxKey_Return || sym == FcitxKey_KP_Enter)) {
-        ic->commitString(st->preedit);
+        ic->commitString(st->buffer);
         resetState(ic);
         event.filterAndAccept();
         return;
     }
 
-    // Escape：取消
-    if (sym == FcitxKey_Escape && !st->preedit.empty()) {
+    // Escape: cancel
+    if (sym == FcitxKey_Escape && !st->empty()) {
         resetState(ic);
         event.filterAndAccept();
         return;
     }
 
-    // 退格：删除光标前一个字符
+    // Backspace: undo last selection, or delete character
     if (sym == FcitxKey_BackSpace) {
-        if (!st->preedit.empty() && st->cursor > 0) {
-            st->preedit.erase(st->cursor - 1, 1);
-            --st->cursor;
-            if (st->preedit.empty())
+        if (!st->empty()) {
+            if (!st->selections.empty() && st->cursor <= st->selectedLength()) {
+                // Undo last selection
+                st->cancel();
+                st->cursor = st->buffer.size();
+            } else if (st->cursor > 0) {
+                st->buffer.erase(st->cursor - 1, 1);
+                --st->cursor;
+            }
+            if (st->empty())
                 resetState(ic);
             else
                 updateUI(ic);
@@ -312,11 +340,11 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // Delete：删除光标后一个字符
+    // Delete: delete character after cursor
     if (sym == FcitxKey_Delete) {
-        if (!st->preedit.empty() && st->cursor < st->preedit.size()) {
-            st->preedit.erase(st->cursor, 1);
-            if (st->preedit.empty())
+        if (!st->empty() && st->cursor < st->buffer.size()) {
+            st->buffer.erase(st->cursor, 1);
+            if (st->empty())
                 resetState(ic);
             else
                 updateUI(ic);
@@ -325,8 +353,8 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // Tab/Shift+Tab：在候选之间移动高亮
-    if (!st->preedit.empty() && cl &&
+    // Tab/Shift+Tab: move highlight among candidates
+    if (!st->empty() && cl &&
         (sym == FcitxKey_Tab || sym == FcitxKey_ISO_Left_Tab)) {
         auto *ccl = dynamic_cast<CommonCandidateList *>(cl);
         if (ccl) {
@@ -345,8 +373,8 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // 上下方向键 + Page Up/Down + +/-：翻页
-    if (!st->preedit.empty() && cl) {
+    // Page navigation
+    if (!st->empty() && cl) {
         auto *pageable = cl->toPageable();
         if (pageable) {
             if (sym == FcitxKey_Page_Down || sym == FcitxKey_equal ||
@@ -370,49 +398,48 @@ void SimeEngine::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
     }
 
-    // 左右方向键：移动 preedit 光标
-    if (!st->preedit.empty() &&
+    // Left/Right: move cursor
+    if (!st->empty() &&
         (sym == FcitxKey_Left || sym == FcitxKey_Right)) {
         if (sym == FcitxKey_Left && st->cursor > 0)
             --st->cursor;
-        else if (sym == FcitxKey_Right && st->cursor < st->preedit.size())
+        else if (sym == FcitxKey_Right && st->cursor < st->buffer.size())
             ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // Home/End：光标跳到开头/末尾
-    if (!st->preedit.empty() &&
+    // Home/End
+    if (!st->empty() &&
         (sym == FcitxKey_Home || sym == FcitxKey_End)) {
-        st->cursor = (sym == FcitxKey_Home) ? 0 : st->preedit.size();
+        st->cursor = (sym == FcitxKey_Home) ? 0 : st->buffer.size();
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // 字母 a-z：插入到光标位置
+    // a-z: append to buffer
     if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
-        st->preedit.insert(st->cursor, 1, static_cast<char>(sym));
+        st->buffer.insert(st->cursor, 1, static_cast<char>(sym));
         ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // 单引号分词：插入到光标位置
-    if (sym == FcitxKey_apostrophe && !st->preedit.empty()) {
-        st->preedit.insert(st->cursor, 1, '\'');
+    // Apostrophe: separator
+    if (sym == FcitxKey_apostrophe && !st->empty()) {
+        st->buffer.insert(st->cursor, 1, '\'');
         ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // 特性1：标点符号转中文
-    // preedit 非空时：先提交第一个候选，再输出标点
+    // Punctuation: auto-commit first candidate + output punctuation
     if (const char *punc = chinesePunc(sym)) {
-        if (!st->preedit.empty() && cl && cl->size() > 0) {
+        if (!st->empty() && cl && cl->size() > 0) {
             cl->candidate(0).select(ic);
         }
         ic->commitString(punc);
