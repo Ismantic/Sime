@@ -226,6 +226,8 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         if (c < '2' || c > '9') return results;
     }
 
+    const std::size_t max_top = num == 0 ? 1 : num;
+
     Scorer::Pos init_pos{};
     float_t init_score = 0.0;
     InitStartState(start, init_pos, init_score);
@@ -252,7 +254,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     // Full match from SentenceEnd column
     {
         auto states = net[d + 1].states.GetStates();
-        const std::size_t full_limit = std::max<std::size_t>(num / 2, 5);
+        const std::size_t full_limit = std::max<std::size_t>(max_top / 2, 5);
         for (std::size_t rank = 0;
              rank < states.size() && results.size() < full_limit; ++rank) {
             auto path = Backtrace(states[rank], d + 1);
@@ -261,8 +263,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     }
 
     // Partial matches from intermediate positions
-    const std::size_t per_pos = std::max<std::size_t>(num / 4, 2);
-    for (std::size_t pos = d - 1; pos >= 1 && results.size() < num; --pos) {
+    const std::size_t per_pos = std::max<std::size_t>(max_top / 4, 2);
+    for (std::size_t pos = d - 1; pos >= 1 && results.size() < max_top;
+         --pos) {
         auto states = net[pos].states.GetStates();
         std::size_t added = 0;
         for (std::size_t rank = 0;
@@ -286,6 +289,8 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         if (c < '2' || c > '9') return results;
     }
 
+    const std::size_t max_top = num == 0 ? 1 : num;
+
     Scorer::Pos init_pos{};
     float_t init_score = 0.0;
     InitStartState(start, init_pos, init_score);
@@ -301,7 +306,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
 
     auto tail_states = net.back().states.GetStates();
     for (std::size_t rank = 0;
-         rank < tail_states.size() && results.size() < num; ++rank) {
+         rank < tail_states.size() && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], d + 1);
         std::string text = ExtractNumText(path);
         if (text.empty()) continue;
@@ -369,13 +374,8 @@ std::vector<DecodeResult> Interpreter::Decode(
     Process(net);
 
     const auto tail_states = net.back().states.GetStates();
-    if (tail_states.empty()) {
-        return results;
-    }
-
-    const std::size_t total =
-        std::min<std::size_t>(BeamSize, tail_states.size());
-    for (std::size_t rank = 0; rank < total && results.size() < max_top; ++rank) {
+    for (std::size_t rank = 0;
+         rank < tail_states.size() && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], net.size() - 1);
         if (path.empty()) {
             continue;
@@ -558,30 +558,17 @@ std::vector<Interpreter::Link> Interpreter::Backtrace(
 }
 std::u32string Interpreter::ToText(const Link& n,
                                    const std::vector<Unit>& units) const {
-    if (n.id == ScoreNotToken || n.id == NotToken) {
-        std::string fallback = SliceToUnits(units, n.start, n.end);
-        return ustr::ToU32("[" + fallback + "]");
-    }
-    const char32_t* chars = trie_.TokenAt(n.id);
-    if (chars == nullptr || chars[0] == 0) {
-        std::string fallback = SliceToUnits(units, n.start, n.end);
-        return ustr::ToU32("[" + fallback + "]");
-    }
-    constexpr std::size_t MaxTokenSize = 64;
-    std::u32string buffer;
-    buffer.reserve(8);
-    for (std::size_t i = 0; i < MaxTokenSize; ++i) {
-        char32_t ch = chars[i];
-        if (ch == 0) {
-            break;
+    if (n.id != ScoreNotToken && n.id != NotToken) {
+        const char32_t* chars = trie_.TokenAt(n.id);
+        if (chars) {
+            std::u32string buffer;
+            for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
+                buffer.push_back(chars[i]);
+            }
+            if (!buffer.empty()) return buffer;
         }
-        buffer.push_back(ch);
     }
-    if (buffer.empty()) {
-        std::string fallback = SliceToUnits(units, n.start, n.end);
-        return ustr::ToU32("[" + fallback + "]");
-    }
-    return buffer;
+    return ustr::ToU32("[" + SliceToUnits(units, n.start, n.end) + "]");
 }
 
 std::string Interpreter::SliceToUnits(
