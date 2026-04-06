@@ -338,7 +338,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
     return result;
 }
 
-std::vector<SentenceResult> Interpreter::DecodeNine(
+std::vector<SentenceResult> Interpreter::DecodeNum(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
@@ -520,7 +520,7 @@ bool Interpreter::LoadDict(const std::filesystem::path& path) {
     return dict_.Load(path);
 }
 
-std::vector<DecodeResult> Interpreter::DecodeText(
+std::vector<DecodeResult> Interpreter::DecodeStr(
     std::string_view input,
     std::size_t num) const {
     std::vector<Unit> units;

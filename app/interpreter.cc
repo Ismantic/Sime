@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
                           << "/" << line.size() << ")\n";
             }
         } else if (opts.nine_mode) {
-            auto results = interpreter.DecodeNine(line, {}, opts.num);
+            auto results = interpreter.DecodeNum(line, {}, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
                           << "/" << line.size() << ")\n";
             }
         } else {
-            auto results = interpreter.DecodeText(line, opts.num);
+            auto results = interpreter.DecodeStr(line, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;
