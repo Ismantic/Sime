@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
         }
 
         if (opts.stream_mode) {
-            auto results = interpreter.DecodeStream(line, {}, opts.num);
+            auto results = interpreter.DecodeNumSentence(line, {}, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
                           << "/" << line.size() << ")\n";
             }
         } else if (opts.nine_mode) {
-            auto results = interpreter.DecodeNum(line, {}, opts.num);
+            auto results = interpreter.DecodeNumStr(line, {}, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;

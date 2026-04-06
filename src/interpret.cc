@@ -62,7 +62,7 @@ void Interpreter::BuildDigitMap() {
 }
 
 
-std::vector<DecodeResult> Interpreter::DecodeStream(
+std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {
@@ -282,7 +282,7 @@ std::vector<DecodeResult> Interpreter::DecodeStream(
     return results;
 }
 
-std::vector<DecodeResult> Interpreter::DecodeNum(
+std::vector<DecodeResult> Interpreter::DecodeNumStr(
     std::string_view digits,
     const std::vector<Unit>& prefix,
     std::size_t num) const {

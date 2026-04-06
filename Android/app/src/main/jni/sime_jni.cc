@@ -79,7 +79,7 @@ Java_com_isma_sime_SimeEngine_nativeLoadT9(
     jstring /*pinyinModelPath*/) {
 
     if (!g_interpreter) return JNI_FALSE;
-    // No-op: DecodeStream now uses built-in digit map, no pinyin model needed.
+    // No-op: DecodeNumSentence now uses built-in digit map, no pinyin model needed.
     return g_interpreter->Ready() ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -172,7 +172,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     }
 
     auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeStream(
+    auto results = g_interpreter->DecodeNumSentence(
         d, prefix, static_cast<std::size_t>(num));
 
     const jsize hc = static_cast<jsize>(results.size());
