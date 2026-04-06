@@ -110,7 +110,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         bool inserted = false;
         std::string key;
 
-        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d);
+        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableCnt, d);
              ++end) {
             key.push_back(nums[end - 1]);
             auto it = num_map_.find(key);
@@ -132,7 +132,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                 // Two-syllable words
                 std::string key2;
                 for (std::size_t end2 = end + 1;
-                     end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
+                     end2 <= std::min(end + MaxSyllableCnt, d); ++end2) {
                     key2.push_back(nums[end2 - 1]);
                     auto it2 = num_map_.find(key2);
                     if (it2 == num_map_.end()) continue;
@@ -153,7 +153,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                         // Three-syllable words
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
+                             end3 <= std::min(end2 + MaxSyllableCnt, d); ++end3) {
                             key3.push_back(nums[end3 - 1]);
                             auto it3 = num_map_.find(key3);
                             if (it3 == num_map_.end()) continue;
@@ -182,7 +182,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         // When remaining digits don't form a complete syllable,
         // try all syllables whose digit sequence starts with the tail.
         std::string tail(nums.substr(start));
-        if (tail.size() <= MaxSyllableLen &&
+        if (tail.size() <= MaxSyllableCnt &&
             num_map_.find(tail) == num_map_.end()) {
             for (const auto& [dkey, units] : num_map_) {
                 if (dkey.size() > tail.size() &&
@@ -341,7 +341,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         bool inserted = false;
         std::string key;
 
-        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d); ++end) {
+        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableCnt, d); ++end) {
             key.push_back(nums[end - 1]);
             // Find all pinyin syllables matching this digit substring
             auto it = num_map_.find(key);
@@ -365,7 +365,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
                 // (e.g., "zhong" + "guo" → "中国")
                 std::string key2;
                 for (std::size_t end2 = end + 1;
-                     end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
+                     end2 <= std::min(end + MaxSyllableCnt, d); ++end2) {
                     key2.push_back(nums[end2 - 1]);
                     auto it2 = num_map_.find(key2);
                     if (it2 == num_map_.end()) continue;
@@ -387,7 +387,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
                         // Try third syllable for 3-char words
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
+                             end3 <= std::min(end2 + MaxSyllableCnt, d); ++end3) {
                             key3.push_back(nums[end3 - 1]);
                             auto it3 = num_map_.find(key3);
                             if (it3 == num_map_.end()) continue;
