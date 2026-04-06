@@ -31,36 +31,26 @@ public:
     bool Ready() const { return ready_; }
     bool LoadDict(const std::filesystem::path& path);
 
-    // Stream: joint decode with progressive input (digits, possibly incomplete).
-    // prefix: confirmed pinyin syllables providing LM context.
+    // Pinyin decode
+    std::vector<DecodeResult> Decode(const std::vector<Unit>& units,
+                                     std::size_t num = 5) const;
+    std::vector<DecodeResult> DecodeStr(std::string_view input,
+                                        std::size_t num = 5) const;
+    std::vector<DecodeResult> DecodeSentence(std::string_view input,
+                                             std::size_t num = 18) const;
+
+    // Num-key decode (T9/nine-key)
+    std::vector<DecodeResult> DecodeNumStr(
+        std::string_view nums,
+        const std::vector<Unit>& prefix = {},
+        std::size_t num = 18) const;
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
 
-    // Nine: joint decode (digits → expand all pinyin → hanzi model).
-    // No pinyin model needed, only dict + cnt.
-    // prefix: confirmed pinyin syllables providing LM context.
-    // digits: remaining digit sequence to decode.
-    std::vector<DecodeResult> DecodeNumStr(
-        std::string_view nums,
-        const std::vector<Unit>& prefix = {},
-        std::size_t num = 18) const;
-
-    // Original: decode full input, return n-best
-    std::vector<DecodeResult> DecodeStr(std::string_view input,
-                                         std::size_t num = 5) const;
-
-    std::vector<DecodeResult> Decode(const std::vector<Unit>& units,
-                                          std::size_t num = 5) const;
-
-    // Sentence: single-lattice decode returning candidates at all prefix lengths.
-    // Candidates from different prefix lengths compete by LM score.
-    std::vector<DecodeResult> DecodeSentence(
-        std::string_view input, std::size_t num = 18) const;
-
-
 private:
+    // Lattice types
     struct Link {
         std::size_t start = 0;
         std::size_t end = 0;
@@ -73,47 +63,42 @@ private:
     };
 
     // Search parameters
-    static constexpr std::size_t NodeSize = 40;   // max candidates per span per lattice position
-    static constexpr std::size_t BeamSize = 20;   // max states per position in beam search
-    static constexpr std::size_t MaxSyllableLen = 6;  // longest pinyin syllable (zhuang)
-    static constexpr std::size_t MaxPerPrefix = 15;   // max candidates per partial prefix
-    static constexpr float_t DistancePenalty = 3.0;   // penalty divisor for partial matches
+    static constexpr std::size_t NodeSize = 40;
+    static constexpr std::size_t BeamSize = 20;
+    static constexpr std::size_t MaxSyllableLen = 6;
+    static constexpr std::size_t MaxPerPrefix = 15;
+    static constexpr float_t DistancePenalty = 3.0;
 
-    // Prune edges at a position to top-NodeSize by unigram score.
-    void PruneNode(std::vector<Link>& edges) const;
-
-    // Original net: SentenceToken only at end
-    // tail_expansions: if non-empty, fan out at the end for incomplete syllable
+    // Lattice building
     void InitNet(const std::vector<Unit>& units,
                  std::vector<Node>& net,
                  const std::vector<Unit>& tail_expansions = {}) const;
+    void PruneNode(std::vector<Link>& edges) const;
 
+    // Beam search
     void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
+
+    // Text extraction
     std::u32string ToText(const Link& n,
                           const std::vector<Unit>& units) const;
-    static std::string SliceToUnits(
-        const std::vector<Unit>& units,
-        std::size_t start,
-        std::size_t end);
+    static std::string SliceToUnits(const std::vector<Unit>& units,
+                                    std::size_t start, std::size_t end);
 
-    // Parse input into units, tracking byte boundary for each unit.
-    // unit_byte_end[i] = byte position in input after unit i.
-    // tail_expansions: filled with possible Units if trailing incomplete syllable.
+    // Pinyin parsing
     static bool ParseWithBoundaries(
         std::string_view input,
         std::vector<Unit>& units,
         std::vector<std::size_t>& unit_byte_end,
         std::vector<Unit>& tail_expansions);
 
-    // Build digit → pinyin Unit mapping from built-in syllable table
+    // Num-key mapping
     void BuildNumMap();
-
     static char LetterToNum(char c);
     static std::string UnitToNum(const char* pinyin);
 
-private:
+    // Resources
     Trie trie_;
     Scorer scorer_;
     Dict dict_;
