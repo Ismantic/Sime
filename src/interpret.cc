@@ -35,9 +35,9 @@ char Interpreter::LetterToNum(char c) {
     }
 }
 
-std::string Interpreter::UnitToNum(const char* pinyin) {
+std::string Interpreter::UnitToNum(const char* unit) {
     std::string result;
-    for (const char* p = pinyin; *p; ++p) {
+    for (const char* p = unit; *p; ++p) {
         char d = LetterToNum(static_cast<char>(
             std::tolower(static_cast<unsigned char>(*p))));
         if (d != '0') {
@@ -62,56 +62,41 @@ void Interpreter::BuildNumMap() {
 }
 
 
-std::vector<DecodeResult> Interpreter::DecodeNumSentence(
-    std::string_view nums,
-    const std::vector<Unit>& prefix,
-    std::size_t num) const {
-    std::vector<DecodeResult> results;
-    if (!ready_ || num_map_.empty()) {
-        return results;
-    }
-    if (nums.empty() && prefix.empty()) {
-        return results;
-    }
-
-    // Validate digits
-    for (char c : nums) {
-        if (c < '2' || c > '9') return results;
-    }
-
-    // Build initial scorer state from prefix
-    Scorer::Pos init_pos{};
-    float_t init_score = 0.0;
-    if (!prefix.empty()) {
-        const Trie::Node* pnode = trie_.Root();
-        for (const auto& u : prefix) {
-            pnode = trie_.DoMove(pnode, u);
-            if (!pnode) break;
-            std::uint32_t count = 0;
-            const std::uint32_t* tokens = trie_.GetToken(pnode, count);
-            if (count > 0) {
-                TokenID tid = static_cast<TokenID>(tokens[0]);
-                Scorer::Pos next_pos{};
-                init_score += scorer_.ScoreMove(init_pos, tid, next_pos);
-                scorer_.Back(next_pos);
-                init_pos = next_pos;
-                pnode = trie_.Root();
-            }
+void Interpreter::InitStartState(const std::vector<Unit>& start,
+                                   Scorer::Pos& pos, float_t& score) const {
+    pos = Scorer::Pos{};
+    score = 0.0;
+    if (start.empty()) return;
+    const Trie::Node* pnode = trie_.Root();
+    for (const auto& u : start) {
+        pnode = trie_.DoMove(pnode, u);
+        if (!pnode) break;
+        std::uint32_t count = 0;
+        const std::uint32_t* tokens = trie_.GetToken(pnode, count);
+        if (count > 0) {
+            TokenID tid = static_cast<TokenID>(tokens[0]);
+            Scorer::Pos next_pos{};
+            score += scorer_.ScoreMove(pos, tid, next_pos);
+            scorer_.Back(next_pos);
+            pos = next_pos;
+            pnode = trie_.Root();
         }
     }
+}
 
+void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
+                               bool tail_expansion) const {
     const std::size_t d = nums.size();
-    const std::size_t full_col = d + 1; // for full-match SentenceEnd
-    std::vector<Node> net(full_col + 1);
+    net.clear();
+    net.resize(d + 2);
 
-    // --- Build lattice with joint search ---
     for (std::size_t start = 0; start < d; ++start) {
         auto& bucket = net[start].es;
         bool inserted = false;
         std::string key;
 
-        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableCnt, d);
-             ++end) {
+        for (std::size_t end = start + 1;
+             end <= std::min(start + MaxSyllableCnt, d); ++end) {
             key.push_back(nums[end - 1]);
             auto it = num_map_.find(key);
             if (it == num_map_.end()) continue;
@@ -137,12 +122,10 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                     auto it2 = num_map_.find(key2);
                     if (it2 == num_map_.end()) continue;
                     for (const auto& unit2 : it2->second) {
-                        const Trie::Node* node2 =
-                            trie_.DoMove(node, unit2);
+                        const Trie::Node* node2 = trie_.DoMove(node, unit2);
                         if (!node2) continue;
                         std::uint32_t c2 = 0;
-                        const std::uint32_t* t2 =
-                            trie_.GetToken(node2, c2);
+                        const std::uint32_t* t2 = trie_.GetToken(node2, c2);
                         for (std::uint32_t idx = 0; idx < c2; ++idx) {
                             bucket.push_back(
                                 {start, end2,
@@ -153,7 +136,8 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                         // Three-syllable words
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + MaxSyllableCnt, d); ++end3) {
+                             end3 <= std::min(end2 + MaxSyllableCnt, d);
+                             ++end3) {
                             key3.push_back(nums[end3 - 1]);
                             auto it3 = num_map_.find(key3);
                             if (it3 == num_map_.end()) continue;
@@ -164,8 +148,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
                                 std::uint32_t c3 = 0;
                                 const std::uint32_t* t3 =
                                     trie_.GetToken(node3, c3);
-                                for (std::uint32_t idx = 0; idx < c3;
-                                     ++idx) {
+                                for (std::uint32_t idx = 0; idx < c3; ++idx) {
                                     bucket.push_back(
                                         {start, end3,
                                          static_cast<TokenID>(t3[idx])});
@@ -178,235 +161,27 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
             }
         }
 
-        // --- Tail expansion ---
-        // When remaining digits don't form a complete syllable,
+        // Tail expansion: when remaining digits don't form a complete syllable,
         // try all syllables whose digit sequence starts with the tail.
-        std::string tail(nums.substr(start));
-        if (tail.size() <= MaxSyllableCnt &&
-            num_map_.find(tail) == num_map_.end()) {
-            for (const auto& [dkey, units] : num_map_) {
-                if (dkey.size() > tail.size() &&
-                    dkey.compare(0, tail.size(), tail) == 0) {
-                    for (const auto& unit : units) {
-                        const Trie::Node* node =
-                            trie_.DoMove(trie_.Root(), unit);
-                        if (!node) continue;
-                        std::uint32_t count = 0;
-                        const std::uint32_t* tokens =
-                            trie_.GetToken(node, count);
-                        for (std::uint32_t idx = 0; idx < count; ++idx) {
-                            bucket.push_back(
-                                {start, d,
-                                 static_cast<TokenID>(tokens[idx])});
-                            inserted = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!inserted) {
-            bucket.push_back({start, start + 1, ScoreNotToken});
-        }
-    }
-
-    // Prune each position
-    for (std::size_t i = 0; i < d; ++i) {
-        PruneNode(net[i].es);
-    }
-
-    // SentenceEnd at full-match position only
-    net[d].es.push_back({d, full_col, SentenceEnd});
-    for (auto& col : net) {
-        col.states.SetMaxTop(BeamSize);
-    }
-    State init(init_score, 0, init_pos, nullptr, 0);
-    net[0].states.Insert(init);
-    Process(net);
-
-    // --- Collect hanzi results ---
-    // Helper to extract text from a path
-    auto extract = [&](const std::vector<Link>& path) -> std::string {
-        std::u32string u32;
-        for (const auto& link : path) {
-            if (link.id == SentenceEnd || link.id == ScoreNotToken ||
-                link.id == NotToken) continue;
-            const char32_t* chars = trie_.TokenAt(link.id);
-            if (!chars) continue;
-            for (std::size_t i = 0; chars[i] != 0; ++i) {
-                u32.push_back(chars[i]);
-            }
-        }
-        return ustr::FromU32(u32);
-    };
-
-    auto add_result = [&](const std::string& text, float_t score,
-                          std::size_t matched) -> bool {
-        if (text.empty()) return false;
-        for (const auto& existing : results) {
-            if (existing.text == text) return false;
-        }
-        DecodeResult sr;
-        sr.text = text;
-        sr.score = score;
-        sr.cnt = matched;
-        results.push_back(std::move(sr));
-        return true;
-    };
-
-    // Full match: from SentenceEnd column (highest priority)
-    {
-        auto states = net[full_col].states.GetStates();
-        const std::size_t full_limit = std::max<std::size_t>(num / 2, 5);
-        for (std::size_t rank = 0;
-             rank < states.size() && results.size() < full_limit;
-             ++rank) {
-            auto path = Backtrace(states[rank], full_col);
-            auto text = extract(path);
-            add_result(text, -states[rank].score, d);
-        }
-    }
-
-    // Partial matches: from each intermediate position
-    const std::size_t per_pos = std::max<std::size_t>(num / 4, 2);
-    for (std::size_t pos = d - 1; pos >= 1 && results.size() < num;
-         --pos) {
-        auto states = net[pos].states.GetStates();
-        std::size_t added = 0;
-        for (std::size_t rank = 0;
-             rank < states.size() && added < per_pos; ++rank) {
-            auto path = Backtrace(states[rank], pos);
-            auto text = extract(path);
-            if (add_result(text, -states[rank].score, pos)) {
-                ++added;
-            }
-        }
-    }
-
-    // --- Build best_pinyin from top hanzi result ---
-    return results;
-}
-
-std::vector<DecodeResult> Interpreter::DecodeNumStr(
-    std::string_view nums,
-    const std::vector<Unit>& prefix,
-    std::size_t num) const {
-    std::vector<DecodeResult> results;
-    if (!ready_ || num_map_.empty() || nums.empty()) {
-        return results;
-    }
-
-    // Validate: only digits 2-9
-    for (char c : nums) {
-        if (c < '2' || c > '9') return results;
-    }
-
-    // Build initial scorer state from prefix (confirmed pinyin context)
-    Scorer::Pos init_pos{};
-    float_t init_score = 0.0;
-    if (!prefix.empty()) {
-        // Walk prefix through Trie to get token IDs, feed to scorer
-        const Trie::Node* pnode = trie_.Root();
-        for (const auto& u : prefix) {
-            pnode = trie_.DoMove(pnode, u);
-            if (!pnode) break;
-            std::uint32_t count = 0;
-            const std::uint32_t* tokens = trie_.GetToken(pnode, count);
-            if (count > 0) {
-                // Use first (best) token for context
-                TokenID tid = static_cast<TokenID>(tokens[0]);
-                Scorer::Pos next_pos{};
-                init_score += scorer_.ScoreMove(init_pos, tid, next_pos);
-                scorer_.Back(next_pos);
-                init_pos = next_pos;
-                pnode = trie_.Root(); // reset Trie for next syllable
-            }
-        }
-    }
-
-    const std::size_t d = nums.size();
-    const std::size_t net_size = d + 2;
-    std::vector<Node> net(net_size);
-
-    // Build lattice: for each digit span, enumerate pinyin syllables,
-    // then for each syllable (or syllable sequence), query Trie for hanzi tokens.
-    // We need to try all possible pinyin segmentations implicitly through the lattice.
-
-    // num_map_ maps digit_string → syllable entries (from NineDecoder)
-    // For each starting position, try digit substrings of length 1..6,
-    // map to pinyin syllables, then walk the Trie to find hanzi tokens.
-
-    for (std::size_t start = 0; start < d; ++start) {
-        auto& bucket = net[start].es;
-        bool inserted = false;
-        std::string key;
-
-        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableCnt, d); ++end) {
-            key.push_back(nums[end - 1]);
-            // Find all pinyin syllables matching this digit substring
-            auto it = num_map_.find(key);
-            if (it == num_map_.end()) continue;
-
-            for (const auto& unit : it->second) {
-                // Walk Trie with this single syllable from root
-                const Trie::Node* node = trie_.DoMove(trie_.Root(), unit);
-                if (!node) continue;
-
-                // Single-syllable hanzi matches
-                std::uint32_t count = 0;
-                const std::uint32_t* tokens = trie_.GetToken(node, count);
-                for (std::uint32_t idx = 0; idx < count; ++idx) {
-                    TokenID wid = static_cast<TokenID>(tokens[idx]);
-                    bucket.push_back({start, end, wid});
-                    inserted = true;
-                }
-
-                // Try extending with next digit spans for multi-syllable words
-                // (e.g., "zhong" + "guo" → "中国")
-                std::string key2;
-                for (std::size_t end2 = end + 1;
-                     end2 <= std::min(end + MaxSyllableCnt, d); ++end2) {
-                    key2.push_back(nums[end2 - 1]);
-                    auto it2 = num_map_.find(key2);
-                    if (it2 == num_map_.end()) continue;
-
-                    for (const auto& unit2 : it2->second) {
-                        const Trie::Node* node2 =
-                            trie_.DoMove(node, unit2);
-                        if (!node2) continue;
-
-                        std::uint32_t count2 = 0;
-                        const std::uint32_t* tokens2 =
-                            trie_.GetToken(node2, count2);
-                        for (std::uint32_t idx = 0; idx < count2; ++idx) {
-                            TokenID wid = static_cast<TokenID>(tokens2[idx]);
-                            bucket.push_back({start, end2, wid});
-                            inserted = true;
-                        }
-
-                        // Try third syllable for 3-char words
-                        std::string key3;
-                        for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + MaxSyllableCnt, d); ++end3) {
-                            key3.push_back(nums[end3 - 1]);
-                            auto it3 = num_map_.find(key3);
-                            if (it3 == num_map_.end()) continue;
-
-                            for (const auto& unit3 : it3->second) {
-                                const Trie::Node* node3 =
-                                    trie_.DoMove(node2, unit3);
-                                if (!node3) continue;
-
-                                std::uint32_t count3 = 0;
-                                const std::uint32_t* tokens3 =
-                                    trie_.GetToken(node3, count3);
-                                for (std::uint32_t idx = 0; idx < count3;
-                                     ++idx) {
-                                    TokenID wid =
-                                        static_cast<TokenID>(tokens3[idx]);
-                                    bucket.push_back({start, end3, wid});
-                                    inserted = true;
-                                }
+        if (tail_expansion) {
+            std::string tail(nums.substr(start));
+            if (tail.size() <= MaxSyllableCnt &&
+                num_map_.find(tail) == num_map_.end()) {
+                for (const auto& [dkey, units] : num_map_) {
+                    if (dkey.size() > tail.size() &&
+                        dkey.compare(0, tail.size(), tail) == 0) {
+                        for (const auto& unit : units) {
+                            const Trie::Node* node =
+                                trie_.DoMove(trie_.Root(), unit);
+                            if (!node) continue;
+                            std::uint32_t count = 0;
+                            const std::uint32_t* tokens =
+                                trie_.GetToken(node, count);
+                            for (std::uint32_t idx = 0; idx < count; ++idx) {
+                                bucket.push_back(
+                                    {start, d,
+                                     static_cast<TokenID>(tokens[idx])});
+                                inserted = true;
                             }
                         }
                     }
@@ -419,52 +194,124 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         }
     }
 
-    // Prune each position
     for (std::size_t i = 0; i < d; ++i) {
         PruneNode(net[i].es);
     }
 
-    // SentenceEnd
     net[d].es.push_back({d, d + 1, SentenceEnd});
+}
 
-    // Beam search
-    for (auto& col : net) {
-        col.states.SetMaxTop(BeamSize);
+std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
+    std::u32string u32;
+    for (const auto& link : path) {
+        if (link.id == SentenceEnd || link.id == ScoreNotToken ||
+            link.id == NotToken) continue;
+        const char32_t* chars = trie_.TokenAt(link.id);
+        if (!chars) continue;
+        for (std::size_t i = 0; chars[i] != 0; ++i) {
+            u32.push_back(chars[i]);
+        }
     }
+    return ustr::FromU32(u32);
+}
+
+std::vector<DecodeResult> Interpreter::DecodeNumSentence(
+    std::string_view nums,
+    const std::vector<Unit>& start,
+    std::size_t num) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || num_map_.empty()) return results;
+    if (nums.empty() && start.empty()) return results;
+    for (char c : nums) {
+        if (c < '2' || c > '9') return results;
+    }
+
+    Scorer::Pos init_pos{};
+    float_t init_score = 0.0;
+    InitStartState(start, init_pos, init_score);
+
+    const std::size_t d = nums.size();
+    std::vector<Node> net;
+    InitNumNet(nums, net, true);
+
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(init_score, 0, init_pos, nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
-    // Backtrace from final column
+    auto add_result = [&](const std::string& text, float_t score,
+                          std::size_t matched) -> bool {
+        if (text.empty()) return false;
+        for (const auto& existing : results) {
+            if (existing.text == text) return false;
+        }
+        results.push_back({text, {}, score, matched});
+        return true;
+    };
+
+    // Full match from SentenceEnd column
+    {
+        auto states = net[d + 1].states.GetStates();
+        const std::size_t full_limit = std::max<std::size_t>(num / 2, 5);
+        for (std::size_t rank = 0;
+             rank < states.size() && results.size() < full_limit; ++rank) {
+            auto path = Backtrace(states[rank], d + 1);
+            add_result(ExtractNumText(path), -states[rank].score, d);
+        }
+    }
+
+    // Partial matches from intermediate positions
+    const std::size_t per_pos = std::max<std::size_t>(num / 4, 2);
+    for (std::size_t pos = d - 1; pos >= 1 && results.size() < num; --pos) {
+        auto states = net[pos].states.GetStates();
+        std::size_t added = 0;
+        for (std::size_t rank = 0;
+             rank < states.size() && added < per_pos; ++rank) {
+            auto path = Backtrace(states[rank], pos);
+            if (add_result(ExtractNumText(path), -states[rank].score, pos))
+                ++added;
+        }
+    }
+
+    return results;
+}
+
+std::vector<DecodeResult> Interpreter::DecodeNumStr(
+    std::string_view nums,
+    const std::vector<Unit>& start,
+    std::size_t num) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || num_map_.empty() || nums.empty()) return results;
+    for (char c : nums) {
+        if (c < '2' || c > '9') return results;
+    }
+
+    Scorer::Pos init_pos{};
+    float_t init_score = 0.0;
+    InitStartState(start, init_pos, init_score);
+
+    const std::size_t d = nums.size();
+    std::vector<Node> net;
+    InitNumNet(nums, net, false);
+
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
+    State init(init_score, 0, init_pos, nullptr, 0);
+    net[0].states.Insert(init);
+    Process(net);
+
     auto tail_states = net.back().states.GetStates();
     for (std::size_t rank = 0;
          rank < tail_states.size() && results.size() < num; ++rank) {
         auto path = Backtrace(tail_states[rank], d + 1);
-        if (path.empty()) continue;
-
-        std::u32string u32;
-        for (const auto& link : path) {
-            if (link.id == ScoreNotToken || link.id == NotToken) continue;
-            const char32_t* chars = trie_.TokenAt(link.id);
-            if (!chars) continue;
-            for (std::size_t i = 0; chars[i] != 0; ++i) {
-                u32.push_back(chars[i]);
-            }
-        }
-        if (u32.empty()) continue;
-        std::string text = ustr::FromU32(u32);
-
+        std::string text = ExtractNumText(path);
+        if (text.empty()) continue;
         bool dup = false;
         for (const auto& existing : results) {
             if (existing.text == text) { dup = true; break; }
         }
-        if (dup) continue;
-
-        DecodeResult sr;
-        sr.text = std::move(text);
-        sr.score = -tail_states[rank].score;
-        sr.cnt = d;
-        results.push_back(std::move(sr));
+        if (!dup) {
+            results.push_back({std::move(text), {}, -tail_states[rank].score, d});
+        }
     }
 
     return results;

@@ -42,11 +42,11 @@ public:
     // Num-key decode (T9/nine-key)
     std::vector<DecodeResult> DecodeNumStr(
         std::string_view nums,
-        const std::vector<Unit>& prefix = {},
+        const std::vector<Unit>& start = {},
         std::size_t num = 18) const;
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
-        const std::vector<Unit>& prefix = {},
+        const std::vector<Unit>& start = {},
         std::size_t num = 18) const;
 
 private:
@@ -96,7 +96,14 @@ private:
     // Num-key mapping
     void BuildNumMap();
     static char LetterToNum(char c);
-    static std::string UnitToNum(const char* pinyin);
+    static std::string UnitToNum(const char* unit);
+
+    // Num-key lattice
+    void InitNumNet(std::string_view nums, std::vector<Node>& net,
+                     bool tail_expansion) const;
+    std::string ExtractNumText(const std::vector<Link>& path) const;
+    void InitStartState(const std::vector<Unit>& start,
+                         Scorer::Pos& pos, float_t& score) const;
 
     // Resources
     Trie trie_;
