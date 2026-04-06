@@ -17,12 +17,14 @@ namespace sime {
 
 struct DecodeResult {
     std::u32string text;
-    float_t score = 0.0;   // larger is better (negative log probability negated)
+    std::string pinyin;         // segmented pinyin (e.g. "ni'hao")
+    float_t score = 0.0;       // larger is better (negative log probability negated)
     std::vector<TokenID> tokens;
 };
 
 struct SentenceResult {
     std::u32string text;
+    std::string pinyin;
     float_t score = 0.0;        // larger is better
     std::size_t matched_len = 0; // bytes of input consumed
 };
@@ -95,9 +97,12 @@ private:
         NetStates states;
     };
 
-    // Search parameters (aligned with LibIME defaults)
-    static constexpr std::size_t NodeSize = 40;  // max candidates per span per lattice position
-    static constexpr std::size_t BeamSize = 20;  // max states per position in beam search
+    // Search parameters
+    static constexpr std::size_t NodeSize = 40;   // max candidates per span per lattice position
+    static constexpr std::size_t BeamSize = 20;   // max states per position in beam search
+    static constexpr std::size_t MaxSyllableLen = 6;  // longest pinyin syllable (zhuang)
+    static constexpr std::size_t MaxPerPrefix = 15;   // max candidates per partial prefix
+    static constexpr float_t DistancePenalty = 3.0;   // penalty divisor for partial matches
 
     // Prune edges at a position to top-NodeSize by unigram score.
     void PruneNode(std::vector<Link>& edges) const;

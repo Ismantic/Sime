@@ -162,8 +162,9 @@ int main(int argc, char** argv) {
             for (std::size_t idx = 0; idx < results.size(); ++idx) {
                 const auto& r = results[idx];
                 std::string utf8 = sime::ustr::FromU32(r.text);
-                std::cout << "  [" << idx << "] " << utf8
-                          << " (score " << std::fixed << std::setprecision(3)
+                std::cout << "  [" << idx << "] " << utf8;
+                if (!r.pinyin.empty()) std::cout << " [" << r.pinyin << "]";
+                std::cout << " (score " << std::fixed << std::setprecision(3)
                           << r.score << ", matched " << r.matched_len
                           << "/" << line.size() << ")\n";
             }
@@ -176,8 +177,9 @@ int main(int argc, char** argv) {
             for (std::size_t idx = 0; idx < results.size(); ++idx) {
                 const auto& r = results[idx];
                 std::string utf8 = sime::ustr::FromU32(r.text);
-                std::cout << "  [" << idx << "] " << utf8
-                          << " (score " << std::fixed << std::setprecision(3)
+                std::cout << "  [" << idx << "] " << utf8;
+                if (!r.pinyin.empty()) std::cout << " [" << r.pinyin << "]";
+                std::cout << " (score " << std::fixed << std::setprecision(3)
                           << r.score << ")\n";
             }
         }

@@ -22,7 +22,6 @@ add_library(sime_core
     ${NEW_SRC_DIR}/interpret.cc
     ${NEW_SRC_DIR}/dict.cc
     ${NEW_SRC_DIR}/nine.cc
-    ${NEW_SRC_DIR}/context.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})

@@ -35,9 +35,9 @@ construct: $(OUT)/raw.3gram sime.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.3gram \
 		-n 3 \
 		-o $(OUT)/raw.slm \
-		-c 0,2,4 \
+		-c 0,5,10 \
 		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),2000000,3000000
+		-r $$(($(VOCAB) + 3)),2000000,2000000
 
 # Step 5: convert pinyin dict to trie
 convert: sime.dict.txt

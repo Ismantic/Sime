@@ -167,35 +167,58 @@ void SimeEngine::updateUI(InputContext *ic) {
         return;
     }
 
-    // 特性2：preedit 显示切分后的拼音，加下划线
-    std::string segmented = sime::Interpreter::SegmentPinyin(st->preedit);
-    // Map raw cursor to segmented position: count inserted spaces
-    // Segmented string inserts spaces at syllable boundaries.
-    // Walk both strings in parallel to find the cursor mapping.
-    int segCursor = static_cast<int>(segmented.size()); // default: end
+    if (!interpreter_) {
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        return;
+    }
+
+    // Decode first, then use top candidate's pinyin for preedit display
+    std::string_view decodeInput = st->preedit;
+    if (st->cursor < st->preedit.size()) {
+        decodeInput = std::string_view(st->preedit).substr(0, st->cursor);
+    }
+    auto results = interpreter_->DecodeSentence(
+        decodeInput, static_cast<std::size_t>(*config_.nbest));
+
+    // Preedit: use first candidate's pinyin, fallback to raw input
+    std::string preedit_display;
+    if (!results.empty() && !results[0].pinyin.empty()) {
+        // Convert apostrophe-separated to space-separated for display
+        preedit_display = results[0].pinyin;
+        for (auto &ch : preedit_display) {
+            if (ch == '\'') ch = ' ';
+        }
+    } else {
+        preedit_display = std::string(decodeInput);
+    }
+
+    // Map raw cursor to preedit display position
+    int displayCursor = static_cast<int>(preedit_display.size());
     {
         std::size_t rawIdx = 0;
-        std::size_t segIdx = 0;
-        while (rawIdx < st->preedit.size() && segIdx < segmented.size()) {
+        std::size_t dispIdx = 0;
+        while (rawIdx < decodeInput.size() && dispIdx < preedit_display.size()) {
             if (rawIdx == st->cursor) {
-                segCursor = static_cast<int>(segIdx);
+                displayCursor = static_cast<int>(dispIdx);
                 break;
             }
-            // Skip spaces in segmented that don't exist in raw
-            if (segmented[segIdx] == ' ' && (rawIdx >= st->preedit.size() ||
-                st->preedit[rawIdx] != ' ')) {
-                ++segIdx;
+            if (preedit_display[dispIdx] == ' ' &&
+                (rawIdx >= decodeInput.size() || decodeInput[rawIdx] != ' ')) {
+                ++dispIdx;
                 continue;
             }
             ++rawIdx;
-            ++segIdx;
+            ++dispIdx;
         }
         if (rawIdx == st->cursor)
-            segCursor = static_cast<int>(segIdx);
+            displayCursor = static_cast<int>(dispIdx);
     }
+
     Text preeditText;
-    preeditText.append(segmented, TextFormatFlags{TextFormatFlag::Underline});
-    preeditText.setCursor(segCursor);
+    preeditText.append(preedit_display,
+                       TextFormatFlags{TextFormatFlag::Underline});
+    preeditText.setCursor(displayCursor);
 
     bool hasPreeditCap = ic->capabilityFlags().test(CapabilityFlag::Preedit);
     if (hasPreeditCap) {
@@ -206,25 +229,12 @@ void SimeEngine::updateUI(InputContext *ic) {
         panel.setPreedit(preeditText);
     }
 
-    if (!interpreter_) {
-        ic->updatePreedit();
-        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-        return;
-    }
-
     auto cl = std::make_unique<CommonCandidateList>();
     cl->setPageSize(*config_.pageSize);
     cl->setLayoutHint(CandidateLayoutHint::Horizontal);
     cl->setSelectionKey(Key::keyListFromString("1 2 3 4 5 6 7 8 9"));
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
-    // candidatesToCursor: only decode up to cursor position
-    std::string_view decodeInput = st->preedit;
-    if (st->cursor < st->preedit.size()) {
-        decodeInput = std::string_view(st->preedit).substr(0, st->cursor);
-    }
-    auto results = interpreter_->DecodeSentence(
-        decodeInput, static_cast<std::size_t>(*config_.nbest));
     std::set<std::string> seen;
     for (const auto &r : results) {
         auto text = u32ToUtf8(r.text);

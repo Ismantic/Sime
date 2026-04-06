@@ -113,7 +113,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
         bool inserted = false;
         std::string key;
 
-        for (std::size_t end = start + 1; end <= std::min(start + 6, d);
+        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d);
              ++end) {
             key.push_back(digits[end - 1]);
             auto it = digit_map_.find(key);
@@ -135,7 +135,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
                 // Two-syllable words
                 std::string key2;
                 for (std::size_t end2 = end + 1;
-                     end2 <= std::min(end + 6, d); ++end2) {
+                     end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
                     key2.push_back(digits[end2 - 1]);
                     auto it2 = digit_map_.find(key2);
                     if (it2 == digit_map_.end()) continue;
@@ -156,7 +156,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
                         // Three-syllable words
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + 6, d); ++end3) {
+                             end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
                             key3.push_back(digits[end3 - 1]);
                             auto it3 = digit_map_.find(key3);
                             if (it3 == digit_map_.end()) continue;
@@ -185,7 +185,7 @@ Interpreter::NineResult Interpreter::DecodeStream(
         // When remaining digits don't form a complete syllable,
         // try all syllables whose digit sequence starts with the tail.
         std::string tail(digits.substr(start));
-        if (tail.size() <= 6 &&
+        if (tail.size() <= MaxSyllableLen &&
             digit_map_.find(tail) == digit_map_.end()) {
             for (const auto& [dkey, units] : digit_map_) {
                 if (dkey.size() > tail.size() &&
@@ -395,7 +395,7 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
         bool inserted = false;
         std::string key;
 
-        for (std::size_t end = start + 1; end <= std::min(start + 6, d); ++end) {
+        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, d); ++end) {
             key.push_back(digits[end - 1]);
             // Find all pinyin syllables matching this digit substring
             auto it = digit_map_.find(key);
@@ -419,7 +419,7 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
                 // (e.g., "zhong" + "guo" → "中国")
                 std::string key2;
                 for (std::size_t end2 = end + 1;
-                     end2 <= std::min(end + 6, d); ++end2) {
+                     end2 <= std::min(end + MaxSyllableLen, d); ++end2) {
                     key2.push_back(digits[end2 - 1]);
                     auto it2 = digit_map_.find(key2);
                     if (it2 == digit_map_.end()) continue;
@@ -441,7 +441,7 @@ std::vector<SentenceResult> Interpreter::DecodeNine(
                         // Try third syllable for 3-char words
                         std::string key3;
                         for (std::size_t end3 = end2 + 1;
-                             end3 <= std::min(end2 + 6, d); ++end3) {
+                             end3 <= std::min(end2 + MaxSyllableLen, d); ++end3) {
                             key3.push_back(digits[end3 - 1]);
                             auto it3 = digit_map_.find(key3);
                             if (it3 == digit_map_.end()) continue;
@@ -588,6 +588,12 @@ std::vector<DecodeResult> Interpreter::DecodeUnits(
         for (const auto& word : path) {
             result.tokens.push_back(word.id);
             composed += ToText(word, units);
+            // Build pinyin
+            std::string seg = SliceToUnits(units, word.start, word.end);
+            if (!seg.empty()) {
+                if (!result.pinyin.empty()) result.pinyin += '\'';
+                result.pinyin += seg;
+            }
         }
         if (composed.empty()) {
             continue;
@@ -904,8 +910,16 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::u32string composed;
+            std::string py;
             composed.reserve(path.size() * 4);
-            for (const auto& w : path) composed += ToText(w, units);
+            for (const auto& w : path) {
+                composed += ToText(w, units);
+                std::string seg = SliceToUnits(units, w.start, w.end);
+                if (!seg.empty()) {
+                    if (!py.empty()) py += '\'';
+                    py += seg;
+                }
+            }
             if (composed.empty()) continue;
             bool dup = false;
             for (const auto& e : results)
@@ -913,8 +927,9 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
             if (!dup) {
                 SentenceResult r;
                 r.text = std::move(composed);
+                r.pinyin = std::move(py);
                 r.score = -tail[rank].score;
-                r.matched_len = total_bytes;  // full match
+                r.matched_len = total_bytes;
                 results.push_back(std::move(r));
             }
         }
@@ -924,15 +939,14 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
 
     // === Layer 2: Word/phrase candidates from BOS with distance penalty ===
     // Similar to libime: distancePenalty = unknownPenalty / 1.8
-    constexpr float_t kDistancePenaltyFactor = 3.0;
     const float_t penalty_per_unit =
-        std::abs(scorer_.UnknownPenalty()) / kDistancePenaltyFactor;
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
 
     {
 
         // Collect partial candidates from intermediate columns only.
         // Full match already handled by Layer 1.
-        constexpr std::size_t kPerPrefix = 15;
+        const std::size_t kPerPrefix = MaxPerPrefix;
         for (std::size_t col = effective_n - 1; col >= 1; --col) {
             const auto& col_states = net[col].states.GetStates();
             if (col_states.empty()) continue;
@@ -964,8 +978,16 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 if (path.empty()) continue;
 
                 std::u32string composed;
+                std::string py;
                 composed.reserve(path.size() * 4);
-                for (const auto& w : path) composed += ToText(w, units);
+                for (const auto& w : path) {
+                    composed += ToText(w, units);
+                    std::string seg = SliceToUnits(units, w.start, w.end);
+                    if (!seg.empty()) {
+                        if (!py.empty()) py += '\'';
+                        py += seg;
+                    }
+                }
                 if (composed.empty()) continue;
 
                 bool dup = false;
@@ -976,6 +998,7 @@ std::vector<SentenceResult> Interpreter::DecodeSentence(
                 if (!dup) {
                     SentenceResult r;
                     r.text = std::move(composed);
+                    r.pinyin = std::move(py);
                     r.score = adjusted;
                     r.matched_len = matched_bytes;
                     results.push_back(std::move(r));
