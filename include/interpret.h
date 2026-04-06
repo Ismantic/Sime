@@ -33,7 +33,7 @@ public:
 
     // Stream: joint decode with progressive input (digits, possibly incomplete).
     // prefix: confirmed pinyin syllables providing LM context.
-    std::vector<DecodeResult> DecodeStream(
+    std::vector<DecodeResult> DecodeNumSentence(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
@@ -42,7 +42,7 @@ public:
     // No pinyin model needed, only dict + cnt.
     // prefix: confirmed pinyin syllables providing LM context.
     // digits: remaining digit sequence to decode.
-    std::vector<DecodeResult> DecodeNum(
+    std::vector<DecodeResult> DecodeNumStr(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
