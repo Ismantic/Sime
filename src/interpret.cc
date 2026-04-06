@@ -35,7 +35,7 @@ char Interpreter::LetterToDigit(char c) {
     }
 }
 
-std::string Interpreter::PinyinToDigits(const char* pinyin) {
+std::string Interpreter::UnitToDigits(const char* pinyin) {
     std::string result;
     for (const char* p = pinyin; *p; ++p) {
         char d = LetterToDigit(static_cast<char>(
@@ -54,7 +54,7 @@ void Interpreter::BuildDigitMap() {
     for (std::size_t i = 0; i < count; ++i) {
         Unit unit(entries[i].value);
         if (!unit.Full()) continue;
-        std::string digits = PinyinToDigits(entries[i].text);
+        std::string digits = UnitToDigits(entries[i].text);
         if (!digits.empty()) {
             digit_map_[digits].push_back(unit);
         }

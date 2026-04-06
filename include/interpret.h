@@ -111,7 +111,7 @@ private:
     void BuildDigitMap();
 
     static char LetterToDigit(char c);
-    static std::string PinyinToDigits(const char* pinyin);
+    static std::string UnitToDigits(const char* pinyin);
 
 private:
     Trie trie_;
