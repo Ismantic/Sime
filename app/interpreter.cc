@@ -110,23 +110,7 @@ int main(int argc, char** argv) {
         }
 
         if (opts.stream_mode) {
-            auto nine_result = interpreter.DecodeStream(line, {}, opts.num);
-            // Pinyin candidates
-            if (!nine_result.pinyin.empty()) {
-                std::cout << "  pinyin:";
-                for (const auto& p : nine_result.pinyin) {
-                    std::string py;
-                    for (const auto& u : p.units) {
-                        if (!py.empty()) py += '\'';
-                        const char* syl = sime::UnitData::Decode(u);
-                        if (syl) py += syl;
-                    }
-                    std::cout << " " << py << "(" << p.cnt << ")";
-                }
-                std::cout << "\n";
-            }
-            // Hanzi candidates
-            const auto& results = nine_result.hanzi;
+            auto results = interpreter.DecodeStream(line, {}, opts.num);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;

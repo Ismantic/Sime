@@ -172,51 +172,27 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     }
 
     auto d = jstringToString(env, digits);
-    auto nine = g_interpreter->DecodeStream(
+    auto results = g_interpreter->DecodeStream(
         d, prefix, static_cast<std::size_t>(num));
 
-    const auto& hanzi = nine.hanzi;
-    const auto& pinyin = nine.pinyin;
-    const jsize hc = static_cast<jsize>(hanzi.size());
-    const jsize pc = static_cast<jsize>(pinyin.size());
-    // Format: [hanzi_count, ...hanzi pairs..., best_pinyin, ...candidate pairs...]
-    const jsize total = 1 + hc * 2 + 1 + pc * 2;
+    const jsize hc = static_cast<jsize>(results.size());
+    // Format: [count, ...triplets of (text, pinyin, matched_len)...]
+    const jsize total = 1 + hc * 3;
 
     auto arr = env->NewObjectArray(total, stringClass, nullptr);
     jsize idx = 0;
 
-    // [0] hanzi count
     env->SetObjectArrayElement(arr, idx++,
         env->NewStringUTF(std::to_string(hc).c_str()));
 
-    // Hanzi pairs
     for (jsize i = 0; i < hc; ++i) {
-        auto text = u32ToUtf8(hanzi[i].text);
-        auto lenStr = std::to_string(hanzi[i].matched_len);
+        auto text = u32ToUtf8(results[i].text);
         env->SetObjectArrayElement(arr, idx++,
                                    env->NewStringUTF(text.c_str()));
         env->SetObjectArrayElement(arr, idx++,
-                                   env->NewStringUTF(lenStr.c_str()));
-    }
-
-    // best_pinyin (beam search best parse)
-    env->SetObjectArrayElement(arr, idx++,
-        env->NewStringUTF(nine.best_pinyin.c_str()));
-
-    // Pinyin candidate pairs (exact matches only)
-    for (jsize i = 0; i < pc; ++i) {
-        std::string py;
-        for (const auto& unit : pinyin[i].units) {
-            const char* syl = sime::UnitData::Decode(unit);
-            if (syl) {
-                if (!py.empty()) py += ' ';
-                py += syl;
-            }
-        }
+                                   env->NewStringUTF(results[i].pinyin.c_str()));
         env->SetObjectArrayElement(arr, idx++,
-                                   env->NewStringUTF(py.c_str()));
-        env->SetObjectArrayElement(arr, idx++,
-            env->NewStringUTF(std::to_string(pinyin[i].cnt).c_str()));
+            env->NewStringUTF(std::to_string(results[i].matched_len).c_str()));
     }
 
     return arr;
