@@ -546,10 +546,10 @@ std::vector<DecodeResult> Interpreter::DecodeText(
             units.insert(units.end(), chunk.begin(), chunk.end());
         }
     }
-    return DecodeUnits(units, num);
+    return Decode(units, num);
 }
 
-std::vector<DecodeResult> Interpreter::DecodeUnits(
+std::vector<DecodeResult> Interpreter::Decode(
     const std::vector<Unit>& units,
     std::size_t num) const {
     std::vector<DecodeResult> results;
