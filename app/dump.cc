@@ -1,5 +1,5 @@
 // Dump n-gram scores from sime.cnt to text files.
-// Usage: sime-dump --dict <trie.bin> --cnt <model.bin> --out <prefix>
+// Usage: sime-dump --trie <trie.bin> --cnt <model.bin> --out <prefix>
 // Produces: prefix.1 (unigram), prefix.2 (bigram), prefix.3 (trigram)
 
 #include "score.h"
@@ -30,11 +30,11 @@ std::string TokenToText(const sime::Trie& trie, sime::TokenID id) {
 } // namespace
 
 int main(int argc, char* argv[]) {
-    std::filesystem::path dict_path, model_path, out_prefix;
+    std::filesystem::path trie_path, model_path, out_prefix;
 
     for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--dict") == 0 && i + 1 < argc) {
-            dict_path = argv[++i];
+        if (std::strcmp(argv[i], "--trie") == 0 && i + 1 < argc) {
+            trie_path = argv[++i];
         } else if (std::strcmp(argv[i], "--cnt") == 0 && i + 1 < argc) {
             model_path = argv[++i];
         } else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
@@ -42,14 +42,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (dict_path.empty() || model_path.empty() || out_prefix.empty()) {
-        std::cerr << "Usage: sime-dump --dict <trie.bin> --cnt <model.bin> --out <prefix>\n";
+    if (trie_path.empty() || model_path.empty() || out_prefix.empty()) {
+        std::cerr << "Usage: sime-dump --trie <trie.bin> --cnt <model.bin> --out <prefix>\n";
         return 1;
     }
 
     sime::Trie trie;
-    if (!trie.Load(dict_path)) {
-        std::cerr << "Failed to load trie: " << dict_path << "\n";
+    if (!trie.Load(trie_path)) {
+        std::cerr << "Failed to load trie: " << trie_path << "\n";
         return 1;
     }
 

@@ -289,10 +289,10 @@ void RunImpl(const CountOptions& options) {
     runs.reserve(16);
 
     TokenMap token_map;
-    if (!LoadTokenMap(options.dict, token_map)) {
-        throw std::runtime_error("Failed to load dict: " + options.dict.string());
+    if (!LoadTokenMap(options.trie, token_map)) {
+        throw std::runtime_error("Failed to load trie: " + options.trie.string());
     }
-    std::cerr << "loaded " << token_map.size() << " tokens from dict\n";
+    std::cerr << "loaded " << token_map.size() << " tokens from trie\n";
 
     for (const auto& input : options.inputs) {
         std::cerr << "processing " << input.string() << " ...\n";

@@ -8,9 +8,9 @@
 
 namespace sime {
 
-Interpreter::Interpreter(const std::filesystem::path& dict_path,
+Interpreter::Interpreter(const std::filesystem::path& trie_path,
                          const std::filesystem::path& model_path) {
-    if (!trie_.Load(dict_path)) {
+    if (!trie_.Load(trie_path)) {
         return;
     }
     if (!scorer_.Load(model_path)) {

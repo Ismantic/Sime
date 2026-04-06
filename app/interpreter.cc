@@ -12,7 +12,7 @@
 namespace {
 
 struct Options {
-    std::filesystem::path dict;
+    std::filesystem::path trie;
     std::filesystem::path cnt;
     std::filesystem::path userdict;
     std::filesystem::path nine_model;
@@ -24,10 +24,10 @@ struct Options {
 
 void PrintUsage() {
     std::cerr << "Usage:\n"
-              << "  sime-interpreter --dict <trie> --cnt <model> [options]\n"
+              << "  sime-interpreter --trie <trie> --cnt <model> [options]\n"
               << "  sime-interpreter --nine <nine_model> [options]\n"
               << "\nOptions:\n"
-              << "  --dict, -d <path>   Interpreter trie dict\n"
+              << "  --trie, -d <path>   Interpreter trie\n"
               << "  --cnt,  -c <path>   Interpreter LM model\n"
               << "  --user, -u <path>   User dictionary\n"
               << "  -n <N>              Number of results (default 5)\n"
@@ -39,8 +39,8 @@ void PrintUsage() {
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if ((arg == "--dict" || arg == "-d") && i + 1 < argc) {
-            opts.dict = argv[++i];
+        if ((arg == "--trie" || arg == "-d") && i + 1 < argc) {
+            opts.trie = argv[++i];
         } else if ((arg == "--cnt" || arg == "-c") && i + 1 < argc) {
             opts.cnt = argv[++i];
         } else if ((arg == "--user" || arg == "-u") && i + 1 < argc) {
@@ -63,7 +63,7 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    if (!opts.nine && (opts.dict.empty() || opts.cnt.empty())) {
+    if (!opts.nine && (opts.trie.empty() || opts.cnt.empty())) {
         PrintUsage();
         return false;
     }
@@ -121,12 +121,12 @@ int main(int argc, char** argv) {
     }
 
     // Interpreter mode
-    sime::Interpreter interpreter(opts.dict, opts.cnt);
+    sime::Interpreter interpreter(opts.trie, opts.cnt);
     if (!interpreter.Ready()) {
-        std::cerr << "Load failed: " << opts.dict << ", " << opts.cnt << "\n";
+        std::cerr << "Load failed: " << opts.trie << ", " << opts.cnt << "\n";
         return 1;
     }
-    std::cout << "Dict: " << opts.dict << "\n"
+    std::cout << "Trie: " << opts.trie << "\n"
               << "Model: " << opts.cnt << "\n";
 
     if (!opts.userdict.empty()) {

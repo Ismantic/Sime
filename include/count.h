@@ -26,7 +26,7 @@ struct CountOptions {
     std::filesystem::path swap;
     std::vector<std::filesystem::path> inputs;
     std::filesystem::path output;
-    std::filesystem::path dict;
+    std::filesystem::path trie;
 };
 
 void RunCount(const CountOptions& option);

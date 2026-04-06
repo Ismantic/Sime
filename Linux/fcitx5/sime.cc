@@ -94,10 +94,10 @@ void SimeEngine::reloadConfig() {
 
 void SimeEngine::initInterpreter() {
     interpreter_ = std::make_unique<sime::Interpreter>(
-        *config_.dictPath, *config_.lmPath);
+        *config_.triePath, *config_.lmPath);
     if (!interpreter_->Ready()) {
         FCITX_ERROR() << "Sime: failed to load resources"
-                      << " dict=" << *config_.dictPath
+                      << " trie=" << *config_.triePath
                       << " lm=" << *config_.lmPath;
         interpreter_.reset();
     } else {

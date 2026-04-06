@@ -18,7 +18,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cases", default="cases.1.txt")
     parser.add_argument("--exe", default="../build/sime-interpreter")
-    parser.add_argument("--dict", default="output/sime.dict")
+    parser.add_argument("--trie", default="output/sime.trie")
     parser.add_argument("--cnt", default="output/sime.cnt")
     parser.add_argument("--num", action="store_true", help="num-key mode")
     parser.add_argument("--errors", type=int, default=10)
@@ -48,7 +48,7 @@ def main():
           file=sys.stderr)
 
     # Run Sime decoder
-    cmd = [args.exe, "--dict", args.dict, "--cnt", args.cnt, "-n", "1"]
+    cmd = [args.exe, "--trie", args.trie, "--cnt", args.cnt, "-n", "1"]
     if args.num:
         cmd.extend(["--num", "-s"])
 

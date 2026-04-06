@@ -8,7 +8,7 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "sime-count -n <num> -d <dict> -o <output> -s <swapfile> "
+    std::cerr << "sime-count -n <num> -d <trie> -o <output> -s <swapfile> "
                  "[-c count_size] inputfiles...\n";
 }
 
@@ -21,7 +21,7 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
         {"output", required_argument, nullptr, 'o'},
         {"swap", required_argument, nullptr, 's'},
         {"count", required_argument, nullptr, 'c'},
-        {"dict", required_argument, nullptr, 'd'},
+        {"trie", required_argument, nullptr, 'd'},
         {nullptr, 0, nullptr, 0}
     };
 
@@ -40,7 +40,7 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
             opts.count_max = static_cast<std::size_t>(std::stoul(optarg));
             break;
         case 'd':
-            opts.dict = optarg;
+            opts.trie = optarg;
             break;
         default:
             PrintUsage();
@@ -53,7 +53,7 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
     }
 
     if (opts.num < 1 || opts.num > 3 ||
-        opts.dict.empty() || opts.output.empty() || opts.swap.empty() ||
+        opts.trie.empty() || opts.output.empty() || opts.swap.empty() ||
         opts.count_max < 1024 || opts.inputs.empty()) {
         PrintUsage();
         std::exit(1);
