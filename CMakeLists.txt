@@ -41,8 +41,8 @@ target_link_libraries(sime-converter PRIVATE sime_core)
 add_executable(sime-compact ${NEW_ROOT}/app/compact.cc)
 target_link_libraries(sime-compact PRIVATE sime_core)
 
-add_executable(ime_interpreter ${NEW_ROOT}/app/interpreter.cc)
-target_link_libraries(ime_interpreter PRIVATE sime_core)
+add_executable(sime-interpreter ${NEW_ROOT}/app/interpreter.cc)
+target_link_libraries(sime-interpreter PRIVATE sime_core)
 
 add_executable(sime-dump ${NEW_ROOT}/app/dump.cc)
 target_link_libraries(sime-dump PRIVATE sime_core)
@@ -54,7 +54,7 @@ set(_sime_targets
     sime-converter
     sime-compact
     sime-dump
-    ime_interpreter
+    sime-interpreter
 )
 
 foreach(target_name IN LISTS _sime_targets)
