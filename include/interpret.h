@@ -60,13 +60,13 @@ public:
     // No pinyin model needed, only dict + cnt.
     // prefix: confirmed pinyin syllables providing LM context.
     // digits: remaining digit sequence to decode.
-    std::vector<SentenceResult> DecodeNine(
+    std::vector<SentenceResult> DecodeNum(
         std::string_view digits,
         const std::vector<Unit>& prefix = {},
         std::size_t num = 18) const;
 
     // Original: decode full input, return n-best
-    std::vector<DecodeResult> DecodeText(std::string_view input,
+    std::vector<DecodeResult> DecodeStr(std::string_view input,
                                          std::size_t num = 5) const;
 
     std::vector<DecodeResult> Decode(const std::vector<Unit>& units,
