@@ -81,9 +81,6 @@ public:
     std::vector<SentenceResult> DecodeSentence(
         std::string_view input, std::size_t num = 18) const;
 
-    // Segment raw pinyin into syllables separated by spaces.
-    // e.g. "zenmele" → "zen me le"
-    static std::string SegmentPinyin(std::string_view input);
 
 private:
     struct Link {
