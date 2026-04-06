@@ -25,7 +25,7 @@ struct DecodeResult {
 class Interpreter {
 public:
     Interpreter() = default;
-    Interpreter(const std::filesystem::path& dict_path,
+    Interpreter(const std::filesystem::path& trie_path,
                 const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }

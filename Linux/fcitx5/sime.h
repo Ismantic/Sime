@@ -57,8 +57,8 @@ private:
     struct Config : public Configuration {
         Option<int> pageSize{this, "PageSize", "每页候选数", 9};
         Option<int> nbest{this, "NBest", "候选总数", 36};
-        Option<std::string> dictPath{this, "DictPath", "词典路径",
-                                     "/usr/share/sime/trie.bin"};
+        Option<std::string> triePath{this, "TriePath", "Trie路径",
+                                      "/usr/share/sime/trie.bin"};
         Option<std::string> lmPath{this, "LMPath", "语言模型路径",
                                    "/usr/share/sime/model.bin"};
         Option<std::string> userDictPath{this, "UserDictPath", "自定义词表路径",
