@@ -120,7 +120,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
     auto arr = env->NewObjectArray(
         static_cast<jsize>(results.size() * 2), stringClass, nullptr);
     for (std::size_t i = 0; i < results.size(); ++i) {
-        auto text = u32ToUtf8(results[i].text);
+        const auto& text = results[i].text;
         auto lenStr = std::to_string(results[i].matched_len);
         env->SetObjectArrayElement(arr, static_cast<jsize>(i * 2),
                                    env->NewStringUTF(text.c_str()));
@@ -186,7 +186,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
         env->NewStringUTF(std::to_string(hc).c_str()));
 
     for (jsize i = 0; i < hc; ++i) {
-        auto text = u32ToUtf8(results[i].text);
+        const auto& text = results[i].text;
         env->SetObjectArrayElement(arr, idx++,
                                    env->NewStringUTF(text.c_str()));
         env->SetObjectArrayElement(arr, idx++,

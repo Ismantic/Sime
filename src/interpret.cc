@@ -221,21 +221,21 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
     // --- Collect hanzi results ---
     // Helper to extract text from a path
-    auto extract = [&](const std::vector<Link>& path) -> std::u32string {
-        std::u32string text;
+    auto extract = [&](const std::vector<Link>& path) -> std::string {
+        std::u32string u32;
         for (const auto& link : path) {
             if (link.id == SentenceEnd || link.id == ScoreNotToken ||
                 link.id == NotToken) continue;
             const char32_t* chars = trie_.TokenAt(link.id);
             if (!chars) continue;
             for (std::size_t i = 0; chars[i] != 0; ++i) {
-                text.push_back(chars[i]);
+                u32.push_back(chars[i]);
             }
         }
-        return text;
+        return ustr::FromU32(u32);
     };
 
-    auto add_result = [&](const std::u32string& text, float_t score,
+    auto add_result = [&](const std::string& text, float_t score,
                           std::size_t matched) -> bool {
         if (text.empty()) return false;
         for (const auto& existing : results) {
@@ -432,16 +432,17 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         auto path = Backtrace(tail_states[rank], d + 1);
         if (path.empty()) continue;
 
-        std::u32string text;
+        std::u32string u32;
         for (const auto& link : path) {
             if (link.id == ScoreNotToken || link.id == NotToken) continue;
             const char32_t* chars = trie_.TokenAt(link.id);
             if (!chars) continue;
             for (std::size_t i = 0; chars[i] != 0; ++i) {
-                text.push_back(chars[i]);
+                u32.push_back(chars[i]);
             }
         }
-        if (text.empty()) continue;
+        if (u32.empty()) continue;
+        std::string text = ustr::FromU32(u32);
 
         bool dup = false;
         for (const auto& existing : results) {
@@ -538,7 +539,7 @@ std::vector<DecodeResult> Interpreter::Decode(
         if (composed.empty()) {
             continue;
         }
-        result.text = std::move(composed);
+        result.text = ustr::FromU32(composed);
         bool duplicate = false;
         for (const auto& existing : results) {
             if (existing.text == result.text) {
@@ -861,12 +862,13 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
                 }
             }
             if (composed.empty()) continue;
+            std::string text_utf8 = ustr::FromU32(composed);
             bool dup = false;
             for (const auto& e : results)
-                if (e.text == composed) { dup = true; break; }
+                if (e.text == text_utf8) { dup = true; break; }
             if (!dup) {
                 DecodeResult r;
-                r.text = std::move(composed);
+                r.text = std::move(text_utf8);
                 r.pinyin = std::move(py);
                 r.score = -tail[rank].score;
                 r.matched_len = total_bytes;
@@ -929,15 +931,16 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
                     }
                 }
                 if (composed.empty()) continue;
+                std::string text_utf8 = ustr::FromU32(composed);
 
                 bool dup = false;
                 for (const auto& e : results)
-                    if (e.text == composed && e.matched_len == matched_bytes) {
+                    if (e.text == text_utf8 && e.matched_len == matched_bytes) {
                         dup = true; break;
                     }
                 if (!dup) {
                     DecodeResult r;
-                    r.text = std::move(composed);
+                    r.text = std::move(text_utf8);
                     r.pinyin = std::move(py);
                     r.score = adjusted;
                     r.matched_len = matched_bytes;
@@ -967,7 +970,7 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
                                               : total_bytes;
 
             for (std::size_t idx : matches) {
-                const auto& text = dict_.TextAt(idx);
+                std::string text = ustr::FromU32(dict_.TextAt(idx));
 
                 // Remove duplicate if already in results
                 for (auto it2 = results.begin(); it2 != results.end(); ++it2) {

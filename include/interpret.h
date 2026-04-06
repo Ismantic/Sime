@@ -16,7 +16,7 @@
 namespace sime {
 
 struct DecodeResult {
-    std::u32string text;
+    std::string text;            // UTF-8
     std::string pinyin;          // segmented pinyin (e.g. "ni'hao")
     float_t score = 0.0;        // larger is better (negative log probability negated)
     std::size_t matched_len = 0; // bytes of input consumed (0 = full match)

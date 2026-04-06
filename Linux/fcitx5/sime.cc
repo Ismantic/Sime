@@ -183,7 +183,7 @@ void SimeEngine::updateUI(InputContext *ic) {
 
     // Decode only the remaining (unselected) input
     std::string rem = st->remaining();
-    std::vector<sime::SentenceResult> results;
+    std::vector<sime::DecodeResult> results;
     if (!rem.empty()) {
         results = interpreter_->DecodeSentence(
             rem, static_cast<std::size_t>(*config_.nbest));
@@ -260,7 +260,7 @@ void SimeEngine::updateUI(InputContext *ic) {
 
     std::set<std::string> seen;
     for (const auto &r : results) {
-        auto text = u32ToUtf8(r.text);
+        const auto& text = r.text;
         if (seen.insert(text).second) {
             cl->append<SimeCandidateWord>(this, text, r.pinyin, r.matched_len);
         }
