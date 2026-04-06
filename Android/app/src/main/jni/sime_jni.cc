@@ -121,7 +121,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
         static_cast<jsize>(results.size() * 2), stringClass, nullptr);
     for (std::size_t i = 0; i < results.size(); ++i) {
         const auto& text = results[i].text;
-        auto lenStr = std::to_string(results[i].matched_len);
+        auto lenStr = std::to_string(results[i].cnt);
         env->SetObjectArrayElement(arr, static_cast<jsize>(i * 2),
                                    env->NewStringUTF(text.c_str()));
         env->SetObjectArrayElement(arr, static_cast<jsize>(i * 2 + 1),
@@ -190,9 +190,9 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
         env->SetObjectArrayElement(arr, idx++,
                                    env->NewStringUTF(text.c_str()));
         env->SetObjectArrayElement(arr, idx++,
-                                   env->NewStringUTF(results[i].pinyin.c_str()));
+                                   env->NewStringUTF(results[i].units.c_str()));
         env->SetObjectArrayElement(arr, idx++,
-            env->NewStringUTF(std::to_string(results[i].matched_len).c_str()));
+            env->NewStringUTF(std::to_string(results[i].cnt).c_str()));
     }
 
     return arr;

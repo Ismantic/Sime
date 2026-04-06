@@ -16,10 +16,10 @@
 namespace sime {
 
 struct DecodeResult {
-    std::string text;            // UTF-8
-    std::string pinyin;          // segmented pinyin (e.g. "ni'hao")
-    float_t score = 0.0;        // larger is better (negative log probability negated)
-    std::size_t matched_len = 0; // bytes of input consumed (0 = full match)
+    std::string text;        // UTF-8 hanzi
+    std::string units;       // segmented pinyin (e.g. "ni'hao")
+    float_t score = 0.0;    // larger is better (negative log probability negated)
+    std::size_t cnt = 0;     // bytes of input consumed (0 = full match)
 };
 
 class Interpreter {

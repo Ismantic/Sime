@@ -244,7 +244,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         DecodeResult sr;
         sr.text = text;
         sr.score = score;
-        sr.matched_len = matched;
+        sr.cnt = matched;
         results.push_back(std::move(sr));
         return true;
     };
@@ -453,7 +453,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         DecodeResult sr;
         sr.text = std::move(text);
         sr.score = -tail_states[rank].score;
-        sr.matched_len = d;
+        sr.cnt = d;
         results.push_back(std::move(sr));
     }
 
@@ -532,8 +532,8 @@ std::vector<DecodeResult> Interpreter::Decode(
             // Build pinyin
             std::string seg = SliceToUnits(units, word.start, word.end);
             if (!seg.empty()) {
-                if (!result.pinyin.empty()) result.pinyin += '\'';
-                result.pinyin += seg;
+                if (!result.units.empty()) result.units += '\'';
+                result.units += seg;
             }
         }
         if (composed.empty()) {
@@ -869,9 +869,9 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
             if (!dup) {
                 DecodeResult r;
                 r.text = std::move(text_utf8);
-                r.pinyin = std::move(py);
+                r.units = std::move(py);
                 r.score = -tail[rank].score;
-                r.matched_len = total_bytes;
+                r.cnt = total_bytes;
                 results.push_back(std::move(r));
             }
         }
@@ -935,15 +935,15 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
 
                 bool dup = false;
                 for (const auto& e : results)
-                    if (e.text == text_utf8 && e.matched_len == matched_bytes) {
+                    if (e.text == text_utf8 && e.cnt == matched_bytes) {
                         dup = true; break;
                     }
                 if (!dup) {
                     DecodeResult r;
                     r.text = std::move(text_utf8);
-                    r.pinyin = std::move(py);
+                    r.units = std::move(py);
                     r.score = adjusted;
-                    r.matched_len = matched_bytes;
+                    r.cnt = matched_bytes;
                     results.push_back(std::move(r));
                 }
             }
@@ -974,7 +974,7 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
 
                 // Remove duplicate if already in results
                 for (auto it2 = results.begin(); it2 != results.end(); ++it2) {
-                    if (it2->text == text && it2->matched_len == matched_bytes) {
+                    if (it2->text == text && it2->cnt == matched_bytes) {
                         results.erase(it2);
                         if (it2 - results.begin() < static_cast<std::ptrdiff_t>(layer1_size))
                             --layer1_size;
@@ -985,7 +985,7 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
                 DecodeResult r;
                 r.text = text;
                 r.score = 1e9;  // always top
-                r.matched_len = matched_bytes;
+                r.cnt = matched_bytes;
                 results.insert(results.begin(), std::move(r));
                 ++layer1_size;
             }
