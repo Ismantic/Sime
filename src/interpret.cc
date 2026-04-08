@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <iostream>
 
 namespace sime {
 
@@ -523,8 +524,126 @@ void Interpreter::PruneNode(std::vector<Link>& edges) const {
 }
 
 void Interpreter::Process(std::vector<Node>& net) const {
+    // Debug tokens: 以=436 已=1888 刚=759 港方=136945 防疫=203512
+    constexpr bool kDebug = false;
+    constexpr TokenID kDebugTokens[] = {436, 1888, 759, 136945, 203512};
+    constexpr const char* kDebugNames[] = {"以", "已", "刚", "港方", "防疫"};
+    constexpr std::size_t kDebugCount = 5;
+
+    auto debugName = [&](TokenID id) -> const char* {
+        if (!kDebug) return nullptr;
+        for (std::size_t i = 0; i < kDebugCount; ++i) {
+            if (kDebugTokens[i] == id) return kDebugNames[i];
+        }
+        return nullptr;
+    };
+
+    // Helper: check if token 436 (以) is in backtrace chain of a state
+    auto hasTokenInChain = [](const State& st, TokenID target) -> bool {
+        const State* s = &st;
+        while (s && s->backtrace_state) {
+            if (s->backtrace_token == target) return true;
+            s = s->backtrace_state;
+        }
+        return false;
+    };
+
     for (std::size_t col = 0; col < net.size(); ++col) {
         auto& column = net[col];
+
+        if (kDebug) {
+            // Log edges at this column for debug tokens
+            for (const auto& word : column.es) {
+                auto name = debugName(word.id);
+                if (name) {
+                    std::cerr << "[DBG] col=" << col << " edge: "
+                              << name << "(id=" << word.id
+                              << ") span=[" << word.start << "," << word.end << ")\n";
+                }
+            }
+            // Log states at this column
+            auto states = column.states.GetStates();
+            if (!states.empty()) {
+                std::cerr << "[DBG] col=" << col << " has " << states.size() << " states\n";
+                std::size_t show_limit = std::min<std::size_t>(states.size(), 5);
+                for (std::size_t i = 0; i < show_limit; ++i) {
+                    auto bname = debugName(states[i].backtrace_token);
+                    std::cerr << "  [" << i << "] score=" << states[i].score
+                              << " pos=(" << states[i].pos.level
+                              << "," << states[i].pos.index << ")"
+                              << " via=" << (bname ? bname : std::to_string(states[i].backtrace_token).c_str())
+                              << "\n";
+                }
+
+                // Per-column: count states with 以(436) in backtrace chain
+                std::size_t yi_count = 0;
+                float_t yi_best = 1e30;
+                float_t worst_score = 0;
+                for (const auto& st : states) {
+                    if (st.score > worst_score) worst_score = st.score;
+                    if (hasTokenInChain(st, 436)) {
+                        ++yi_count;
+                        if (st.score < yi_best) yi_best = st.score;
+                    }
+                }
+                if (yi_count > 0) {
+                    std::cerr << "  [以-TRACK] col=" << col << " 以-paths alive: "
+                              << yi_count << " best_score=" << yi_best
+                              << " worst_in_col=" << worst_score
+                              << " total_states=" << states.size() << "\n";
+                    // Show all 以-paths at col 8 and 9 (where it's about to die)
+                    if (col >= 8) {
+                        for (std::size_t si = 0; si < states.size(); ++si) {
+                            if (hasTokenInChain(states[si], 436)) {
+                                std::cerr << "    [以-detail] rank=" << si
+                                          << " score=" << states[si].score
+                                          << " pos=(" << states[si].pos.level
+                                          << "," << states[si].pos.index << ")"
+                                          << " via=" << states[si].backtrace_token
+                                          << " tokens:";
+                                std::vector<TokenID> toks;
+                                const State* ss = &states[si];
+                                while (ss && ss->backtrace_state) {
+                                    toks.push_back(ss->backtrace_token);
+                                    ss = ss->backtrace_state;
+                                }
+                                for (auto rit = toks.rbegin(); rit != toks.rend(); ++rit) {
+                                    auto nm = debugName(*rit);
+                                    if (nm) std::cerr << " " << nm;
+                                    else std::cerr << " " << *rit;
+                                }
+                                std::cerr << "\n";
+                            }
+                        }
+                    }
+                } else if (col >= 3) {
+                    std::cerr << "  [以-TRACK] col=" << col << " *** 以-paths: NONE (pruned!) ***"
+                              << " worst_in_col=" << worst_score
+                              << " total_states=" << states.size() << "\n";
+                }
+
+                // At last column, backtrace all states to show full paths
+                if (col == net.size() - 1) {
+                    for (std::size_t i = 0; i < states.size(); ++i) {
+                        std::cerr << "  path[" << i << "] score=" << states[i].score << " tokens:";
+                        // Collect backtrace tokens
+                        std::vector<TokenID> tokens;
+                        const State* s = &states[i];
+                        while (s && s->backtrace_state) {
+                            tokens.push_back(s->backtrace_token);
+                            s = s->backtrace_state;
+                        }
+                        for (auto it2 = tokens.rbegin(); it2 != tokens.rend(); ++it2) {
+                            auto n = debugName(*it2);
+                            if (n) std::cerr << " " << n;
+                            else std::cerr << " " << *it2;
+                        }
+                        std::cerr << "\n";
+                    }
+                }
+            }
+        }
+
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
             const auto& value = *it;
             for (const auto& word : column.es) {
@@ -532,6 +651,20 @@ void Interpreter::Process(std::vector<Node>& net) const {
                 float_t step = scorer_.ScoreMove(value.pos, word.id, next_pos);
                 scorer_.Back(next_pos);
                 float_t next_cost = value.score + step;
+
+                if (kDebug) {
+                    auto name = debugName(word.id);
+                    auto prev_name = debugName(value.backtrace_token);
+                    if (name) {
+                        std::cerr << "[DBG] col=" << col << " transition: "
+                                  << (prev_name ? prev_name : "?")
+                                  << " -> " << name
+                                  << " step=" << step
+                                  << " total=" << next_cost
+                                  << " -> col " << word.end << "\n";
+                    }
+                }
+
                 State next(next_cost, word.end, next_pos, &value, word.id);
                 net[word.end].states.Insert(next);
             }

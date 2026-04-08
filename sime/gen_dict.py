@@ -58,7 +58,7 @@ def main():
     freq = {}
     for line in open(args.cnt):
         parts = line.rstrip("\n").split("\t")
-        if len(parts) >= 2:
+        if len(parts) >= 2 and parts[0] and parts[1].isdigit():
             freq[parts[0]] = int(parts[1])
 
     print(f"corpus tokens: {len(freq)}", file=sys.stderr)

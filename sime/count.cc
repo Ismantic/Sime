@@ -32,12 +32,12 @@ int main(int argc, char* argv[]) {
         size_t i = 0;
         size_t n = line.size();
         while (i < n) {
-            // skip spaces
-            while (i < n && line[i] == ' ') ++i;
+            // skip whitespace
+            while (i < n && (line[i] == ' ' || line[i] == '\t' || line[i] == '\r')) ++i;
             if (i >= n) break;
             // find token end
             size_t j = i;
-            while (j < n && line[j] != ' ') ++j;
+            while (j < n && line[j] != ' ' && line[j] != '\t' && line[j] != '\r') ++j;
             counts[line.substr(i, j - i)]++;
             i = j;
         }
