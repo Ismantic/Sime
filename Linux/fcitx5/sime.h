@@ -62,7 +62,7 @@ public:
                                          ""};
         // Candidates
         Option<int> pageSize{this, "PageSize", _("页候选数"), 9};
-        Option<int> nbest{this, "NBest", _("全句候选数"), 2};
+        Option<int> nbest{this, "NBest", _("额外全句数"), 0};
 
         // Preedit
         OptionWithAnnotation<PreeditMode, PreeditModeI18NAnnotation> preeditMode{
