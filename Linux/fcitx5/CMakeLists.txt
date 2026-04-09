@@ -79,7 +79,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sime-addon.conf"
 # 安装图标
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/icon/sime.svg")
     install(FILES data/icon/sime.svg
-            DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/scalable/apps")
+            DESTINATION "${FCITX5_PREFIX}/share/icons/hicolor/scalable/apps")
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/icon/sime.png")
     install(FILES data/icon/sime.png

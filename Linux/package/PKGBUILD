@@ -1,19 +1,19 @@
 pkgname=fcitx5-sime
-pkgver=2026.03.31
-pkgrel=1
+pkgver=2026.04.09
+pkgrel=5
 pkgdesc="Sime Chinese input method for Fcitx5"
 arch=("x86_64")
 url="https://github.com/Ismantic/Sime"
-license=("custom")
+license=("GPL-3.0")
 depends=("fcitx5")
 makedepends=("cmake" "gcc" "make")
-source=("sime::git+https://github.com/Ismantic/Sime"
-        "https://github.com/Ismantic/Sime/releases/download/v${pkgver}/trie.bin"
-        "https://github.com/Ismantic/Sime/releases/download/v${pkgver}/model.bin")
-sha256sums=("SKIP" "SKIP" "SKIP")
+source=()
+sha256sums=()
+
+_srcdir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 build() {
-  cmake -S "$srcdir/sime" -B "$srcdir/build" \
+  cmake -S "$_srcdir" -B "$srcdir/build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DSIME_ENABLE_FCITX5=ON
   cmake --build "$srcdir/build"
@@ -23,6 +23,6 @@ package() {
   DESTDIR="$pkgdir" cmake --install "$srcdir/build"
 
   install -dm755 "$pkgdir/usr/share/sime"
-  install -m644 "$srcdir/trie.bin"  "$pkgdir/usr/share/sime/trie.bin"
-  install -m644 "$srcdir/model.bin" "$pkgdir/usr/share/sime/model.bin"
+  install -m644 "$_srcdir/sime/output/sime.trie" "$pkgdir/usr/share/sime/sime.trie"
+  install -m644 "$_srcdir/sime/output/sime.cnt"  "$pkgdir/usr/share/sime/sime.cnt"
 }

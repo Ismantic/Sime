@@ -113,8 +113,9 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
     }
 
     auto pinyin = jstringToString(env, input);
-    auto results = g_interpreter->DecodeSentence(
-        pinyin, static_cast<std::size_t>(num));
+    auto results = g_interpreter->DecodeSentence(pinyin);
+    if (num > 0 && results.size() > static_cast<std::size_t>(num))
+        results.resize(static_cast<std::size_t>(num));
 
     // Pack as [text0, matchedLen0, text1, matchedLen1, ...]
     auto arr = env->NewObjectArray(
