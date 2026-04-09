@@ -501,10 +501,13 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // a-z: append to buffer
-    if (key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z &&
-        !key.hasModifier()) {
-        st->buffer.insert(st->cursor, 1, static_cast<char>(key.sym()));
+    // a-z / A-Z: append to buffer (like fcitx5-pinyin: isLAZ || isUAZ)
+    if ((key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z &&
+         !key.hasModifier()) ||
+        (key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
+         key.states() == KeyState::Shift)) {
+        char ch = static_cast<char>(key.sym() | 0x20); // to lowercase
+        st->buffer.insert(st->cursor, 1, ch);
         ++st->cursor;
         updateUI(ic);
         event.filterAndAccept();

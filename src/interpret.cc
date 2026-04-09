@@ -824,7 +824,8 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
     // === Layer 1: Full sentence N-best (covers all input) ===
     {
         const auto tail = net.back().states.GetStates();
-        const std::size_t full_limit = std::max<std::size_t>(num, 1);
+        // libime: 1 best + num alternatives = num+1 total full sentences
+        const std::size_t full_limit = num + 1;
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
         for (std::size_t rank = 0; rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
