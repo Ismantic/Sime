@@ -365,8 +365,9 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     }
 
     // Commit raw input (Enter by default)
+    // Like fcitx5-pinyin: commit selected hanzi + remaining raw pinyin
     if (!st->empty() && key.checkKeyList(*config_.commitRawInput)) {
-        ic->commitString(st->buffer);
+        ic->commitString(st->committedText() + st->remaining());
         resetState(ic);
         event.filterAndAccept();
         return;
@@ -394,11 +395,11 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
 
         if (!st->empty()) {
-            if (!st->selections.empty() && st->cursor <= st->selectedLength()) {
-                // Undo last selection
+            // Like fcitx5-pinyin: if cursor at selection boundary, cancel selection
+            if (!st->selections.empty() && st->cursor == st->selectedLength()) {
                 st->cancel();
                 st->cursor = st->buffer.size();
-            } else if (st->cursor > 0) {
+            } else if (st->cursor > st->selectedLength()) {
                 st->buffer.erase(st->cursor - 1, 1);
                 --st->cursor;
             }
@@ -411,9 +412,10 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // Delete: delete character after cursor
+    // Delete: delete character after cursor (only in remaining part)
     if (key.check(FcitxKey_Delete)) {
-        if (!st->empty() && st->cursor < st->buffer.size()) {
+        if (!st->empty() && st->cursor >= st->selectedLength() &&
+            st->cursor < st->buffer.size()) {
             st->buffer.erase(st->cursor, 1);
             if (st->empty())
                 resetState(ic);
@@ -473,20 +475,27 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
     }
 
-    // Left/Right: move cursor
+    // Left/Right: move cursor (like fcitx5-pinyin)
     if (!st->empty() && (key.check(FcitxKey_Left) || key.check(FcitxKey_Right))) {
-        if (key.check(FcitxKey_Left) && st->cursor > 0)
-            --st->cursor;
-        else if (key.check(FcitxKey_Right) && st->cursor < st->buffer.size())
-            ++st->cursor;
+        if (key.check(FcitxKey_Left)) {
+            // Cancel last selection if cursor is at selection boundary
+            if (st->cursor == st->selectedLength() && !st->selections.empty()) {
+                st->cancel();
+            }
+            if (st->cursor > st->selectedLength())
+                --st->cursor;
+        } else {
+            if (st->cursor < st->buffer.size())
+                ++st->cursor;
+        }
         updateUI(ic);
         event.filterAndAccept();
         return;
     }
 
-    // Home/End
+    // Home/End (like fcitx5-pinyin: Home goes to selection boundary, not 0)
     if (!st->empty() && (key.check(FcitxKey_Home) || key.check(FcitxKey_End))) {
-        st->cursor = key.check(FcitxKey_Home) ? 0 : st->buffer.size();
+        st->cursor = key.check(FcitxKey_Home) ? st->selectedLength() : st->buffer.size();
         updateUI(ic);
         event.filterAndAccept();
         return;
