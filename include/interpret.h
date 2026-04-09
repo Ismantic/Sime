@@ -37,7 +37,7 @@ public:
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
-                                             std::size_t num = 2) const;
+                                             std::size_t num = 0) const;
 
     // Num-key decode (T9/nine-key)
     std::vector<DecodeResult> DecodeNumStr(

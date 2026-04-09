@@ -193,13 +193,7 @@ void Sime::updateUI(InputContext *ic) {
     auto &panel = ic->inputPanel();
     panel.reset();
 
-    if (st->empty()) {
-        ic->updatePreedit();
-        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-        return;
-    }
-
-    if (!interpreter_) {
+    if (st->empty() || !interpreter_) {
         ic->updatePreedit();
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
         return;
@@ -211,7 +205,6 @@ void Sime::updateUI(InputContext *ic) {
     if (!rem.empty()) {
         results = interpreter_->DecodeSentence(
             rem, static_cast<std::size_t>(*config_.nbest));
-
     }
 
     // Build preedit based on mode
@@ -250,29 +243,28 @@ void Sime::updateUI(InputContext *ic) {
 
     // Compute display cursor position (maps raw buffer cursor to display)
     std::size_t sel_len = st->selectedLength();
-    int displayCursor = static_cast<int>((committed + remaining_display).size());
-    if (st->cursor >= sel_len) {
-        std::size_t raw_offset = st->cursor - sel_len;
-        std::size_t disp_offset = 0;
-        std::size_t raw_idx = 0;
-        while (raw_idx < rem.size() && disp_offset < remaining_display.size()) {
-            if (raw_idx == raw_offset) {
-                displayCursor = static_cast<int>(committed.size() + disp_offset);
-                break;
-            }
-            if (remaining_display[disp_offset] == ' ' &&
-                (raw_idx >= rem.size() || rem[raw_idx] != ' ')) {
-                ++disp_offset;
-                continue;
-            }
-            ++raw_idx;
-            ++disp_offset;
-        }
-        if (raw_idx == raw_offset) {
-            displayCursor = static_cast<int>(committed.size() + disp_offset);
-        }
-    } else {
+    int displayCursor;
+    if (st->cursor < sel_len) {
         displayCursor = static_cast<int>(committed.size());
+    } else if (st->cursor >= st->buffer.size()) {
+        displayCursor = static_cast<int>(committed.size() + remaining_display.size());
+    } else {
+        // Map raw cursor offset to display offset, skipping inserted spaces
+        std::size_t raw_offset = st->cursor - sel_len;
+        std::size_t disp = 0, raw = 0;
+        while (raw < raw_offset && disp < remaining_display.size()) {
+            if (remaining_display[disp] == ' ' && (raw >= rem.size() || rem[raw] != ' ')) {
+                ++disp;
+            } else {
+                ++raw;
+                ++disp;
+            }
+        }
+        // Skip any trailing spaces at the cursor position
+        while (disp < remaining_display.size() && remaining_display[disp] == ' ' &&
+               (raw >= rem.size() || rem[raw] != ' '))
+            ++disp;
+        displayCursor = static_cast<int>(committed.size() + disp);
     }
 
     // Build composing preedit: [committed](highlight) + [remaining pinyin](underline)
@@ -428,23 +420,15 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
 
     // Next/prev candidate (Tab/Shift+Tab by default)
     if (!st->empty() && cl) {
-        if (key.checkKeyList(*config_.nextCandidate)) {
+        int delta = 0;
+        if (key.checkKeyList(*config_.nextCandidate)) delta = 1;
+        else if (key.checkKeyList(*config_.prevCandidate)) delta = -1;
+        if (delta) {
             auto *ccl = dynamic_cast<CommonCandidateList *>(cl);
             if (ccl) {
-                int cur = ccl->cursorIndex();
-                if (cur + 1 < ccl->size())
-                    ccl->setCursorIndex(cur + 1);
-            }
-            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-            event.filterAndAccept();
-            return;
-        }
-        if (key.checkKeyList(*config_.prevCandidate)) {
-            auto *ccl = dynamic_cast<CommonCandidateList *>(cl);
-            if (ccl) {
-                int cur = ccl->cursorIndex();
-                if (cur > 0)
-                    ccl->setCursorIndex(cur - 1);
+                int next = ccl->cursorIndex() + delta;
+                if (next >= 0 && next < ccl->size())
+                    ccl->setCursorIndex(next);
             }
             ic->updateUserInterface(UserInterfaceComponent::InputPanel);
             event.filterAndAccept();
@@ -456,19 +440,16 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     if (!st->empty() && cl) {
         auto *pageable = cl->toPageable();
         if (pageable) {
+            bool handled = false;
             if (key.checkKeyList(*config_.nextPage)) {
-                if (pageable->hasNext()) {
-                    pageable->next();
-                    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-                }
-                event.filterAndAccept();
-                return;
+                if (pageable->hasNext()) pageable->next();
+                handled = true;
+            } else if (key.checkKeyList(*config_.prevPage)) {
+                if (pageable->hasPrev()) pageable->prev();
+                handled = true;
             }
-            if (key.checkKeyList(*config_.prevPage)) {
-                if (pageable->hasPrev()) {
-                    pageable->prev();
-                    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-                }
+            if (handled) {
+                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
                 event.filterAndAccept();
                 return;
             }
@@ -502,25 +483,22 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     }
 
     // a-z / A-Z: append to buffer (like fcitx5-pinyin: isLAZ || isUAZ)
-    if ((key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z &&
-         !key.hasModifier()) ||
-        (key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
-         key.states() == KeyState::Shift)) {
-        char ch = static_cast<char>(key.sym() | 0x20); // to lowercase
-        st->buffer.insert(st->cursor, 1, ch);
-        ++st->cursor;
-        updateUI(ic);
-        event.filterAndAccept();
-        return;
-    }
-
     // Apostrophe: separator (only when composing)
-    if (key.check(FcitxKey_apostrophe) && !st->empty()) {
-        st->buffer.insert(st->cursor, 1, '\'');
-        ++st->cursor;
-        updateUI(ic);
-        event.filterAndAccept();
-        return;
+    {
+        char ch = 0;
+        if ((key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z && !key.hasModifier()) ||
+            (key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
+             key.states() == KeyState::Shift))
+            ch = static_cast<char>(key.sym() | 0x20);
+        else if (key.check(FcitxKey_apostrophe) && !st->empty())
+            ch = '\'';
+        if (ch) {
+            st->buffer.insert(st->cursor, 1, ch);
+            ++st->cursor;
+            updateUI(ic);
+            event.filterAndAccept();
+            return;
+        }
     }
 
     // Punctuation
