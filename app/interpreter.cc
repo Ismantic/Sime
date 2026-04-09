@@ -160,7 +160,8 @@ int main(int argc, char** argv) {
         } else if (opts.num) {
             results = interpreter.DecodeNumStr(line, {}, opts.n);
         } else if (opts.sentence) {
-            results = interpreter.DecodeSentence(line, opts.n);
+            results = interpreter.DecodeSentence(line);
+            if (results.size() > opts.n) results.resize(opts.n);
         } else {
             results = interpreter.DecodeStr(line, opts.n);
         }

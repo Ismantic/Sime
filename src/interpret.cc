@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <unordered_set>
 
 namespace sime {
 
@@ -805,7 +806,6 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
         return results;
     }
 
-    const std::size_t max_top = num == 0 ? 1 : num;
     const std::size_t total_bytes = input.size();
 
     // Build lattice once, shared by Layer 1 and Layer 2
@@ -819,17 +819,18 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
     net[0].states.Insert(init);
     Process(net);
 
+    std::unordered_set<std::string> dedup;
+
     // === Layer 1: Full sentence N-best (covers all input) ===
     {
         const auto tail = net.back().states.GetStates();
-        const std::size_t full_limit = std::max<std::size_t>(max_top / 2, 3);
+        const std::size_t full_limit = std::max<std::size_t>(num, 1);
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
         for (std::size_t rank = 0; rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::u32string composed;
             std::string py;
-            composed.reserve(path.size() * 4);
             for (const auto& w : path) {
                 composed += ToText(w, units);
                 std::string seg = SliceToUnits(units, w.start, w.end);
@@ -840,102 +841,61 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
             }
             if (composed.empty()) continue;
             std::string text_utf8 = ustr::FromU32(composed);
-            bool dup = false;
-            for (const auto& e : results)
-                if (e.text == text_utf8) { dup = true; break; }
-            if (!dup) {
-                DecodeResult r;
-                r.text = std::move(text_utf8);
-                r.units = std::move(py);
-                r.score = -tail[rank].score;
-                r.cnt = total_bytes;
-                results.push_back(std::move(r));
-            }
+            if (!dedup.insert(text_utf8).second) continue;
+
+            DecodeResult r;
+            r.text = std::move(text_utf8);
+            r.units = std::move(py);
+            r.score = -tail[rank].score;
+            r.cnt = total_bytes;
+            results.push_back(std::move(r));
         }
     }
 
-    std::size_t layer1_size = results.size();
+    const std::size_t layer1_size = results.size();
 
-    // === Layer 2: Word/phrase candidates from BOS with distance penalty ===
-    // Similar to libime: distancePenalty = unknownPenalty / 1.8
+    // === Layer 2: Individual words/chars from lattice edges at position 0 ===
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
+    std::size_t word_count = 0;
 
-    {
+    for (const auto& edge : net[0].es) {
+        if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
 
-        // Collect partial candidates from intermediate columns only.
-        // Full match already handled by Layer 1.
-        const std::size_t kPerPrefix = MaxPerPrefix;
-        for (std::size_t col = effective_n - 1; col >= 1; --col) {
-            const auto& col_states = net[col].states.GetStates();
-            if (col_states.empty()) continue;
+        std::u32string text_u32 = ToText(edge, units);
+        if (text_u32.empty()) continue;
+        std::string text_utf8 = ustr::FromU32(text_u32);
+        if (!dedup.insert(text_utf8).second) continue;
 
-            std::size_t distance = effective_n - col;
-            float_t dist_penalty =
-                static_cast<float_t>(distance) * penalty_per_unit;
-            std::size_t matched_bytes =
-                (col <= unit_byte_end.size()) ? unit_byte_end[col - 1]
-                                              : total_bytes;
+        bool is_single_char = (text_u32.size() == 1);
+        if (!is_single_char && ++word_count > MaxPerPrefix) continue;
 
-            const std::size_t col_scan =
-                std::min<std::size_t>(kPerPrefix, col_states.size());
-            for (std::size_t rank = 0; rank < col_scan; ++rank) {
-                const auto& st = col_states[rank];
+        std::size_t distance = effective_n - edge.end;
+        float_t dist_penalty =
+            static_cast<float_t>(distance) * penalty_per_unit;
+        std::size_t matched_bytes =
+            (edge.end <= unit_byte_end.size()) ? unit_byte_end[edge.end - 1]
+                                               : total_bytes;
+        Scorer::Pos dummy{};
+        float_t score =
+            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
 
-                // Score the SentenceEnd transition from this state
-                Scorer::Pos sent_pos{};
-                float_t sent_step =
-                    scorer_.ScoreMove(st.pos, SentenceEnd, sent_pos);
-                float_t raw_score = -(st.score + sent_step);
-                float_t adjusted = raw_score - dist_penalty;
-
-                // Backtrace to get the text.
-                // Pass SIZE_MAX as end so Backtrace won't strip the last link
-                // (that stripping is for removing the SentenceEnd link,
-                //  which doesn't apply here since we're at an intermediate column).
-                auto path = Backtrace(st, SIZE_MAX);
-                if (path.empty()) continue;
-
-                std::u32string composed;
-                std::string py;
-                composed.reserve(path.size() * 4);
-                for (const auto& w : path) {
-                    composed += ToText(w, units);
-                    std::string seg = SliceToUnits(units, w.start, w.end);
-                    if (!seg.empty()) {
-                        if (!py.empty()) py += '\'';
-                        py += seg;
-                    }
-                }
-                if (composed.empty()) continue;
-                std::string text_utf8 = ustr::FromU32(composed);
-
-                bool dup = false;
-                for (const auto& e : results)
-                    if (e.text == text_utf8 && e.cnt == matched_bytes) {
-                        dup = true; break;
-                    }
-                if (!dup) {
-                    DecodeResult r;
-                    r.text = std::move(text_utf8);
-                    r.units = std::move(py);
-                    r.score = adjusted;
-                    r.cnt = matched_bytes;
-                    results.push_back(std::move(r));
-                }
-            }
-        }
+        DecodeResult r;
+        r.text = std::move(text_utf8);
+        r.units = SliceToUnits(units, edge.start, edge.end);
+        r.score = score;
+        r.cnt = matched_bytes;
+        results.push_back(std::move(r));
     }
 
-    // Sort Layer 2 (partial matches) by adjusted score.
-    // Layer 1 (full matches) already sorted by LM score and stays in front.
+    // Sort Layer 2 by score; Layer 1 stays in front.
     std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
               results.end(),
               [](const DecodeResult& a, const DecodeResult& b) {
                   return a.score > b.score;
               });
 
-    // === Dict: inject matches at the front, always top priority ===
+    // === Dict: inject user dict matches at the front ===
     if (!dict_.Empty()) {
         const std::size_t n = units.size();
         for (std::size_t len = n; len >= 1; --len) {
@@ -948,30 +908,19 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
 
             for (std::size_t idx : matches) {
                 std::string text = ustr::FromU32(dict_.TextAt(idx));
-
-                // Remove duplicate if already in results
-                for (auto it2 = results.begin(); it2 != results.end(); ++it2) {
-                    if (it2->text == text && it2->cnt == matched_bytes) {
-                        results.erase(it2);
-                        if (it2 - results.begin() < static_cast<std::ptrdiff_t>(layer1_size))
-                            --layer1_size;
-                        break;
-                    }
-                }
-
+                // Remove existing duplicate
+                std::erase_if(results, [&](const DecodeResult& e) {
+                    return e.text == text && e.cnt == matched_bytes;
+                });
                 DecodeResult r;
                 r.text = text;
-                r.score = 1e9;  // always top
+                r.score = 1e9;
                 r.cnt = matched_bytes;
                 results.insert(results.begin(), std::move(r));
-                ++layer1_size;
             }
         }
     }
 
-    if (results.size() > max_top) {
-        results.resize(max_top);
-    }
     return results;
 }
 

@@ -37,7 +37,7 @@ public:
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
-                                             std::size_t num = 18) const;
+                                             std::size_t num = 2) const;
 
     // Num-key decode (T9/nine-key)
     std::vector<DecodeResult> DecodeNumStr(
@@ -67,7 +67,7 @@ private:
     static constexpr std::size_t BeamSize = 20;
     static constexpr std::size_t MaxSyllableCnt = 6;
     static constexpr std::size_t MaxPerPrefix = 15;
-    static constexpr float_t DistancePenalty = 3.0;
+    static constexpr float_t DistancePenalty = 1.8;
 
     // Lattice building
     void InitNet(const std::vector<Unit>& units,
