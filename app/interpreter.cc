@@ -156,7 +156,8 @@ int main(int argc, char** argv) {
 
         std::vector<sime::DecodeResult> results;
         if (opts.num && opts.sentence) {
-            results = interpreter.DecodeNumSentence(line, {}, opts.n);
+            results = interpreter.DecodeNumSentence(line);
+            if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
             results = interpreter.DecodeNumStr(line, {}, opts.n);
         } else if (opts.sentence) {

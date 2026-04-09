@@ -47,7 +47,7 @@ public:
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
         const std::vector<Unit>& start = {},
-        std::size_t num = 18) const;
+        std::size_t num = 0) const;
 
 private:
     // Lattice types
@@ -99,9 +99,14 @@ private:
     static std::string UnitToNum(const char* unit);
 
     // Num-key lattice
+    using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
+    static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
     void InitNumNet(std::string_view nums, std::vector<Node>& net,
-                     bool tail_expansion) const;
+                     bool tail_expansion,
+                     NumUnitMap* unit_map = nullptr) const;
     std::string ExtractNumText(const std::vector<Link>& path) const;
+    static std::string ExtractNumUnits(const std::vector<Link>& path,
+                                         const NumUnitMap& pm);
     void InitStartState(const std::vector<Unit>& start,
                          Scorer::Pos& pos, float_t& score) const;
 
