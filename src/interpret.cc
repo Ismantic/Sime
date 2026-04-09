@@ -86,11 +86,24 @@ void Interpreter::InitStartState(const std::vector<Unit>& start,
     }
 }
 
+std::uint64_t Interpreter::NumEdgeKey(std::size_t start, std::size_t end,
+                                       TokenID id) {
+    return (static_cast<std::uint64_t>(start) << 48) |
+           (static_cast<std::uint64_t>(end) << 32) |
+           static_cast<std::uint64_t>(id);
+}
+
 void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
-                               bool tail_expansion) const {
+                               bool tail_expansion,
+                               NumUnitMap* pm) const {
     const std::size_t d = nums.size();
     net.clear();
     net.resize(d + 2);
+
+    auto record = [&](std::size_t s, std::size_t e, TokenID tid,
+                       const std::string& py) {
+        if (pm) pm->emplace(NumEdgeKey(s, e, tid), py);
+    };
 
     for (std::size_t start = 0; start < d; ++start) {
         auto& bucket = net[start].es;
@@ -106,13 +119,16 @@ void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
             for (const auto& unit : it->second) {
                 const Trie::Node* node = trie_.DoMove(trie_.Root(), unit);
                 if (!node) continue;
+                const char* py1 = UnitData::Decode(unit);
+                std::string s1 = py1 ? py1 : "";
 
                 // Single-syllable hanzi
                 std::uint32_t count = 0;
                 const std::uint32_t* tokens = trie_.GetToken(node, count);
                 for (std::uint32_t idx = 0; idx < count; ++idx) {
-                    bucket.push_back(
-                        {start, end, static_cast<TokenID>(tokens[idx])});
+                    auto tid = static_cast<TokenID>(tokens[idx]);
+                    bucket.push_back({start, end, tid});
+                    record(start, end, tid, s1);
                     inserted = true;
                 }
 
@@ -126,12 +142,14 @@ void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
                     for (const auto& unit2 : it2->second) {
                         const Trie::Node* node2 = trie_.DoMove(node, unit2);
                         if (!node2) continue;
+                        const char* py2 = UnitData::Decode(unit2);
+                        std::string s2 = s1 + "'" + (py2 ? py2 : "");
                         std::uint32_t c2 = 0;
                         const std::uint32_t* t2 = trie_.GetToken(node2, c2);
                         for (std::uint32_t idx = 0; idx < c2; ++idx) {
-                            bucket.push_back(
-                                {start, end2,
-                                 static_cast<TokenID>(t2[idx])});
+                            auto tid = static_cast<TokenID>(t2[idx]);
+                            bucket.push_back({start, end2, tid});
+                            record(start, end2, tid, s2);
                             inserted = true;
                         }
 
@@ -147,13 +165,15 @@ void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
                                 const Trie::Node* node3 =
                                     trie_.DoMove(node2, unit3);
                                 if (!node3) continue;
+                                const char* py3 = UnitData::Decode(unit3);
+                                std::string s3 = s2 + "'" + (py3 ? py3 : "");
                                 std::uint32_t c3 = 0;
                                 const std::uint32_t* t3 =
                                     trie_.GetToken(node3, c3);
                                 for (std::uint32_t idx = 0; idx < c3; ++idx) {
-                                    bucket.push_back(
-                                        {start, end3,
-                                         static_cast<TokenID>(t3[idx])});
+                                    auto tid = static_cast<TokenID>(t3[idx]);
+                                    bucket.push_back({start, end3, tid});
+                                    record(start, end3, tid, s3);
                                     inserted = true;
                                 }
                             }
@@ -176,13 +196,15 @@ void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
                             const Trie::Node* node =
                                 trie_.DoMove(trie_.Root(), unit);
                             if (!node) continue;
+                            const char* py = UnitData::Decode(unit);
+                            std::string spy = py ? py : "";
                             std::uint32_t count = 0;
                             const std::uint32_t* tokens =
                                 trie_.GetToken(node, count);
                             for (std::uint32_t idx = 0; idx < count; ++idx) {
-                                bucket.push_back(
-                                    {start, d,
-                                     static_cast<TokenID>(tokens[idx])});
+                                auto tid = static_cast<TokenID>(tokens[idx]);
+                                bucket.push_back({start, d, tid});
+                                record(start, d, tid, spy);
                                 inserted = true;
                             }
                         }
@@ -201,6 +223,20 @@ void Interpreter::InitNumNet(std::string_view nums, std::vector<Node>& net,
     }
 
     net[d].es.push_back({d, d + 1, SentenceEnd});
+}
+
+std::string Interpreter::ExtractNumUnits(const std::vector<Link>& path,
+                                            const NumUnitMap& pm) {
+    std::string py;
+    for (const auto& link : path) {
+        if (link.id == SentenceEnd || link.id == ScoreNotToken ||
+            link.id == NotToken) continue;
+        auto it = pm.find(NumEdgeKey(link.start, link.end, link.id));
+        if (it == pm.end()) continue;
+        if (!py.empty()) py += '\'';
+        py += it->second;
+    }
+    return py;
 }
 
 std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
@@ -222,13 +258,24 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     const std::vector<Unit>& start,
     std::size_t num) const {
     std::vector<DecodeResult> results;
-    if (!ready_ || num_map_.empty()) return results;
-    if (nums.empty() && start.empty()) return results;
+    if (!ready_) return results;
+
+    // All digits confirmed — delegate to DecodeSentence with pinyin
+    if (nums.empty()) {
+        if (start.empty()) return results;
+        std::string pinyin;
+        for (const auto& u : start) {
+            if (!pinyin.empty()) pinyin += '\'';
+            const char* py = UnitData::Decode(u);
+            if (py) pinyin += py;
+        }
+        return DecodeSentence(pinyin, num);
+    }
+
+    if (num_map_.empty()) return results;
     for (char c : nums) {
         if (c < '2' || c > '9') return results;
     }
-
-    const std::size_t max_top = num == 0 ? 1 : num;
 
     Scorer::Pos init_pos{};
     float_t init_score = 0.0;
@@ -236,47 +283,73 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
     const std::size_t d = nums.size();
     std::vector<Node> net;
-    InitNumNet(nums, net, true);
+    NumUnitMap pm;
+    InitNumNet(nums, net, true, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(init_score, 0, init_pos, nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
-    auto add_result = [&](const std::string& text, float_t score,
-                          std::size_t matched) -> bool {
-        if (text.empty()) return false;
-        for (const auto& existing : results) {
-            if (existing.text == text) return false;
-        }
-        results.push_back({text, {}, score, matched});
-        return true;
-    };
+    std::unordered_set<std::string> dedup;
 
-    // Full match from SentenceEnd column
+    // === Layer 1: Full sentence N-best (covers all digits) ===
     {
-        auto states = net[d + 1].states.GetStates();
-        const std::size_t full_limit = std::max<std::size_t>(max_top / 2, 5);
-        for (std::size_t rank = 0;
-             rank < states.size() && results.size() < full_limit; ++rank) {
-            auto path = Backtrace(states[rank], d + 1);
-            add_result(ExtractNumText(path), -states[rank].score, d);
+        const auto tail = net[d + 1].states.GetStates();
+        const std::size_t full_limit = 1 + num;
+        const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
+        for (std::size_t rank = 0; rank < scan && results.size() < full_limit; ++rank) {
+            auto path = Backtrace(tail[rank], d + 1);
+            std::string text = ExtractNumText(path);
+            if (text.empty() || !dedup.insert(text).second) continue;
+            std::string py = ExtractNumUnits(path, pm);
+            results.push_back({std::move(text), std::move(py),
+                               -tail[rank].score, d});
         }
     }
 
-    // Partial matches from intermediate positions
-    const std::size_t per_pos = std::max<std::size_t>(max_top / 4, 2);
-    for (std::size_t pos = d - 1; pos >= 1 && results.size() < max_top;
-         --pos) {
-        auto states = net[pos].states.GetStates();
-        std::size_t added = 0;
-        for (std::size_t rank = 0;
-             rank < states.size() && added < per_pos; ++rank) {
-            auto path = Backtrace(states[rank], pos);
-            if (add_result(ExtractNumText(path), -states[rank].score, pos))
-                ++added;
-        }
+    const std::size_t layer1_size = results.size();
+
+    // === Layer 2: Individual words/chars from lattice edges at position 0 ===
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
+    std::size_t word_count = 0;
+
+    for (const auto& edge : net[0].es) {
+        if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
+
+        const char32_t* chars = trie_.TokenAt(edge.id);
+        if (!chars) continue;
+        std::u32string text_u32;
+        for (std::size_t i = 0; chars[i] != 0; ++i)
+            text_u32.push_back(chars[i]);
+        if (text_u32.empty()) continue;
+
+        std::string text_utf8 = ustr::FromU32(text_u32);
+        if (!dedup.insert(text_utf8).second) continue;
+
+        bool is_single_char = (text_u32.size() == 1);
+        if (!is_single_char && ++word_count > MaxPerPrefix) continue;
+
+        std::size_t distance = d - edge.end;
+        float_t dist_penalty =
+            static_cast<float_t>(distance) * penalty_per_unit;
+        Scorer::Pos dummy{};
+        float_t score =
+            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
+
+        auto pit = pm.find(NumEdgeKey(edge.start, edge.end, edge.id));
+        std::string edge_py = (pit != pm.end()) ? pit->second : "";
+        results.push_back({std::move(text_utf8), std::move(edge_py),
+                           score, edge.end});
     }
+
+    // Sort Layer 2 by score; Layer 1 stays in front.
+    std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
+              results.end(),
+              [](const DecodeResult& a, const DecodeResult& b) {
+                  return a.score > b.score;
+              });
 
     return results;
 }

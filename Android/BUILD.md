@@ -42,9 +42,8 @@ sdk.dir=/path/to/your/Android/Sdk
 
 | 文件 | 说明 |
 |------|------|
-| `trie.bin` | 拼音→汉字 Trie 词典 |
-| `model.bin` | 语言模型（候选排序） |
-| `pinyin_model.bin` | T9 数字→拼音模型 |
+| `sime.trie` | 拼音→汉字 Trie 词典 |
+| `sime.cnt`  | 语言模型（候选排序） |
 
 这些文件由 `Sime/src/` 下的 C++ 工具生成，不在 Git 仓库中。
 

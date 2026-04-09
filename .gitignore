@@ -44,6 +44,9 @@ package/*.bin
 # Python
 __pycache__/
 
+# Private (internal analysis, not pushed)
+private/
+
 # Misc local files
 TODO
 /*.py
