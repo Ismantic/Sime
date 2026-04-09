@@ -35,12 +35,12 @@ endif()
 
 # 构建 Sime fcitx5 插件
 add_library(sime MODULE
-    sime.cc
-    sime-state.cc
+    src/sime.cc
+    src/sime-state.cc
 )
 
 target_include_directories(sime PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
 )
 
