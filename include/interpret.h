@@ -39,14 +39,17 @@ public:
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
                                              std::size_t num = 0) const;
 
-    // Num-key decode (T9/nine-key)
+    // Num-key decode (T9/nine-key).
+    // `start` is the confirmed pinyin prefix (letters, possibly with `'`
+    // separators). It is parsed internally via ParseWithBoundaries, so a
+    // trailing incomplete initial (e.g. "q") is supported via tail expansion.
     std::vector<DecodeResult> DecodeNumStr(
         std::string_view nums,
-        const std::vector<Unit>& start = {},
+        std::string_view start = {},
         std::size_t num = 18) const;
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
-        const std::vector<Unit>& start = {},
+        std::string_view start = {},
         std::size_t num = 0) const;
 
 private:
@@ -101,11 +104,15 @@ private:
     // Num-key lattice
     using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
     static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
-    // Builds a unified lattice that walks the confirmed pinyin prefix `start`
-    // (fixed unit per column) followed by the digit columns. Edges may freely
-    // cross the prefix/digit boundary so the beam search keeps a real LM
-    // context through the prefix.
+    // Builds a unified lattice that walks the confirmed pinyin prefix
+    // (`start` = fixed units, `start_tail` = alternatives for an incomplete
+    // trailing initial) followed by the digit columns. Edges may freely cross
+    // the prefix/digit boundary so the beam search keeps a real LM context
+    // through the prefix. `start_tail` is empty when the prefix is fully
+    // parsed; when non-empty it contributes one extra column after `start`
+    // whose edges fan out over all listed Units.
     void InitNumNet(const std::vector<Unit>& start,
+                     const std::vector<Unit>& start_tail,
                      std::string_view nums,
                      bool tail_expansion,
                      std::vector<Node>& net,

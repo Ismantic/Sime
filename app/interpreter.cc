@@ -73,11 +73,13 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
     return true;
 }
 
-// Split "ni426" → prefix_units = [ni], digits = "426".
+// Split "ni426" → prefix = "ni", digits = "426".
 // Pinyin (letters) must come first, digits 2-9 must come last. Returns false
-// if the digit portion has invalid chars or the pinyin portion fails to parse.
+// if the digit portion has invalid chars. The prefix is passed through to
+// the interpreter as-is; incomplete trailing initials (e.g. "niq") are
+// handled by ParseWithBoundaries inside DecodeNum*.
 bool SplitPyDigits(std::string_view input,
-                   std::vector<sime::Unit>& prefix,
+                   std::string& prefix,
                    std::string& digits) {
     prefix.clear();
     digits.clear();
@@ -90,10 +92,8 @@ bool SplitPyDigits(std::string_view input,
     for (char c : digits) {
         if (c < '2' || c > '9') return false;
     }
-    if (split == 0) return true;
-    std::string py_str(input.substr(0, split));
-    sime::UnitParser parser;
-    return parser.ParseStr(py_str, prefix);
+    prefix.assign(input.substr(0, split));
+    return true;
 }
 
 } // namespace
@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
 
         std::vector<sime::DecodeResult> results;
         if (opts.num && opts.sentence) {
-            std::vector<sime::Unit> prefix;
+            std::string prefix;
             std::string digits;
             if (!SplitPyDigits(line, prefix, digits)) {
                 std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
             results = interpreter.DecodeNumSentence(digits, prefix);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
-            std::vector<sime::Unit> prefix;
+            std::string prefix;
             std::string digits;
             if (!SplitPyDigits(line, prefix, digits)) {
                 std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
