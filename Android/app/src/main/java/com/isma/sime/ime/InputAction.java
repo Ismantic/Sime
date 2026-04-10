@@ -32,6 +32,7 @@ public final class InputAction {
     public final String hanziText;
     public final String hanziPinyin;
     public final int hanziConsumed;     // bytes consumed from buffer.remaining()
+    public final int prevLettersEnd;    // lettersEnd before the pick (for undo)
 
     private InputAction(Type type,
                         int start,
@@ -39,7 +40,8 @@ public final class InputAction {
                         String pickedLetters,
                         String hanziText,
                         String hanziPinyin,
-                        int hanziConsumed) {
+                        int hanziConsumed,
+                        int prevLettersEnd) {
         this.type = type;
         this.start = start;
         this.replacedDigits = replacedDigits;
@@ -47,21 +49,23 @@ public final class InputAction {
         this.hanziText = hanziText;
         this.hanziPinyin = hanziPinyin;
         this.hanziConsumed = hanziConsumed;
+        this.prevLettersEnd = prevLettersEnd;
     }
 
     public static InputAction pinyinPick(int start, String digits, String letters) {
         return new InputAction(Type.PINYIN_PICK, start, digits, letters,
-                null, null, 0);
+                null, null, 0, 0);
     }
 
     public static InputAction fallbackPick(int start, String digits, String letters) {
         return new InputAction(Type.FALLBACK_PICK, start, digits, letters,
-                null, null, 0);
+                null, null, 0, 0);
     }
 
-    public static InputAction hanziPick(String text, String pinyin, int consumed) {
+    public static InputAction hanziPick(String text, String pinyin, int consumed,
+                                         int prevLettersEnd) {
         return new InputAction(Type.HANZI_PICK, 0, null, null,
-                text, pinyin, consumed);
+                text, pinyin, consumed, prevLettersEnd);
     }
 
     /**
@@ -85,6 +89,7 @@ public final class InputAction {
                 if (!s.selections.isEmpty()) {
                     s.selections.remove(s.selections.size() - 1);
                 }
+                s.lettersEnd = prevLettersEnd;
                 break;
             }
         }

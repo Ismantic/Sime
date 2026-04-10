@@ -67,7 +67,7 @@ private:
 
     // Search parameters
     static constexpr std::size_t NodeSize = 40;
-    static constexpr std::size_t BeamSize = 20;
+    static constexpr std::size_t BeamSize = 60;
     static constexpr std::size_t MaxSyllableCnt = 6;
     static constexpr std::size_t MaxPerPrefix = 15;
     static constexpr float_t DistancePenalty = 1.8;

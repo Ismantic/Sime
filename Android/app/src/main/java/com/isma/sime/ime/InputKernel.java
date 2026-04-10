@@ -21,8 +21,13 @@ import java.util.List;
  */
 public class InputKernel {
 
-    /** Max candidates to request from the decoder per keystroke. */
-    private static final int MAX_CANDIDATES = 36;
+    /**
+     * Extra full-sentence alternatives to request from the decoder per
+     * keystroke (Layer 1). Layer 2 single-syllable / single-char
+     * alternatives are always returned in full. Mirrors Linux fcitx5
+     * default {@code nbest=0}.
+     */
+    private static final int EXTRA_SENTENCES = 0;
 
     /** Side effects requested by the kernel, forwarded to the IME service. */
     public interface Listener {
@@ -427,10 +432,10 @@ public class InputKernel {
 
         DecodeResult[] raw;
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
-            raw = decoder.decodeT9(letters, digits, MAX_CANDIDATES);
+            raw = decoder.decodeT9(letters, digits, EXTRA_SENTENCES);
             pinyinAlts = computePinyinAlts(digits);
         } else if (!letters.isEmpty()) {
-            raw = decoder.decodeSentence(letters, MAX_CANDIDATES);
+            raw = decoder.decodeSentence(letters, EXTRA_SENTENCES);
         } else {
             raw = new DecodeResult[0];
         }
@@ -496,7 +501,7 @@ public class InputKernel {
      * {@code private/SimeAndroidRefactor.md} §0.2 (4).
      */
     private List<PinyinAlt> computePinyinAlts(String digits) {
-        DecodeResult[] raw = decoder.decodeT9("", digits, MAX_CANDIDATES);
+        DecodeResult[] raw = decoder.decodeT9("", digits, EXTRA_SENTENCES);
         if (raw.length == 0) return Collections.emptyList();
         // Deduplicate by units string, keeping first occurrence order.
         java.util.LinkedHashMap<String, PinyinAlt> seen = new java.util.LinkedHashMap<>();

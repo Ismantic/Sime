@@ -109,10 +109,20 @@ public final class InputState {
     /**
      * Add a hanzi selection and push the corresponding undo action.
      * Signature and order mirror {@code SimeState::select}.
+     *
+     * <p>Maintains the invariant {@code lettersEnd >= selectedLength()}: a
+     * hanzi pick whose consumed bytes extend past the current letter region
+     * effectively turns those bytes into "letters" too (they're now part of
+     * the committed hanzi context, not the unconfirmed digit region).
+     * Without this push, a subsequent {@link #applyLetterPick} would write
+     * into the stale bytes still under {@code selectedLength}.
      */
     public void select(String text, String pinyin, int consumed) {
+        int prevLettersEnd = lettersEnd;
         selections.add(new Selection(text, pinyin, consumed));
-        undoStack.push(InputAction.hanziPick(text, pinyin, consumed));
+        int sel = selectedLength();
+        if (lettersEnd < sel) lettersEnd = sel;
+        undoStack.push(InputAction.hanziPick(text, pinyin, consumed, prevLettersEnd));
     }
 
     /**
