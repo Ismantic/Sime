@@ -188,7 +188,8 @@ int main(int argc, char** argv) {
                 std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
                 continue;
             }
-            results = interpreter.DecodeNumSentence(digits, prefix);
+            results = interpreter.DecodeNumSentence(
+                digits, prefix, opts.n > 0 ? opts.n - 1 : 0);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
             std::string prefix;
@@ -199,7 +200,8 @@ int main(int argc, char** argv) {
             }
             results = interpreter.DecodeNumStr(digits, prefix, opts.n);
         } else if (opts.sentence) {
-            results = interpreter.DecodeSentence(line);
+            results = interpreter.DecodeSentence(
+                line, opts.n > 0 ? opts.n - 1 : 0);
             if (results.size() > opts.n) results.resize(opts.n);
         } else {
             results = interpreter.DecodeStr(line, opts.n);

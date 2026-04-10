@@ -241,6 +241,139 @@ public class InputKernelTest {
     }
 
     @Test
+    public void t9PickHanziAfterPinyinPickFullyCommits() {
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putT9("", "6426", r("你好", "ni'hao", 4));
+        // After pinyin pick "ni" for digits "64", remaining digits are "26".
+        // The engine sees decodeT9("ni", "26", ...) and returns "你饿" with
+        // cnt = letters.size() + digits.size() = 2 + 2 = 4 (total bytes).
+        decoder.putT9("ni", "26", r("你饿", "ni'e", 4));
+        for (char c : "6426".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        // buffer = "ni26", lettersEnd = 2
+
+        // Now pick the hanzi candidate. It should consume the WHOLE buffer
+        // ("ni" + "26" = 4 bytes) and commit the text.
+        kernel.onHanziCandidatePick(0);
+
+        assertEquals("hanzi pick should commit and clear",
+                java.util.Collections.singletonList("你饿"), listener.committed);
+        assertEquals("buffer should be empty after full pick",
+                "", kernel.getState().buffer);
+        assertTrue("selections should be empty after commit",
+                kernel.getState().selections.isEmpty());
+    }
+
+    @Test
+    public void t9PinyinPickAfterHanziPickThatCrossedLettersEnd() {
+        // Scenario: pinyin pick → partial hanzi pick that consumes more than
+        // just the letters → type more digits → pinyin pick again. The second
+        // pinyin pick must write to the actual digit region, not the stale
+        // bytes still under selectedLength.
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putT9("", "64267", r("nihao", "ni'hao", 5));
+        decoder.putT9("ni", "267", r("你饿", "ni'e", 4));     // covers "ni"+"26"
+        // After picking "你饿", remaining digits are "7", then user types "8".
+        // We never decode that exact string in this test — only the pinyin
+        // pick path matters.
+
+        for (char c : "64267".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        // buffer = "ni267", lettersEnd = 2
+
+        kernel.onHanziCandidatePick(0);
+        // selections = [{你饿, ni'e, 4}], selectedLength = 4
+        // buffer = "ni267", lettersEnd = 2 (NOT updated)
+        // remaining = "7"
+
+        kernel.onKey(SimeKey.digit('8'));
+        // buffer = "ni2678", selectedLength = 4, lettersEnd = 2
+        // Actual digit region starts at selectedLength = 4 = "78"
+
+        // Now pinyin pick "ba" for "78".
+        kernel.onPinyinCandidatePick("78", "ba", false);
+
+        // Expected: buffer should become "ni26ba" (positions 4-5 replaced),
+        // OR semantically: remaining should now reflect the "ba" letters.
+        String remaining = kernel.getState().remaining();
+        assertEquals("remaining must contain the picked letters 'ba'",
+                "ba", remaining);
+    }
+
+    @Test
+    public void punctuationFlushesPartialT9PickWithLettersTail() {
+        // T9: type digits, pinyin pick, type more digits, then partial hanzi
+        // pick that doesn't fully consume — punctuation should flush the
+        // committed hanzi and reset state with the leftover digits.
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putT9("ni", "26789", r("你饿", "ni'e", 4));  // covers ni+26
+        decoder.putT9("", "789", r("七八九", "qi'ba'jiu", 3));
+        for (char c : "64".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        for (char c : "26789".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        // buffer = "ni26789", lettersEnd = 2
+
+        // Now type a punctuation. handlePunctuation should commit first
+        // candidate (你饿, consumed=4) inline and then output the punc.
+        kernel.onKey(SimeKey.punctuation("，"));
+
+        // Expected: commit "你饿" then ", " — but state should be reset
+        // around the leftover "789".
+        assertTrue("should have committed 你饿 + punctuation",
+                listener.committed.size() >= 1);
+        // After commitFirstCandidateInline, state.buffer should be the
+        // leftover digits "789" (= remaining after consuming 4 bytes from
+        // "ni26789")
+        assertEquals("789", kernel.getState().buffer);
+        assertEquals("lettersEnd reset since the consumed pick crossed it",
+                0, kernel.getState().lettersEnd);
+    }
+
+    @Test
+    public void t9UndoHanziPickRestoresLettersEnd() {
+        // After a hanzi pick that crossed lettersEnd, backspace should
+        // restore the original lettersEnd from the action.
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putT9("ni", "267", r("你饿", "ni'e", 4)); // covers ni+26
+        for (char c : "64267".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        // buffer = "ni267", lettersEnd = 2
+
+        kernel.onHanziCandidatePick(0);
+        // selections=[{你饿,4}], selectedLength=4
+        // lettersEnd should be bumped to 4 by the new invariant
+        assertEquals(4, kernel.getState().lettersEnd);
+        assertEquals(4, kernel.getState().selectedLength());
+
+        // Undo the hanzi pick
+        kernel.onKey(SimeKey.backspace());
+        // Should revert to: selections empty, lettersEnd back to 2
+        assertTrue(kernel.getState().selections.isEmpty());
+        assertEquals("lettersEnd should be restored to 2",
+                2, kernel.getState().lettersEnd);
+        assertEquals("buffer unchanged", "ni267", kernel.getState().buffer);
+    }
+
+    @Test
+    public void t9BackspaceUndoesPinyinPickEvenAfterMoreDigits() {
+        // Documented behavior: backspace always prefers action-level undo.
+        // Even if the user typed more digits after a pinyin pick, the next
+        // backspace reverts the pinyin pick (not the just-typed digit).
+        kernel.setChineseLayout(ChineseLayout.T9);
+        for (char c : "64".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        for (char c : "26".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        // buffer = "ni26", lettersEnd = 2, undoStack has PINYIN_PICK
+
+        kernel.onKey(SimeKey.backspace());
+        assertEquals("backspace reverts the pinyin pick",
+                "6426", kernel.getState().buffer);
+        assertEquals(0, kernel.getState().lettersEnd);
+        assertTrue("undoStack should be empty after revert",
+                kernel.getState().undoStack.isEmpty());
+    }
+
+    @Test
     public void t9PinyinPickCanBeUndoneByBackspace() {
         kernel.setChineseLayout(ChineseLayout.T9);
         decoder.putT9("", "6426", r("你好", "ni'hao", 4));

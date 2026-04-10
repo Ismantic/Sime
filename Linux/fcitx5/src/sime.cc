@@ -459,12 +459,13 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     // Left/Right: move cursor (like fcitx5-pinyin)
     if (!st->empty() && (key.check(FcitxKey_Left) || key.check(FcitxKey_Right))) {
         if (key.check(FcitxKey_Left)) {
-            // Cancel last selection if cursor is at selection boundary
+            // If cursor is at selection boundary, cancel last selection
+            // and stay in place (don't move further left).
             if (st->cursor == st->selectedLength() && !st->selections.empty()) {
                 st->cancel();
-            }
-            if (st->cursor > st->selectedLength())
+            } else if (st->cursor > st->selectedLength()) {
                 --st->cursor;
+            }
         } else {
             if (st->cursor < st->buffer.size())
                 ++st->cursor;

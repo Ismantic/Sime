@@ -169,15 +169,20 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
             }
         }
 
-        // Tail expansion: remaining digits form a prefix of a longer syllable.
+        // Tail expansion: remaining digits form a prefix of a longer
+        // syllable. Always run this even when the tail itself is a valid
+        // syllable — for "3" the user could mean "e" (already covered by
+        // the normal syllable loop above) but also "fa/fu/feng/...". The
+        // normal loop only finds syllables whose digit count fits inside
+        // the remaining tail; expansion finds longer syllables whose
+        // digit prefix matches.
         if (tail_expansion) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
                 ++tail_len;
             }
             std::string tail(nums.substr(dpos, tail_len));
-            if (!tail.empty() && tail.size() <= MaxSyllableCnt &&
-                num_map_.find(tail) == num_map_.end()) {
+            if (!tail.empty() && tail.size() <= MaxSyllableCnt) {
                 for (const auto& [dkey, units] : num_map_) {
                     if (dkey.size() <= tail.size()) continue;
                     if (dkey.compare(0, tail.size(), tail) != 0) continue;
@@ -202,9 +207,6 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
             continue;
         }
         walk(walk, s, s, trie_.Root(), "");
-        if (net[s].es.empty()) {
-            net[s].es.push_back({s, s + 1, ScoreNotToken});
-        }
     }
     for (std::size_t i = 0; i < total; ++i) {
         PruneNode(net[i].es);
@@ -290,6 +292,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
         const auto tail = net[total + 1].states.GetStates();
         const std::size_t full_limit = 1 + num;
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
+        // cnt = total bytes consumed = start (already confirmed) + all digits.
+        // Aligned with DecodeSentence which returns total input bytes.
+        const std::size_t full_cnt = start.size() + d;
         for (std::size_t rank = 0;
              rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], total + 1);
@@ -297,7 +302,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractNumUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
-                               -tail[rank].score, d});
+                               -tail[rank].score, full_cnt});
         }
     }
 
@@ -335,8 +340,9 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
         auto pit = pm.find(NumEdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
-        // cnt = digit bytes consumed (prefix is already confirmed).
-        std::size_t cnt = edge.end - p;
+        // cnt = total bytes consumed = start (already confirmed) + digit cols
+        // consumed by this edge. Matches DecodeSentence semantics.
+        std::size_t cnt = start.size() + (edge.end - p);
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            score, cnt});
     }
@@ -404,7 +410,8 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
         if (!dup) {
             std::string py = ExtractNumUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
-                               -tail_states[rank].score, nums.size()});
+                               -tail_states[rank].score,
+                               start.size() + nums.size()});
         }
     }
 

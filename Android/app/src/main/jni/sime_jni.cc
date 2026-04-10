@@ -91,9 +91,8 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
         return env->NewObjectArray(0, stringClass, nullptr);
 
     auto input_str = jstringToString(env, input);
-    auto results = g_interpreter->DecodeSentence(input_str);
-    if (num > 0 && results.size() > static_cast<std::size_t>(num))
-        results.resize(static_cast<std::size_t>(num));
+    std::size_t extra = num > 0 ? static_cast<std::size_t>(num) : 0;
+    auto results = g_interpreter->DecodeSentence(input_str, extra);
 
     return packResults(env, stringClass, results);
 }
@@ -110,9 +109,8 @@ Java_com_isma_sime_SimeEngine_nativeDecodeT9(
 
     auto prefix = jstringToString(env, prefixLetters);
     auto d = jstringToString(env, digits);
-    auto results = g_interpreter->DecodeNumSentence(d, prefix);
-    if (num > 0 && results.size() > static_cast<std::size_t>(num))
-        results.resize(static_cast<std::size_t>(num));
+    std::size_t extra = num > 0 ? static_cast<std::size_t>(num) : 0;
+    auto results = g_interpreter->DecodeNumSentence(d, prefix, extra);
 
     return packResults(env, stringClass, results);
 }
