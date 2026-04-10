@@ -1,6 +1,6 @@
 pkgname=fcitx5-sime
-pkgver=2026.04.09
-pkgrel=8
+pkgver=2026.04.10
+pkgrel=1
 pkgdesc="Sime Chinese input method for Fcitx5"
 arch=("x86_64")
 url="https://github.com/Ismantic/Sime"
@@ -23,6 +23,6 @@ package() {
   DESTDIR="$pkgdir" cmake --install "$srcdir/build"
 
   install -dm755 "$pkgdir/usr/share/sime"
-  install -m644 "$_srcdir/sime/output/sime.trie" "$pkgdir/usr/share/sime/sime.trie"
-  install -m644 "$_srcdir/sime/output/sime.cnt"  "$pkgdir/usr/share/sime/sime.cnt"
+  install -m644 "$_srcdir/data/sime.20260410.trie" "$pkgdir/usr/share/sime/sime.trie"
+  install -m644 "$_srcdir/data/sime.20260410.cnt"  "$pkgdir/usr/share/sime/sime.cnt"
 }
