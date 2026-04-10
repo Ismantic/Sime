@@ -876,7 +876,10 @@ bool Interpreter::ParseWithBoundaries(
             units.insert(units.end(), chunk.begin(), chunk.end());
         }
     }
-    return !units.empty();
+    // Accept tail-only input (e.g. bare initial "s"): the lattice still
+    // has a valid tail-expansion column even when no complete syllable
+    // was parsed.
+    return !units.empty() || !tail_expansions.empty();
 }
 
 std::vector<DecodeResult> Interpreter::DecodeSentence(
@@ -894,12 +897,48 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
     }
 
     const std::size_t total_bytes = input.size();
+    const std::size_t n = units.size();
 
     // Build lattice once, shared by Layer 1 and Layer 2
     std::vector<Node> net;
     const bool has_exp = !tail_expansions.empty();
-    const std::size_t effective_n = has_exp ? units.size() + 1 : units.size();
+    const std::size_t effective_n = has_exp ? n + 1 : n;
     InitNet(units, net, tail_expansions);
+
+    // For an edge whose end lands in the tail-expansion column, figure out
+    // which expansion unit produced it by replaying the trie walk. Returns
+    // nullptr if the edge is not a tail edge or no expansion matches.
+    auto tail_syllable = [&](const Link& edge) -> const char* {
+        if (!has_exp || edge.end <= n) return nullptr;
+        const Trie::Node* node = trie_.Root();
+        for (std::size_t i = edge.start; i < n && node; ++i) {
+            node = trie_.DoMove(node, units[i]);
+        }
+        if (!node) return nullptr;
+        for (const auto& exp : tail_expansions) {
+            const Trie::Node* en = trie_.DoMove(node, exp);
+            if (!en) continue;
+            std::uint32_t count = 0;
+            const std::uint32_t* tokens = trie_.GetToken(en, count);
+            for (std::uint32_t k = 0; k < count; ++k) {
+                if (static_cast<TokenID>(tokens[k]) == edge.id) {
+                    return UnitData::Decode(exp);
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // SliceToUnits + optional tail-expansion syllable append.
+    auto slice_with_tail = [&](const Link& edge) -> std::string {
+        std::string s = SliceToUnits(units, edge.start, edge.end);
+        const char* tail = tail_syllable(edge);
+        if (tail) {
+            if (!s.empty()) s.push_back('\'');
+            s.append(tail);
+        }
+        return s;
+    };
     // BeamSize applies to all decode functions uniformly
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -920,7 +959,7 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
             std::string py;
             for (const auto& w : path) {
                 composed += ToText(w, units);
-                std::string seg = SliceToUnits(units, w.start, w.end);
+                std::string seg = slice_with_tail(w);
                 if (!seg.empty()) {
                     if (!py.empty()) py += '\'';
                     py += seg;
@@ -969,7 +1008,7 @@ std::vector<DecodeResult> Interpreter::DecodeSentence(
 
         DecodeResult r;
         r.text = std::move(text_utf8);
-        r.units = SliceToUnits(units, edge.start, edge.end);
+        r.units = slice_with_tail(edge);
         r.score = score;
         r.cnt = matched_bytes;
         results.push_back(std::move(r));

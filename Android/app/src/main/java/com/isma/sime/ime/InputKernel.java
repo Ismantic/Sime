@@ -436,12 +436,15 @@ public class InputKernel {
         }
 
         topUnits = (raw.length > 0 && raw[0].units != null) ? raw[0].units : "";
-        // T9 DecodeNumSentence enables tail expansion: a dangling initial
-        // like "k" may be completed to "kan", adding letters the user
-        // never typed. Clip the preedit pinyin back to the real digit
-        // count so the display stays 1:1 with the buffer.
-        if (chineseLayout == ChineseLayout.T9 && !topUnits.isEmpty()) {
-            topUnits = clipUnitsToDigitCount(topUnits, countDigits(digits));
+        // Both DecodeSentence and DecodeNumSentence enable tail expansion:
+        // a dangling initial like "k" may be completed to "kan", adding
+        // letters the user never typed. Clip the preedit pinyin back to
+        // the real input-letter count (prefix letters + digits for T9)
+        // so the display stays 1:1 with the raw buffer region being
+        // decoded.
+        if (!topUnits.isEmpty()) {
+            int rawLen = countRealChars(letters) + countRealChars(digits);
+            topUnits = clipUnitsToLetterCount(topUnits, rawLen);
         }
         List<Candidate> out = new ArrayList<>(raw.length);
         for (DecodeResult r : raw) {
@@ -450,8 +453,8 @@ public class InputKernel {
         return out;
     }
 
-    /** Count real digits (non-separator chars) in a T9 digit string. */
-    private static int countDigits(String s) {
+    /** Count real chars (non-separator) in a raw input region. */
+    private static int countRealChars(String s) {
         int n = 0;
         for (int i = 0; i < s.length(); i++) {
             if (s.charAt(i) != '\'') n++;
@@ -464,7 +467,7 @@ public class InputKernel {
      * real letters, preserving {@code '} separators but dropping any
      * trailing separator left behind by the clip.
      */
-    private static String clipUnitsToDigitCount(String units, int maxLetters) {
+    private static String clipUnitsToLetterCount(String units, int maxLetters) {
         if (maxLetters <= 0) return "";
         int letters = 0;
         int end = 0;
@@ -501,6 +504,10 @@ public class InputKernel {
             if (r.units == null || r.units.isEmpty()) continue;
             // Reject multi-syllable: must contain no separator.
             if (r.units.indexOf('\'') >= 0 || r.units.indexOf(' ') >= 0) continue;
+            // Reject tail-expanded alts: each T9 digit maps to exactly
+            // one letter, so an alt is only faithful when its pinyin
+            // letters equal the digits it consumes.
+            if (r.units.length() != r.consumed) continue;
             if (seen.containsKey(r.units)) continue;
             seen.put(r.units, new PinyinAlt(r.units, r.units, r.consumed));
             if (seen.size() >= MAX_PINYIN_ALTS) break;
