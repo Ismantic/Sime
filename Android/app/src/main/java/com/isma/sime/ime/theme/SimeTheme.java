@@ -7,9 +7,6 @@ import android.graphics.Color;
 /**
  * Color palette for the IME. Two fixed presets (light / dark) chosen by
  * the system uiMode. No user customisation — users can't pick a theme.
- *
- * Phase 1: only the field shape is locked; final color values land in
- * Phase 3 alongside the UI rewrite.
  */
 public final class SimeTheme {
 

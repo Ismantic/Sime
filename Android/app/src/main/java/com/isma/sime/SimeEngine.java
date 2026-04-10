@@ -94,20 +94,11 @@ public class SimeEngine {
         return parseTriplets(nativeDecodeSentence(input, num));
     }
 
-    /** T9: decode digit string to candidates. */
-    public Candidate[] decodeT9(String[] prefixUnits, String digits, int num) {
+    /** T9: decode digit string (with optional pinyin prefix) to candidates. */
+    public Candidate[] decodeT9(String prefixLetters, String digits, int num) {
         if (!isReady()) return new Candidate[0];
-        // Join prefix syllables with ' into a single pinyin string. The
-        // native side parses it via ParseWithBoundaries, which handles both
-        // complete syllables and a trailing incomplete initial.
-        StringBuilder sb = new StringBuilder();
-        if (prefixUnits != null) {
-            for (int i = 0; i < prefixUnits.length; i++) {
-                if (i > 0) sb.append('\'');
-                sb.append(prefixUnits[i]);
-            }
-        }
-        return parseTriplets(nativeDecodeT9(sb.toString(), digits, num));
+        return parseTriplets(nativeDecodeT9(
+                prefixLetters != null ? prefixLetters : "", digits, num));
     }
 
     private static String extractAsset(Context context, String assetName, File destDir) {
