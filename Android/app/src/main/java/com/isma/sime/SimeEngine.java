@@ -29,7 +29,7 @@ public class SimeEngine {
     private static native boolean nativeLoadResources(String triePath, String modelPath);
     private static native boolean nativeLoadUserDict(String userDictPath);
     private static native String[] nativeDecodeSentence(String input, int num);
-    private static native String[] nativeDecodeT9(String[] prefixUnits, String digits, int num);
+    private static native String[] nativeDecodeT9(String prefixLetters, String digits, int num);
     private static native boolean nativeIsReady();
 
     private boolean mReady = false;
@@ -97,7 +97,17 @@ public class SimeEngine {
     /** T9: decode digit string to candidates. */
     public Candidate[] decodeT9(String[] prefixUnits, String digits, int num) {
         if (!isReady()) return new Candidate[0];
-        return parseTriplets(nativeDecodeT9(prefixUnits, digits, num));
+        // Join prefix syllables with ' into a single pinyin string. The
+        // native side parses it via ParseWithBoundaries, which handles both
+        // complete syllables and a trailing incomplete initial.
+        StringBuilder sb = new StringBuilder();
+        if (prefixUnits != null) {
+            for (int i = 0; i < prefixUnits.length; i++) {
+                if (i > 0) sb.append('\'');
+                sb.append(prefixUnits[i]);
+            }
+        }
+        return parseTriplets(nativeDecodeT9(sb.toString(), digits, num));
     }
 
     private static String extractAsset(Context context, String assetName, File destDir) {
