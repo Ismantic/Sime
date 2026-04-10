@@ -89,7 +89,10 @@ bool SplitPyDigits(std::string_view input,
         ++split;
     }
     digits.assign(input.substr(split));
+    // Digits may contain '\'' as a hard syllable boundary hint; the
+    // decoder honors it inside DecodeNumSentence / DecodeNumStr.
     for (char c : digits) {
+        if (c == '\'') continue;
         if (c < '2' || c > '9') return false;
     }
     prefix.assign(input.substr(0, split));

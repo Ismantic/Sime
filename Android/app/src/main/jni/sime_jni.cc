@@ -102,23 +102,13 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeT9(
     JNIEnv* env, jclass /*clazz*/,
-    jobjectArray prefixUnits, jstring digits, jint num) {
+    jstring prefixLetters, jstring digits, jint num) {
 
     jclass stringClass = env->FindClass("java/lang/String");
     if (!g_interpreter || !g_interpreter->Ready())
         return env->NewObjectArray(0, stringClass, nullptr);
 
-    std::vector<sime::Unit> prefix;
-    if (prefixUnits) {
-        jsize plen = env->GetArrayLength(prefixUnits);
-        for (jsize i = 0; i < plen; ++i) {
-            auto js = (jstring)env->GetObjectArrayElement(prefixUnits, i);
-            auto s = jstringToString(env, js);
-            sime::Unit u = sime::UnitData::Encode(s.c_str());
-            if (u.value != 0) prefix.push_back(u);
-        }
-    }
-
+    auto prefix = jstringToString(env, prefixLetters);
     auto d = jstringToString(env, digits);
     auto results = g_interpreter->DecodeNumSentence(d, prefix);
     if (num > 0 && results.size() > static_cast<std::size_t>(num))

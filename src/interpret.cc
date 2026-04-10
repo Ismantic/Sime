@@ -114,6 +114,11 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
     // DFS from starting column s: walk the trie, emitting edges whenever the
     // current trie node carries tokens. Prefix columns step by a fixed unit;
     // digit columns try every syllable length that matches num_map_.
+    //
+    // '\'' inside nums is treated as a hard syllable boundary: syllables may
+    // neither start nor span across it. When the walker reaches a boundary
+    // column it passes through for free (no trie move, no emitted edge),
+    // allowing multi-syllable words like "xi'an" to span the boundary.
     auto walk = [&](auto& self, std::size_t s, std::size_t pos,
                     const Trie::Node* node, const std::string& acc) -> void {
         if (!node || pos >= total) return;
@@ -140,10 +145,18 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
         }
 
         const std::size_t dpos = pos - p;
+        // Boundary column — skip forward without consuming the trie node.
+        if (nums[dpos] == '\'') {
+            self(self, s, pos + 1, node, acc);
+            return;
+        }
+
         std::string key;
         for (std::size_t dend = dpos + 1;
              dend <= std::min(dpos + MaxSyllableCnt, d); ++dend) {
-            key.push_back(nums[dend - 1]);
+            char ch = nums[dend - 1];
+            if (ch == '\'') break;  // Don't extend a syllable past a boundary.
+            key.push_back(ch);
             auto it = num_map_.find(key);
             if (it == num_map_.end()) continue;
             for (const auto& u : it->second) {
@@ -158,7 +171,11 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
 
         // Tail expansion: remaining digits form a prefix of a longer syllable.
         if (tail_expansion) {
-            std::string tail(nums.substr(dpos));
+            std::size_t tail_len = 0;
+            while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
+                ++tail_len;
+            }
+            std::string tail(nums.substr(dpos, tail_len));
             if (!tail.empty() && tail.size() <= MaxSyllableCnt &&
                 num_map_.find(tail) == num_map_.end()) {
                 for (const auto& [dkey, units] : num_map_) {
@@ -177,6 +194,13 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
     };
 
     for (std::size_t s = 0; s < total; ++s) {
+        // Boundary column at the top level: only emit a free pass-through so
+        // that standalone single-syllable paths stay connected. Multi-syllable
+        // walks (xi'an) are handled inside the walker via the boundary skip.
+        if (s >= p && nums[s - p] == '\'') {
+            net[s].es.push_back({s, s + 1, ScoreNotToken});
+            continue;
+        }
         walk(walk, s, s, trie_.Root(), "");
         if (net[s].es.empty()) {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
@@ -223,6 +247,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     for (char c : nums) {
+        if (c == '\'') continue;  // boundary hint, handled by the net builder
         if (c < '2' || c > '9') return results;
     }
     if (nums.empty() && start.empty()) return results;
@@ -247,8 +272,11 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
     std::vector<Node> net;
     NumUnitMap pm;
+    // Tail expansion is only meaningful when the final char is a real
+    // digit — never enable it when nums ends with '\''.
+    const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
     InitNumNet(prefix_units, prefix_tail, nums,
-               /*tail_expansion=*/!nums.empty(), net, &pm);
+               can_tail_expand, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -330,6 +358,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     for (char c : nums) {
+        if (c == '\'') continue;  // boundary hint, honored by InitNumNet
         if (c < '2' || c > '9') return results;
     }
     if (nums.empty() && start.empty()) return results;
