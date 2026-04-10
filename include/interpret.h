@@ -101,14 +101,18 @@ private:
     // Num-key lattice
     using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
     static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
-    void InitNumNet(std::string_view nums, std::vector<Node>& net,
+    // Builds a unified lattice that walks the confirmed pinyin prefix `start`
+    // (fixed unit per column) followed by the digit columns. Edges may freely
+    // cross the prefix/digit boundary so the beam search keeps a real LM
+    // context through the prefix.
+    void InitNumNet(const std::vector<Unit>& start,
+                     std::string_view nums,
                      bool tail_expansion,
+                     std::vector<Node>& net,
                      NumUnitMap* unit_map = nullptr) const;
     std::string ExtractNumText(const std::vector<Link>& path) const;
     static std::string ExtractNumUnits(const std::vector<Link>& path,
                                          const NumUnitMap& pm);
-    void InitStartState(const std::vector<Unit>& start,
-                         Scorer::Pos& pos, float_t& score) const;
 
     // Resources
     Trie trie_;
