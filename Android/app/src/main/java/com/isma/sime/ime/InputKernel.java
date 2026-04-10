@@ -436,11 +436,50 @@ public class InputKernel {
         }
 
         topUnits = (raw.length > 0 && raw[0].units != null) ? raw[0].units : "";
+        // T9 DecodeNumSentence enables tail expansion: a dangling initial
+        // like "k" may be completed to "kan", adding letters the user
+        // never typed. Clip the preedit pinyin back to the real digit
+        // count so the display stays 1:1 with the buffer.
+        if (chineseLayout == ChineseLayout.T9 && !topUnits.isEmpty()) {
+            topUnits = clipUnitsToDigitCount(topUnits, countDigits(digits));
+        }
         List<Candidate> out = new ArrayList<>(raw.length);
         for (DecodeResult r : raw) {
             out.add(Candidate.fromDecode(r));
         }
         return out;
+    }
+
+    /** Count real digits (non-separator chars) in a T9 digit string. */
+    private static int countDigits(String s) {
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) != '\'') n++;
+        }
+        return n;
+    }
+
+    /**
+     * Truncate a segmented pinyin string to at most {@code maxLetters}
+     * real letters, preserving {@code '} separators but dropping any
+     * trailing separator left behind by the clip.
+     */
+    private static String clipUnitsToDigitCount(String units, int maxLetters) {
+        if (maxLetters <= 0) return "";
+        int letters = 0;
+        int end = 0;
+        for (int i = 0; i < units.length(); i++) {
+            char c = units.charAt(i);
+            if (c == '\'') {
+                end = i + 1;
+                continue;
+            }
+            if (letters >= maxLetters) break;
+            letters++;
+            end = i + 1;
+        }
+        while (end > 0 && units.charAt(end - 1) == '\'') end--;
+        return units.substring(0, end);
     }
 
     /** Max single-syllable alternatives to show in the T9 left strip. */
