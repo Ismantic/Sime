@@ -73,6 +73,29 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
     return true;
 }
 
+// Split "ni426" → prefix_units = [ni], digits = "426".
+// Pinyin (letters) must come first, digits 2-9 must come last. Returns false
+// if the digit portion has invalid chars or the pinyin portion fails to parse.
+bool SplitPyDigits(std::string_view input,
+                   std::vector<sime::Unit>& prefix,
+                   std::string& digits) {
+    prefix.clear();
+    digits.clear();
+    std::size_t split = 0;
+    while (split < input.size() &&
+           !(input[split] >= '2' && input[split] <= '9')) {
+        ++split;
+    }
+    digits.assign(input.substr(split));
+    for (char c : digits) {
+        if (c < '2' || c > '9') return false;
+    }
+    if (split == 0) return true;
+    std::string py_str(input.substr(0, split));
+    sime::UnitParser parser;
+    return parser.ParseStr(py_str, prefix);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -156,10 +179,22 @@ int main(int argc, char** argv) {
 
         std::vector<sime::DecodeResult> results;
         if (opts.num && opts.sentence) {
-            results = interpreter.DecodeNumSentence(line);
+            std::vector<sime::Unit> prefix;
+            std::string digits;
+            if (!SplitPyDigits(line, prefix, digits)) {
+                std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
+                continue;
+            }
+            results = interpreter.DecodeNumSentence(digits, prefix);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
-            results = interpreter.DecodeNumStr(line, {}, opts.n);
+            std::vector<sime::Unit> prefix;
+            std::string digits;
+            if (!SplitPyDigits(line, prefix, digits)) {
+                std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
+                continue;
+            }
+            results = interpreter.DecodeNumStr(digits, prefix, opts.n);
         } else if (opts.sentence) {
             results = interpreter.DecodeSentence(line);
             if (results.size() > opts.n) results.resize(opts.n);
