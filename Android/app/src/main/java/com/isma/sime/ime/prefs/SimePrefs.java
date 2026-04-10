@@ -7,11 +7,9 @@ import android.preference.PreferenceManager;
 import com.isma.sime.ime.ChineseLayout;
 
 /**
- * Strongly-typed SharedPreferences wrapper.
- *
- * <p>Phase 1: only exposes the Chinese layout preference (QWERTY / T9).
- * New settings are added by extending this class — callers never touch
- * the string keys directly.
+ * Strongly-typed SharedPreferences wrapper. Currently exposes the
+ * Chinese layout preference (QWERTY / T9). New settings are added by
+ * extending this class — callers never touch string keys directly.
  */
 public final class SimePrefs {
 

@@ -1,9 +1,8 @@
 package com.isma.sime.ime.engine;
 
 /**
- * A candidate as shown in the candidates bar. For now this is a thin
- * wrapper around {@link DecodeResult} limited to what the UI needs; in
- * Phase 3 the adapter will use it directly.
+ * A candidate as shown in the candidates bar. A thin UI-facing wrapper
+ * around {@link DecodeResult}.
  */
 public final class Candidate {
     public final String text;

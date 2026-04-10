@@ -75,7 +75,7 @@ public class InputKernelTest {
     }
 
     private static DecodeResult r(String text, String units, int consumed) {
-        return new DecodeResult(text, units, 0f, consumed);
+        return new DecodeResult(text, units, consumed);
     }
 
     // ---------- QWERTY letter typing ----------

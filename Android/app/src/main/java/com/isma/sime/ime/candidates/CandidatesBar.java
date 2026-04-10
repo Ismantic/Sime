@@ -232,8 +232,6 @@ public class CandidatesBar extends FrameLayout {
                 tv.setTextColor(theme.candidateText);
             }
             tv.setOnClickListener(v -> {
-                android.util.Log.d("SimeBar", "candidate click idx=" + idx
-                        + " listener=" + (pickListener != null));
                 if (pickListener != null) pickListener.onCandidatePick(idx);
             });
             candidateContainer.addView(tv);
