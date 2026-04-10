@@ -72,16 +72,22 @@ std::uint64_t Interpreter::NumEdgeKey(std::size_t start, std::size_t end,
 }
 
 void Interpreter::InitNumNet(const std::vector<Unit>& start,
+                              const std::vector<Unit>& start_tail,
                               std::string_view nums,
                               bool tail_expansion,
                               std::vector<Node>& net,
                               NumUnitMap* pm) const {
     // Lattice layout:
-    //   columns [0, p)     — confirmed pinyin prefix (fixed unit per column)
-    //   columns [p, p+d)   — digit columns
-    //   column  p+d        — pre-terminal (sentence-end edge attached here)
-    //   column  p+d+1      — terminal
-    const std::size_t p = start.size();
+    //   columns [0, pc)        — complete pinyin prefix (fixed unit per col)
+    //   column  pc  (optional) — incomplete trailing initial, fans out over
+    //                            start_tail expansions (present only when
+    //                            start_tail is non-empty)
+    //   columns [p, p+d)       — digit columns
+    //   column  p+d            — pre-terminal (SentenceEnd edge attached here)
+    //   column  p+d+1          — terminal
+    const std::size_t pc = start.size();
+    const bool has_ptail = !start_tail.empty();
+    const std::size_t p = pc + (has_ptail ? 1 : 0);
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
 
@@ -112,13 +118,24 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
                     const Trie::Node* node, const std::string& acc) -> void {
         if (!node || pos >= total) return;
 
-        if (pos < p) {
+        if (pos < pc) {
             const Unit u = start[pos];
             const Trie::Node* next = trie_.DoMove(node, u);
             if (!next) return;
             std::string new_acc = append_py(acc, UnitData::Decode(u));
             emit(s, pos + 1, next, new_acc);
             self(self, s, pos + 1, next, new_acc);
+            return;
+        }
+
+        if (pos == pc && has_ptail) {
+            for (const auto& u : start_tail) {
+                const Trie::Node* next = trie_.DoMove(node, u);
+                if (!next) continue;
+                std::string new_acc = append_py(acc, UnitData::Decode(u));
+                emit(s, pos + 1, next, new_acc);
+                self(self, s, pos + 1, next, new_acc);
+            }
             return;
         }
 
@@ -201,7 +218,7 @@ std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
 
 std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     std::string_view nums,
-    const std::vector<Unit>& start,
+    std::string_view start,
     std::size_t num) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
@@ -211,13 +228,27 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     if (nums.empty() && start.empty()) return results;
     if (!nums.empty() && num_map_.empty()) return results;
 
-    const std::size_t p = start.size();
+    // Parse prefix: complete units + optional incomplete tail expansions.
+    std::vector<Unit> prefix_units;
+    std::vector<std::size_t> dummy_byte_end;
+    std::vector<Unit> prefix_tail;
+    if (!start.empty()) {
+        ParseWithBoundaries(start, prefix_units, dummy_byte_end, prefix_tail);
+    }
+    if (nums.empty() && prefix_units.empty() && prefix_tail.empty()) {
+        return results;
+    }
+
+    const std::size_t pc = prefix_units.size();
+    const bool has_ptail = !prefix_tail.empty();
+    const std::size_t p = pc + (has_ptail ? 1 : 0);
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
 
     std::vector<Node> net;
     NumUnitMap pm;
-    InitNumNet(start, nums, /*tail_expansion=*/!nums.empty(), net, &pm);
+    InitNumNet(prefix_units, prefix_tail, nums,
+               /*tail_expansion=*/!nums.empty(), net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -294,7 +325,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
 std::vector<DecodeResult> Interpreter::DecodeNumStr(
     std::string_view nums,
-    const std::vector<Unit>& start,
+    std::string_view start,
     std::size_t num) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
@@ -304,12 +335,27 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
     if (nums.empty() && start.empty()) return results;
     if (!nums.empty() && num_map_.empty()) return results;
 
+    // Parse prefix: complete units + optional incomplete tail expansions.
+    std::vector<Unit> prefix_units;
+    std::vector<std::size_t> dummy_byte_end;
+    std::vector<Unit> prefix_tail;
+    if (!start.empty()) {
+        ParseWithBoundaries(start, prefix_units, dummy_byte_end, prefix_tail);
+    }
+    if (nums.empty() && prefix_units.empty() && prefix_tail.empty()) {
+        return results;
+    }
+
     const std::size_t max_top = num == 0 ? 1 : num;
-    const std::size_t total = start.size() + nums.size();
+    const std::size_t pc = prefix_units.size();
+    const bool has_ptail = !prefix_tail.empty();
+    const std::size_t p = pc + (has_ptail ? 1 : 0);
+    const std::size_t total = p + nums.size();
 
     std::vector<Node> net;
     NumUnitMap pm;
-    InitNumNet(start, nums, /*tail_expansion=*/false, net, &pm);
+    InitNumNet(prefix_units, prefix_tail, nums,
+               /*tail_expansion=*/false, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
