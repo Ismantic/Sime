@@ -29,7 +29,7 @@ public class SimeEngine {
     private static native boolean nativeLoadResources(String triePath, String modelPath);
     private static native boolean nativeLoadUserDict(String userDictPath);
     private static native String[] nativeDecodeSentence(String input, int num);
-    private static native String[] nativeDecodeT9(String prefixLetters, String digits, int num);
+    private static native String[] nativeDecodeNumSentence(String prefixLetters, String digits, int num);
     private static native boolean nativeIsReady();
 
     private boolean mReady = false;
@@ -94,10 +94,13 @@ public class SimeEngine {
         return parseTriplets(nativeDecodeSentence(input, num));
     }
 
-    /** T9: decode digit string (with optional pinyin prefix) to candidates. */
-    public Candidate[] decodeT9(String prefixLetters, String digits, int num) {
+    /**
+     * Num-key (T9 / nine-key) decode: digit string with an optional pinyin
+     * prefix. Mirrors {@code sime::Interpreter::DecodeNumSentence}.
+     */
+    public Candidate[] decodeNumSentence(String prefixLetters, String digits, int num) {
         if (!isReady()) return new Candidate[0];
-        return parseTriplets(nativeDecodeT9(
+        return parseTriplets(nativeDecodeNumSentence(
                 prefixLetters != null ? prefixLetters : "", digits, num));
     }
 

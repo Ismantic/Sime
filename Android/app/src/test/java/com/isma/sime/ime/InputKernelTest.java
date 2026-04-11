@@ -28,7 +28,7 @@ public class InputKernelTest {
     /** Simple programmable decoder: exact string → canned results. */
     private static final class FakeDecoder implements Decoder {
         final Map<String, DecodeResult[]> sentenceMap = new HashMap<>();
-        final Map<String, DecodeResult[]> t9Map = new HashMap<>();
+        final Map<String, DecodeResult[]> numSentenceMap = new HashMap<>();
 
         @Override
         public DecodeResult[] decodeSentence(String pinyin, int limit) {
@@ -37,8 +37,8 @@ public class InputKernelTest {
         }
 
         @Override
-        public DecodeResult[] decodeT9(String startLetters, String digits, int limit) {
-            DecodeResult[] r = t9Map.get(startLetters + "|" + digits);
+        public DecodeResult[] decodeNumSentence(String startLetters, String digits, int limit) {
+            DecodeResult[] r = numSentenceMap.get(startLetters + "|" + digits);
             return r != null ? r : new DecodeResult[0];
         }
 
@@ -46,8 +46,8 @@ public class InputKernelTest {
             sentenceMap.put(pinyin, results);
         }
 
-        void putT9(String startLetters, String digits, DecodeResult... results) {
-            t9Map.put(startLetters + "|" + digits, results);
+        void putNumSentence(String startLetters, String digits, DecodeResult... results) {
+            numSentenceMap.put(startLetters + "|" + digits, results);
         }
     }
 
@@ -211,9 +211,9 @@ public class InputKernelTest {
     // ---------- T9 ----------
 
     @Test
-    public void t9DigitsInvokeDecodeT9() {
+    public void t9DigitsInvokeDecodeNumSentence() {
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("", "6426", r("你好", "ni'hao", 4));
+        decoder.putNumSentence("", "6426", r("你好", "ni'hao", 4));
 
         kernel.onKey(SimeKey.digit('6'));
         kernel.onKey(SimeKey.digit('4'));
@@ -229,8 +229,8 @@ public class InputKernelTest {
     @Test
     public void t9PinyinPickReplacesDigits() {
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("", "6426", r("你好", "ni'hao", 4));
-        decoder.putT9("ni", "26", r("你饿", "ni'e", 2));
+        decoder.putNumSentence("", "6426", r("你好", "ni'hao", 4));
+        decoder.putNumSentence("ni", "26", r("你饿", "ni'e", 2));
         for (char c : "6426".toCharArray()) kernel.onKey(SimeKey.digit(c));
 
         kernel.onPinyinCandidatePick("64", "ni", false);
@@ -243,11 +243,11 @@ public class InputKernelTest {
     @Test
     public void t9PickHanziAfterPinyinPickFullyCommits() {
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("", "6426", r("你好", "ni'hao", 4));
+        decoder.putNumSentence("", "6426", r("你好", "ni'hao", 4));
         // After pinyin pick "ni" for digits "64", remaining digits are "26".
-        // The engine sees decodeT9("ni", "26", ...) and returns "你饿" with
+        // The engine sees decodeNumSentence("ni", "26", ...) and returns "你饿" with
         // cnt = letters.size() + digits.size() = 2 + 2 = 4 (total bytes).
-        decoder.putT9("ni", "26", r("你饿", "ni'e", 4));
+        decoder.putNumSentence("ni", "26", r("你饿", "ni'e", 4));
         for (char c : "6426".toCharArray()) kernel.onKey(SimeKey.digit(c));
         kernel.onPinyinCandidatePick("64", "ni", false);
         // buffer = "ni26", lettersEnd = 2
@@ -271,8 +271,8 @@ public class InputKernelTest {
         // pinyin pick must write to the actual digit region, not the stale
         // bytes still under selectedLength.
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("", "64267", r("nihao", "ni'hao", 5));
-        decoder.putT9("ni", "267", r("你饿", "ni'e", 4));     // covers "ni"+"26"
+        decoder.putNumSentence("", "64267", r("nihao", "ni'hao", 5));
+        decoder.putNumSentence("ni", "267", r("你饿", "ni'e", 4));     // covers "ni"+"26"
         // After picking "你饿", remaining digits are "7", then user types "8".
         // We never decode that exact string in this test — only the pinyin
         // pick path matters.
@@ -306,8 +306,8 @@ public class InputKernelTest {
         // pick that doesn't fully consume — punctuation should flush the
         // committed hanzi and reset state with the leftover digits.
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("ni", "26789", r("你饿", "ni'e", 4));  // covers ni+26
-        decoder.putT9("", "789", r("七八九", "qi'ba'jiu", 3));
+        decoder.putNumSentence("ni", "26789", r("你饿", "ni'e", 4));  // covers ni+26
+        decoder.putNumSentence("", "789", r("七八九", "qi'ba'jiu", 3));
         for (char c : "64".toCharArray()) kernel.onKey(SimeKey.digit(c));
         kernel.onPinyinCandidatePick("64", "ni", false);
         for (char c : "26789".toCharArray()) kernel.onKey(SimeKey.digit(c));
@@ -334,7 +334,7 @@ public class InputKernelTest {
         // After a hanzi pick that crossed lettersEnd, backspace should
         // restore the original lettersEnd from the action.
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("ni", "267", r("你饿", "ni'e", 4)); // covers ni+26
+        decoder.putNumSentence("ni", "267", r("你饿", "ni'e", 4)); // covers ni+26
         for (char c : "64267".toCharArray()) kernel.onKey(SimeKey.digit(c));
         kernel.onPinyinCandidatePick("64", "ni", false);
         // buffer = "ni267", lettersEnd = 2
@@ -376,8 +376,8 @@ public class InputKernelTest {
     @Test
     public void t9PinyinPickCanBeUndoneByBackspace() {
         kernel.setChineseLayout(ChineseLayout.T9);
-        decoder.putT9("", "6426", r("你好", "ni'hao", 4));
-        decoder.putT9("ni", "26", r("你饿", "ni'e", 2));
+        decoder.putNumSentence("", "6426", r("你好", "ni'hao", 4));
+        decoder.putNumSentence("ni", "26", r("你饿", "ni'e", 2));
         for (char c : "6426".toCharArray()) kernel.onKey(SimeKey.digit(c));
         kernel.onPinyinCandidatePick("64", "ni", false);
 
