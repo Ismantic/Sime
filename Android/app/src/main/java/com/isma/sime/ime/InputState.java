@@ -143,12 +143,20 @@ public final class InputState {
                     "digit substring exceeds buffer: start=" + start
                             + " digits='" + digits + "' buffer='" + buffer + "'");
         }
-        buffer = buffer.substring(0, start) + letters + buffer.substring(end);
-        lettersEnd = start + letters.length();
+        // If the previous buffer char is a letter, the new picked letters
+        // would otherwise concatenate into a single ambiguous string. Inject
+        // a `'` separator so syllable boundaries are preserved for the
+        // decoder (and the preedit display) — e.g. picking "hao" then "de"
+        // becomes "hao'de", not "haode".
+        boolean leadingSep = start > 0
+                && Character.isLetter(buffer.charAt(start - 1));
+        String replacement = leadingSep ? ("'" + letters) : letters;
+        buffer = buffer.substring(0, start) + replacement + buffer.substring(end);
+        lettersEnd = start + replacement.length();
         if (cursor < lettersEnd) cursor = lettersEnd;
         InputAction a = fallback
-                ? InputAction.fallbackPick(start, digits, letters)
-                : InputAction.pinyinPick(start, digits, letters);
+                ? InputAction.fallbackPick(start, digits, letters, leadingSep)
+                : InputAction.pinyinPick(start, digits, letters, leadingSep);
         undoStack.push(a);
     }
 

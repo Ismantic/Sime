@@ -47,10 +47,17 @@ public:
         std::string_view nums,
         std::string_view start = {},
         std::size_t num = 18) const;
+    // Layer 1: full sentence N-best covering start + nums. Returns
+    // 1 + `extra` sentences (top sentence is always included; `extra`
+    // additional alternatives are appended).
+    // Layer 2: word/char alternatives anchored at the first digit
+    // column. Always returned in full (subject to MaxPerPrefix for
+    // multi-character entries). Both layers are scored against the
+    // LM context produced by the prefix `start`.
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
         std::string_view start = {},
-        std::size_t num = 0) const;
+        std::size_t extra = 0) const;
 
 private:
     // Lattice types

@@ -41,6 +41,19 @@ public class T9KeyboardView extends KeyboardView {
             "", "", "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
     };
 
+    /**
+     * The pinyin letters mapped to a single T9 digit key. Empty string
+     * for non-T9 chars (digits 0/1, separators, anything else). Single
+     * source of truth for the T9 keymap — callers like
+     * {@code InputView.firstDigitLetters} reuse this instead of
+     * hand-rolling another switch.
+     */
+    public static String lettersForDigit(char digit) {
+        int idx = digit - '0';
+        if (idx < 0 || idx >= T9_LETTERS.length) return "";
+        return T9_LETTERS[idx];
+    }
+
     private static final String[] IDLE_PUNC = {"，", "。", "？", "！"};
 
     /** Max items in the left strip (pinyin alts + fallback letters). */
@@ -213,6 +226,11 @@ public class T9KeyboardView extends KeyboardView {
         }
         // Active: single-syllable pinyin alts first (up to ~8), then
         // fallback letters for the first digit as a last resort.
+        // Track which alt letters have already been added so the fallback
+        // letter loop below doesn't duplicate single-character pinyin
+        // alternatives like "n" (which would otherwise show twice for
+        // digit 6: once as a pinyin alt, once as a fallback letter).
+        java.util.HashSet<String> shown = new java.util.HashSet<>();
         int added = 0;
         for (int i = 0; i < pinyinAlts.size() && added < MAX_LEFT_ITEMS; i++) {
             final int idx = i;
@@ -220,13 +238,17 @@ public class T9KeyboardView extends KeyboardView {
             leftStrip.addView(makeLeftItem(label, true, () -> {
                 if (leftListener != null) leftListener.onPinyinAltPick(idx);
             }));
+            shown.add(label);
             added++;
         }
         for (int i = 0; i < firstDigitLetters.length() && added < MAX_LEFT_ITEMS; i++) {
             final char ch = firstDigitLetters.charAt(i);
-            leftStrip.addView(makeLeftItem(String.valueOf(ch), false, () -> {
+            String label = String.valueOf(ch);
+            if (shown.contains(label)) continue;
+            leftStrip.addView(makeLeftItem(label, false, () -> {
                 if (leftListener != null) leftListener.onFallbackLetter(ch);
             }));
+            shown.add(label);
             added++;
         }
         if (added == 0) {

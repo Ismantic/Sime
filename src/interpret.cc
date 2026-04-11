@@ -245,7 +245,7 @@ std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
 std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
-    std::size_t num) const {
+    std::size_t extra) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     for (char c : nums) {
@@ -256,11 +256,14 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     if (!nums.empty() && num_map_.empty()) return results;
 
     // Parse prefix: complete units + optional incomplete tail expansions.
+    // prefix_byte_end[i] = byte position in `start` right after the i-th
+    // complete prefix syllable. Used to compute Layer 2 edge cnt for
+    // edges that end inside the prefix region.
     std::vector<Unit> prefix_units;
-    std::vector<std::size_t> dummy_byte_end;
+    std::vector<std::size_t> prefix_byte_end;
     std::vector<Unit> prefix_tail;
     if (!start.empty()) {
-        ParseWithBoundaries(start, prefix_units, dummy_byte_end, prefix_tail);
+        ParseWithBoundaries(start, prefix_units, prefix_byte_end, prefix_tail);
     }
     if (nums.empty() && prefix_units.empty() && prefix_tail.empty()) {
         return results;
@@ -271,6 +274,16 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     const std::size_t p = pc + (has_ptail ? 1 : 0);
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
+
+    // Buffer-byte position at the end of column k (for Layer 2 cnt).
+    // Mirrors how DecodeSentence uses unit_byte_end.
+    auto edge_byte_end = [&](std::size_t k) -> std::size_t {
+        if (k == 0) return 0;
+        if (k <= pc) return prefix_byte_end[k - 1];
+        // k >= p (k > pc): the entire prefix is consumed, plus (k - p)
+        // digit columns past the prefix end.
+        return start.size() + (k - p);
+    };
 
     std::vector<Node> net;
     NumUnitMap pm;
@@ -288,9 +301,11 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     std::unordered_set<std::string> dedup;
 
     // === Layer 1: Full sentence N-best (covers prefix + all digits) ===
+    // Returns 1 + extra entries (the top sentence is always included;
+    // `extra` additional alternatives are appended).
     {
         const auto tail = net[total + 1].states.GetStates();
-        const std::size_t full_limit = 1 + num;
+        const std::size_t full_limit = 1 + extra;
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
         // cnt = total bytes consumed = start (already confirmed) + all digits.
         // Aligned with DecodeSentence which returns total input bytes.
@@ -308,14 +323,17 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
     const std::size_t layer1_size = results.size();
 
-    // === Layer 2: word/char alternatives starting at the first digit ===
-    // (When d == 0 there are no digit alternatives; net[total] holds only the
-    // SentenceEnd edge which the loop filters out.)
+    // === Layer 2: unigram alternatives anchored at column 0 ===
+    // Each edge in net[0].es is one trie token starting from column 0.
+    // The first pc columns of the lattice are fixed to start's syllables,
+    // so any emitted token's pinyin is some prefix of (start + nums).
+    // Multi-syllable trie tokens (e.g. 你好) are legitimate unigrams and
+    // are included. Scoring is unigram (Scorer::Pos{}, no LM context).
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     std::size_t word_count = 0;
 
-    for (const auto& edge : net[p].es) {
+    for (const auto& edge : net[0].es) {
         if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
 
         const char32_t* chars = trie_.TokenAt(edge.id);
@@ -340,9 +358,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
 
         auto pit = pm.find(NumEdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
-        // cnt = total bytes consumed = start (already confirmed) + digit cols
-        // consumed by this edge. Matches DecodeSentence semantics.
-        std::size_t cnt = start.size() + (edge.end - p);
+        std::size_t cnt = edge_byte_end(edge.end);
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            score, cnt});
     }

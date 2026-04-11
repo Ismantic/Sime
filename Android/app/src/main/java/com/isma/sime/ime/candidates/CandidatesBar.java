@@ -29,6 +29,7 @@ public class CandidatesBar extends FrameLayout {
     public interface OnCandidatePickListener { void onCandidatePick(int index); }
     public interface OnSettingsListener       { void onSettingsClick(); }
     public interface OnHideListener           { void onHideClick(); }
+    public interface OnExpandToggleListener   { void onExpandToggle(); }
 
     private final SimeTheme theme;
 
@@ -36,10 +37,13 @@ public class CandidatesBar extends FrameLayout {
     private LinearLayout activeView;
     private TextView preeditView;
     private LinearLayout candidateContainer;
+    private TextView expandToggleButton;
+    private boolean expanded = false;
 
     private OnCandidatePickListener pickListener;
     private OnSettingsListener settingsListener;
     private OnHideListener hideListener;
+    private OnExpandToggleListener expandToggleListener;
 
     public CandidatesBar(Context context) {
         super(context);
@@ -118,12 +122,11 @@ public class CandidatesBar extends FrameLayout {
                 LinearLayout.LayoutParams.MATCH_PARENT));
         activeView.addView(scroll);
 
-        TextView expand = iconButton("∨");
-        // TODO Phase 4: expand candidate grid. For now hide-like.
-        expand.setOnClickListener(v -> {
-            if (hideListener != null) hideListener.onHideClick();
+        expandToggleButton = iconButton("∨");
+        expandToggleButton.setOnClickListener(v -> {
+            if (expandToggleListener != null) expandToggleListener.onExpandToggle();
         });
-        activeView.addView(expand);
+        activeView.addView(expandToggleButton);
 
         addView(activeView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -179,11 +182,24 @@ public class CandidatesBar extends FrameLayout {
 
     /**
      * Zip the raw remaining buffer with the decoder-returned pinyin
-     * segmentation so that user-typed '\'' boundaries stay visible while
-     * real digits are replaced by their decoded pinyin letters.
+     * segmentation so that user-typed {@code '} boundaries stay visible
+     * while real digits are replaced by their decoded pinyin letters.
+     *
+     * <p>The zip assumes {@code units} and {@code rem} have the same
+     * non-separator character count, which holds in steady state. After
+     * a keystroke but before the async decoder callback returns, the
+     * kernel publishes once with the new buffer and the OLD topUnits
+     * still in place — that older units string covers fewer chars than
+     * the new buffer, and naively zipping would emit garbage like
+     * "s4" (new buffer "74" annotated with stale units "s"). Detect
+     * the mismatch and fall back to showing the raw buffer for the
+     * brief decoding window.
      */
     private static String annotateRemaining(String rem, String units) {
         if (units.isEmpty()) return rem;
+        if (countNonSeparator(units) != countNonSeparator(rem)) {
+            return rem;
+        }
         StringBuilder sb = new StringBuilder(rem.length() + units.length());
         int ri = 0;
         int ui = 0;
@@ -209,6 +225,14 @@ public class CandidatesBar extends FrameLayout {
         while (ri < rem.length()) sb.append(rem.charAt(ri++));
         while (ui < units.length()) sb.append(units.charAt(ui++));
         return sb.toString();
+    }
+
+    private static int countNonSeparator(String s) {
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) != '\'') n++;
+        }
+        return n;
     }
 
     private void populateCandidates(List<Candidate> candidates) {
@@ -253,6 +277,15 @@ public class CandidatesBar extends FrameLayout {
     public void setOnCandidatePickListener(OnCandidatePickListener l) { this.pickListener = l; }
     public void setOnSettingsListener(OnSettingsListener l)           { this.settingsListener = l; }
     public void setOnHideListener(OnHideListener l)                   { this.hideListener = l; }
+    public void setOnExpandToggleListener(OnExpandToggleListener l)   { this.expandToggleListener = l; }
+
+    /** Update the toggle glyph to reflect the current expanded state. */
+    public void setExpanded(boolean expanded) {
+        this.expanded = expanded;
+        if (expandToggleButton != null) {
+            expandToggleButton.setText(expanded ? "∧" : "∨");
+        }
+    }
 
     private int dp(int v) {
         return (int) TypedValue.applyDimension(

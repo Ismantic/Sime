@@ -6,6 +6,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 
 import com.isma.sime.ime.candidates.CandidatesBar;
+import com.isma.sime.ime.candidates.ExpandedCandidatesView;
 import com.isma.sime.ime.engine.Candidate;
 import com.isma.sime.ime.keyboard.KeyboardView;
 import com.isma.sime.ime.keyboard.NumberKeyboardView;
@@ -26,10 +27,13 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
 
     private CandidatesBar candidatesBar;
     private KeyboardView currentKeyboard;
+    private ExpandedCandidatesView expandedView;
     private InputKernel kernel;
 
     private KeyboardMode shownMode = null;
     private ChineseLayout shownLayout = null;
+    /** When true, the keyboard slot is occupied by {@link #expandedView}. */
+    private boolean expanded = false;
 
     public InputView(Context context) {
         super(context);
@@ -57,6 +61,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
 
     public void attach(InputKernel kernel) {
         this.kernel = kernel;
+        candidatesBar.setOnExpandToggleListener(this::toggleExpanded);
         // Install initial keyboard.
         swapKeyboardIfNeeded();
     }
@@ -64,8 +69,22 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     @Override
     public void onStateChanged(InputState state, List<Candidate> candidates) {
         if (kernel == null) return;
-        swapKeyboardIfNeeded();
+
+        // If the buffer cleared (e.g., the user committed) while the
+        // expanded grid was open, collapse back to the keyboard before
+        // re-rendering anything.
+        if (expanded && (state == null || state.isEmpty())) {
+            setExpanded(false);
+        }
+
         candidatesBar.render(kernel, state, candidates);
+
+        if (expanded) {
+            if (expandedView != null) expandedView.render(candidates);
+            return;
+        }
+
+        swapKeyboardIfNeeded();
         // Push T9 dual-state + left strip if applicable.
         if (currentKeyboard instanceof T9KeyboardView) {
             T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
@@ -78,22 +97,68 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         }
     }
 
+    private void toggleExpanded() {
+        if (kernel == null) return;
+        // Don't expand into nothing.
+        if (!expanded && (kernel.getCandidates() == null
+                || kernel.getCandidates().isEmpty())) {
+            return;
+        }
+        setExpanded(!expanded);
+    }
+
+    private void setExpanded(boolean want) {
+        if (want == expanded) return;
+        expanded = want;
+        candidatesBar.setExpanded(expanded);
+        if (expanded) {
+            installExpandedView();
+        } else {
+            removeExpandedView();
+            // Force keyboard rebuild on the next swapKeyboardIfNeeded.
+            shownMode = null;
+            shownLayout = null;
+            swapKeyboardIfNeeded();
+            // Refresh T9 / QWERTY visual state for the freshly-installed keyboard.
+            if (currentKeyboard instanceof T9KeyboardView && kernel != null) {
+                T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
+                InputState s = kernel.getState();
+                t9.setActive(s != null && !s.isEmpty(),
+                        kernel.getPinyinAlts(), firstDigitLetters(s));
+            }
+            if (currentKeyboard instanceof QwertyKeyboardView && kernel != null) {
+                ((QwertyKeyboardView) currentKeyboard).setMode(kernel.getMode());
+            }
+        }
+    }
+
+    private void installExpandedView() {
+        if (currentKeyboard != null) {
+            removeView(currentKeyboard);
+            currentKeyboard = null;
+        }
+        if (expandedView == null) {
+            expandedView = new ExpandedCandidatesView(getContext());
+            expandedView.setOnCandidatePickListener(idx -> {
+                if (kernel != null) kernel.onHanziCandidatePick(idx);
+            });
+        }
+        expandedView.render(kernel != null ? kernel.getCandidates() : null);
+        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(240));
+        addView(expandedView, lp);
+    }
+
+    private void removeExpandedView() {
+        if (expandedView != null && expandedView.getParent() == this) {
+            removeView(expandedView);
+        }
+    }
+
     private String firstDigitLetters(InputState state) {
         if (state == null) return "";
         int i = state.lettersEnd;
         if (i >= state.buffer.length()) return "";
-        char c = state.buffer.charAt(i);
-        switch (c) {
-            case '2': return "abc";
-            case '3': return "def";
-            case '4': return "ghi";
-            case '5': return "jkl";
-            case '6': return "mno";
-            case '7': return "pqrs";
-            case '8': return "tuv";
-            case '9': return "wxyz";
-            default:  return "";
-        }
+        return T9KeyboardView.lettersForDigit(state.buffer.charAt(i));
     }
 
     private void swapKeyboardIfNeeded() {

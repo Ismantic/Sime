@@ -146,12 +146,13 @@ public class InputStateTest {
         assertEquals("q6426", s.buffer);
         assertEquals(1, s.lettersEnd);
 
-        // Then pick pinyin 'ni' for "64"
+        // Then pick pinyin 'ni' for "64". The previous buffer char ('q')
+        // is a letter, so applyLetterPick injects a '\'' separator.
         s.applyLetterPick("64", "ni", false);
-        assertEquals("qni26", s.buffer);
-        assertEquals(3, s.lettersEnd);
+        assertEquals("q'ni26", s.buffer);
+        assertEquals(4, s.lettersEnd);
 
-        // Undo pinyin pick
+        // Undo pinyin pick — the separator goes with it.
         assertTrue(s.cancel());
         assertEquals("q6426", s.buffer);
         assertEquals(1, s.lettersEnd);
@@ -162,6 +163,36 @@ public class InputStateTest {
         assertEquals(0, s.lettersEnd);
 
         assertFalse(s.cancel());
+    }
+
+    @Test
+    public void consecutivePinyinPicksInsertSeparator() {
+        // The user's reported scenario: T9 input, pick "hao" alt then
+        // "de" alt. The buffer should record the syllable boundary as
+        // "hao'de" so the next decode call carries proper LM context.
+        InputState s = new InputState();
+        s.buffer = "42633985426";
+        s.lettersEnd = 0;
+
+        // Pick "hao" for first 3 digits "426"
+        s.applyLetterPick("426", "hao", false);
+        assertEquals("hao33985426", s.buffer);
+        assertEquals(3, s.lettersEnd);
+
+        // Pick "de" for next 2 digits "33" — separator injected.
+        s.applyLetterPick("33", "de", false);
+        assertEquals("hao'de985426", s.buffer);
+        assertEquals(6, s.lettersEnd);
+
+        // Undo "de" pick — separator removed too.
+        assertTrue(s.cancel());
+        assertEquals("hao33985426", s.buffer);
+        assertEquals(3, s.lettersEnd);
+
+        // Undo "hao" pick.
+        assertTrue(s.cancel());
+        assertEquals("42633985426", s.buffer);
+        assertEquals(0, s.lettersEnd);
     }
 
     // ---------- reset ----------
