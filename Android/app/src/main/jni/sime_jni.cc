@@ -99,7 +99,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
 
 // 4. DecodeNumSentence: returns triplets [text, units, cnt, ...]
 JNIEXPORT jobjectArray JNICALL
-Java_com_isma_sime_SimeEngine_nativeDecodeT9(
+Java_com_isma_sime_SimeEngine_nativeDecodeNumSentence(
     JNIEnv* env, jclass /*clazz*/,
     jstring prefixLetters, jstring digits, jint num) {
 

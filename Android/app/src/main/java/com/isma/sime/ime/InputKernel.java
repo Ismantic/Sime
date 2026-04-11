@@ -432,7 +432,7 @@ public class InputKernel {
 
         DecodeResult[] raw;
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
-            raw = decoder.decodeT9(letters, digits, EXTRA_SENTENCES);
+            raw = decoder.decodeNumSentence(letters, digits, EXTRA_SENTENCES);
             pinyinAlts = computePinyinAlts(digits);
         } else if (!letters.isEmpty()) {
             raw = decoder.decodeSentence(letters, EXTRA_SENTENCES);
@@ -501,7 +501,7 @@ public class InputKernel {
      * {@code private/SimeAndroidRefactor.md} §0.2 (4).
      */
     private List<PinyinAlt> computePinyinAlts(String digits) {
-        DecodeResult[] raw = decoder.decodeT9("", digits, EXTRA_SENTENCES);
+        DecodeResult[] raw = decoder.decodeNumSentence("", digits, EXTRA_SENTENCES);
         if (raw.length == 0) return Collections.emptyList();
         // Deduplicate by units string, keeping first occurrence order.
         java.util.LinkedHashMap<String, PinyinAlt> seen = new java.util.LinkedHashMap<>();

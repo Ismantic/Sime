@@ -20,8 +20,9 @@ public interface Decoder {
     DecodeResult[] decodeSentence(String pinyin, int limit);
 
     /**
-     * T9 path: decode a digit string whose first portion may already have
-     * been committed to letters via pinyin/fallback picks.
+     * Num-key (T9 / nine-key) path: decode a digit string whose first
+     * portion may already have been committed to letters via pinyin /
+     * fallback picks. Mirrors {@code sime::Interpreter::DecodeNumSentence}.
      *
      * @param startLetters pinyin letters already confirmed for the
      *                     beginning of the input (may be empty). The last
@@ -30,5 +31,5 @@ public interface Decoder {
      * @param digits       undecided digit suffix (may be empty)
      * @param limit        maximum number of candidates
      */
-    DecodeResult[] decodeT9(String startLetters, String digits, int limit);
+    DecodeResult[] decodeNumSentence(String startLetters, String digits, int limit);
 }

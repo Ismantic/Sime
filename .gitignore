@@ -67,3 +67,6 @@ Android/build/
 Android/.gradle/
 Android/local.properties
 Android/gradle/wrapper/gradle-wrapper.jar
+Android/keystore.properties
+Android/**/*.jks
+Android/**/*.keystore

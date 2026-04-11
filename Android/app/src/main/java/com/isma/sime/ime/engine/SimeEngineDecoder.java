@@ -22,9 +22,9 @@ public final class SimeEngineDecoder implements Decoder {
     }
 
     @Override
-    public DecodeResult[] decodeT9(String startLetters, String digits, int limit) {
+    public DecodeResult[] decodeNumSentence(String startLetters, String digits, int limit) {
         if (!engine.isReady()) return new DecodeResult[0];
-        return convert(engine.decodeT9(startLetters, digits, limit));
+        return convert(engine.decodeNumSentence(startLetters, digits, limit));
     }
 
     private static DecodeResult[] convert(SimeEngine.Candidate[] raw) {
