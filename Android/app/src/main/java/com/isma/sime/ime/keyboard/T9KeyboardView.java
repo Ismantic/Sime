@@ -1,39 +1,36 @@
 package com.isma.sime.ime.keyboard;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.isma.sime.ime.InputKernel;
+import com.isma.sime.ime.keyboard.framework.KeyView;
+import com.isma.sime.ime.keyboard.framework.KeyboardContainer;
+import com.isma.sime.ime.keyboard.layouts.T9Layout;
 
 import java.util.List;
 
 /**
- * T9 (九宫格) layout.
+ * T9 (九宫格) keyboard. Three vertical blocks side by side:
  *
- * <pre>
- *   ,   分词/@#   ABC(2)  DEF(3)    ⌫
- *   。  GHI(4)    JKL(5)  MNO(6)    重输
- *   ?   PQRS(7)   TUV(8)  WXYZ(9)   确定/⏎
- *   !   符        123     空格      中/英
- * </pre>
- *
- * The leftmost 4-cell column is dual-state:
  * <ul>
- *   <li>idle (no input): shows {@code , 。 ? !} shortcut punctuation.</li>
- *   <li>active (has input): shows pinyin alternatives and T9 letters for
- *       the first remaining digit.</li>
+ *   <li><b>Left block</b> — dynamic strip on top (pinyin alts /
+ *       fallback letters / idle punctuation) plus a 符号 cell at the
+ *       bottom.
+ *   <li><b>Center block</b> — 3×3 digit grid on top, plus a bottom row
+ *       (123 | 空格 | 中\n英) sharing the digit grid's width.
+ *   <li><b>Right block</b> — ⌫ / 重输 / 换行 with row weights 1, 1, 2
+ *       so 换行 is a tall key that extends from row 3 down through the
+ *       bottom-row area.
  * </ul>
  *
- * The {@code 分词/@#} key in the top row is also dual-state:
- * idle → {@code @#} (commits {@code @} as a punctuation shortcut for now),
- * active → {@code 分词} (emits separator). Similarly the right-column
- * third key is {@code ⏎ / 确定}.
+ * <p>Two keys are dual-state ({@code @# ↔ 分词}, {@code 换行 ↔ 确定});
+ * the controller overrides their per-key click listener and label
+ * depending on whether the kernel currently has input.
  */
 public class T9KeyboardView extends KeyboardView {
 
@@ -44,9 +41,7 @@ public class T9KeyboardView extends KeyboardView {
     /**
      * The pinyin letters mapped to a single T9 digit key. Empty string
      * for non-T9 chars (digits 0/1, separators, anything else). Single
-     * source of truth for the T9 keymap — callers like
-     * {@code InputView.firstDigitLetters} reuse this instead of
-     * hand-rolling another switch.
+     * source of truth for the T9 keymap.
      */
     public static String lettersForDigit(char digit) {
         int idx = digit - '0';
@@ -58,18 +53,17 @@ public class T9KeyboardView extends KeyboardView {
 
     /** Max items in the left strip (pinyin alts + fallback letters). */
     private static final int MAX_LEFT_ITEMS = 12;
-    private static final int LEFT_ITEM_HEIGHT_DP = 42;
+    private static final int LEFT_ITEM_HEIGHT_DP = 38;
 
     private LinearLayout leftStrip;
     private ScrollView leftScroll;
-    private TextView topLeftKey;    // 分词 / @#
-    private TextView enterKey;      // 确定 / ⏎
+    private KeyboardContainer mainGrid;
+    private KeyboardContainer rightCol;
 
     private boolean active = false;
     private List<InputKernel.PinyinAlt> pinyinAlts = java.util.Collections.emptyList();
     private String firstDigitLetters = "";
 
-    /** Listener for pinyin alt / fallback letter picks. */
     public interface OnLeftStripListener {
         void onPinyinAltPick(int index);
         void onFallbackLetter(char letter);
@@ -79,6 +73,9 @@ public class T9KeyboardView extends KeyboardView {
 
     public T9KeyboardView(Context context) {
         super(context);
+        // Override the base class's VERTICAL orientation — this view's
+        // top-level layout is three columns side by side.
+        setOrientation(HORIZONTAL);
         build();
     }
 
@@ -86,132 +83,96 @@ public class T9KeyboardView extends KeyboardView {
         this.leftListener = l;
     }
 
-    /** Called by the service on each state change. */
     public void setActive(boolean active,
                            List<InputKernel.PinyinAlt> alts,
                            String firstDigitLetters) {
         this.active = active;
-        this.pinyinAlts = alts != null ? alts : java.util.Collections.<InputKernel.PinyinAlt>emptyList();
+        this.pinyinAlts = alts != null ? alts
+                : java.util.Collections.<InputKernel.PinyinAlt>emptyList();
         this.firstDigitLetters = firstDigitLetters != null ? firstDigitLetters : "";
         refreshDualStateKeys();
         populateLeftStrip();
     }
 
     private void build() {
-        LinearLayout top = new LinearLayout(getContext());
-        top.setOrientation(HORIZONTAL);
-        LayoutParams topLp = new LayoutParams(
-                LayoutParams.MATCH_PARENT, 0, 4f);
-        top.setLayoutParams(topLp);
+        // ===== Left block: dynamic strip on top (3f) + 符号 (1f) =====
+        LinearLayout leftBlock = new LinearLayout(getContext());
+        leftBlock.setOrientation(VERTICAL);
+        addView(leftBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
         leftScroll = new ScrollView(getContext());
-        LayoutParams lsLp = new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f);
-        leftScroll.setLayoutParams(lsLp);
         leftScroll.setVerticalScrollBarEnabled(false);
         leftScroll.setFillViewport(true);
-        top.addView(leftScroll);
+        leftBlock.addView(leftScroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 3f));
 
         leftStrip = new LinearLayout(getContext());
         leftStrip.setOrientation(VERTICAL);
-        leftStrip.setLayoutParams(new ScrollView.LayoutParams(
+        leftScroll.addView(leftStrip, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
-        leftScroll.addView(leftStrip);
 
-        LinearLayout mainGrid = new LinearLayout(getContext());
-        mainGrid.setOrientation(VERTICAL);
-        LayoutParams mgLp = new LayoutParams(0, LayoutParams.MATCH_PARENT, 3f);
-        mainGrid.setLayoutParams(mgLp);
-        top.addView(mainGrid);
+        KeyboardContainer fuhao = new KeyboardContainer(getContext(), theme);
+        fuhao.setOnKeyEmitListener(this::emit);
+        fuhao.setLayout(T9Layout.buildFuhaoCell());
+        leftBlock.addView(fuhao, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        LinearLayout rightCol = new LinearLayout(getContext());
-        rightCol.setOrientation(VERTICAL);
-        LayoutParams rcLp = new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f);
-        rightCol.setLayoutParams(rcLp);
-        top.addView(rightCol);
+        // ===== Center block: 3×3 digit grid (3f) + center bottom row (1f) =====
+        LinearLayout centerBlock = new LinearLayout(getContext());
+        centerBlock.setOrientation(VERTICAL);
+        addView(centerBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 3f));
 
-        // --- main grid ---
-        LinearLayout r1 = makeRow();
-        topLeftKey = makeKey("@#", 1f, 14f, true, this::onTopLeftKey);
-        r1.addView(topLeftKey);
-        r1.addView(makeT9DigitKey("2", "ABC"));
-        r1.addView(makeT9DigitKey("3", "DEF"));
-        mainGrid.addView(r1);
+        mainGrid = new KeyboardContainer(getContext(), theme);
+        mainGrid.setOnKeyEmitListener(this::emit);
+        mainGrid.setLayout(T9Layout.buildMainGrid());
+        centerBlock.addView(mainGrid, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 3f));
 
-        LinearLayout r2 = makeRow();
-        r2.addView(makeT9DigitKey("4", "GHI"));
-        r2.addView(makeT9DigitKey("5", "JKL"));
-        r2.addView(makeT9DigitKey("6", "MNO"));
-        mainGrid.addView(r2);
+        KeyboardContainer centerBottom = new KeyboardContainer(getContext(), theme);
+        centerBottom.setOnKeyEmitListener(this::emit);
+        centerBottom.setLayout(T9Layout.buildCenterBottomRow());
+        centerBlock.addView(centerBottom, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        LinearLayout r3 = makeRow();
-        r3.addView(makeT9DigitKey("7", "PQRS"));
-        r3.addView(makeT9DigitKey("8", "TUV"));
-        r3.addView(makeT9DigitKey("9", "WXYZ"));
-        mainGrid.addView(r3);
+        // ===== Right block: ⌫ / 重输 / 换行(2 rows tall) =====
+        rightCol = new KeyboardContainer(getContext(), theme);
+        rightCol.setOnKeyEmitListener(this::emit);
+        rightCol.setLayout(T9Layout.buildRightColumn());
+        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
-        // --- right column (vertical; needs vertical-style LPs) ---
-        rightCol.addView(makeVerticalKey("⌫", 1f, 18f, true,
-                () -> emit(SimeKey.backspace())));
-        rightCol.addView(makeVerticalKey("重输", 1f, 14f, true,
-                () -> emit(SimeKey.clear())));
-        enterKey = makeVerticalKey("⏎", 1f, 18f, true, this::onEnterKey);
-        rightCol.addView(enterKey);
-
-        addView(top);
-
-        // --- bottom row ---
-        LinearLayout bottom = makeRow();
-        LayoutParams blp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
-        bottom.setLayoutParams(blp);
-        bottom.addView(makeKey("符", 1f, 14f, true, () -> emit(SimeKey.toSymbol())));
-        bottom.addView(makeKey("123", 1f, 14f, true, () -> emit(SimeKey.toNumber())));
-        bottom.addView(makeKey("空格", 2f, 14f, true, () -> emit(SimeKey.space())));
-        bottom.addView(makeKey("中/英", 1f, 14f, true, () -> emit(SimeKey.toggleLang())));
-        addView(bottom);
-
+        installDualStateHandlers();
         refreshDualStateKeys();
         populateLeftStrip();
     }
 
-    private TextView makeT9DigitKey(String digit, String letters) {
-        TextView tv = new TextView(getContext());
-        tv.setText(digit + "\n" + letters);
-        tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-        tv.setTextColor(theme.keyText);
-        tv.setBackground(makeKeySelector(theme.keyBackground, theme.keyBackgroundPressed));
-        tv.setClickable(true);
-        tv.setFocusable(true);
-        LayoutParams lp = new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f);
-        int m = dp(3);
-        lp.setMargins(m, m, m, m);
-        tv.setLayoutParams(lp);
-        final char c = digit.charAt(0);
-        tv.setOnClickListener(v -> emit(SimeKey.digit(c)));
-        return tv;
-    }
-
-    private void onTopLeftKey() {
-        if (active) {
-            emit(SimeKey.separator());
-        } else {
-            // Idle: commit '@' as a quick shortcut (full symbol picker TBD).
-            emit(SimeKey.punctuation("@"));
+    /**
+     * Override the per-key listener for the {@code @# / 分词} key so it
+     * dispatches a different SimeKey depending on {@link #active}. The
+     * 换行 key uses the static clickAction (always {@link SimeKey#enter()})
+     * — only its label flips between 换行 / 确定.
+     */
+    private void installDualStateHandlers() {
+        KeyView topLeft = mainGrid.findKeyById(T9Layout.ID_TOP_LEFT);
+        if (topLeft != null) {
+            topLeft.setListener((def, action) -> {
+                if (action != KeyView.KeyAction.CLICK) return;
+                if (active) {
+                    emit(SimeKey.separator());
+                } else {
+                    // Idle: commit '@' as a quick shortcut.
+                    emit(SimeKey.punctuation("@"));
+                }
+            });
         }
-    }
-
-    private void onEnterKey() {
-        emit(SimeKey.enter());
     }
 
     private void refreshDualStateKeys() {
-        if (topLeftKey != null) {
-            topLeftKey.setText(active ? "分词" : "@#");
-        }
-        if (enterKey != null) {
-            enterKey.setText(active ? "确定" : "⏎");
-        }
+        if (mainGrid == null) return;
+        KeyView topLeft = mainGrid.findKeyById(T9Layout.ID_TOP_LEFT);
+        if (topLeft != null) topLeft.setLabel(active ? "分词" : "@#");
+        KeyView enter = rightCol.findKeyById(T9Layout.ID_ENTER);
+        if (enter != null) enter.setLabel(active ? "确定" : "换行");
     }
 
     private void populateLeftStrip() {
@@ -224,12 +185,9 @@ public class T9KeyboardView extends KeyboardView {
             }
             return;
         }
-        // Active: single-syllable pinyin alts first (up to ~8), then
-        // fallback letters for the first digit as a last resort.
-        // Track which alt letters have already been added so the fallback
-        // letter loop below doesn't duplicate single-character pinyin
-        // alternatives like "n" (which would otherwise show twice for
-        // digit 6: once as a pinyin alt, once as a fallback letter).
+        // Active: single-syllable pinyin alts first, then fallback letters
+        // for the first digit. Track shown labels so the fallback loop
+        // doesn't duplicate single-character pinyin alternatives.
         java.util.HashSet<String> shown = new java.util.HashSet<>();
         int added = 0;
         for (int i = 0; i < pinyinAlts.size() && added < MAX_LEFT_ITEMS; i++) {

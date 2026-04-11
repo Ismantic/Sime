@@ -1,27 +1,21 @@
 package com.isma.sime.ime.keyboard;
 
 import android.content.Context;
-import android.graphics.Typeface;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
-import com.isma.sime.ime.data.Symbols;
+import com.isma.sime.ime.keyboard.framework.KeyView;
+import com.isma.sime.ime.keyboard.framework.KeyboardContainer;
+import com.isma.sime.ime.keyboard.layouts.SymbolLayout;
 
 /**
- * 3-tab symbol keyboard (中标点 / 英标点 / 数字符号). One page per tab;
- * the grid is always 6 columns wide. A trailing row provides the back
- * and backspace keys.
+ * Symbol keyboard. The grid swaps when the user picks a different
+ * category tab in the bottom navigation row; tab keys are wired with
+ * a custom listener so the controller can rebuild the grid in place.
  */
 public class SymbolKeyboardView extends KeyboardView {
 
-    private static final int COLS = 6;
-
-    private LinearLayout tabRow;
-    private LinearLayout grid;
+    private KeyboardContainer grid;
+    private KeyboardContainer bottomRow;
     private int currentTab = 0;
-    private TextView[] tabViews;
 
     public SymbolKeyboardView(Context context) {
         super(context);
@@ -29,75 +23,44 @@ public class SymbolKeyboardView extends KeyboardView {
     }
 
     private void build() {
-        tabRow = new LinearLayout(getContext());
-        tabRow.setOrientation(HORIZONTAL);
-        LayoutParams tabLp = new LayoutParams(
-                LayoutParams.MATCH_PARENT, dp(38));
-        tabRow.setLayoutParams(tabLp);
-        tabViews = new TextView[Symbols.TAB_NAMES.length];
-        for (int i = 0; i < Symbols.TAB_NAMES.length; i++) {
-            final int idx = i;
-            TextView tv = new TextView(getContext());
-            tv.setText(Symbols.TAB_NAMES[i]);
-            tv.setGravity(Gravity.CENTER);
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
-            tv.setTextColor(theme.barForeground);
-            tv.setPadding(dp(12), 0, dp(12), 0);
-            tv.setClickable(true);
-            tv.setOnClickListener(v -> selectTab(idx));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, LayoutParams.MATCH_PARENT, 1f);
-            tv.setLayoutParams(lp);
-            tabRow.addView(tv);
-            tabViews[i] = tv;
-        }
-        addView(tabRow);
-
-        grid = new LinearLayout(getContext());
-        grid.setOrientation(VERTICAL);
-        LayoutParams gridLp = new LayoutParams(
-                LayoutParams.MATCH_PARENT, 0, 1f);
-        grid.setLayoutParams(gridLp);
+        grid = new KeyboardContainer(getContext(), theme);
+        LayoutParams gLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 4f);
+        grid.setLayoutParams(gLp);
+        grid.setOnKeyEmitListener(this::emit);
         addView(grid);
 
-        LinearLayout bottom = makeRow();
-        LayoutParams blp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(48));
-        bottom.setLayoutParams(blp);
-        bottom.addView(makeKey("←", 1.5f, 16f, true, () -> emit(SimeKey.toBack())));
-        bottom.addView(makeFiller(3f));
-        bottom.addView(makeKey("⌫", 1.5f, 18f, true, () -> emit(SimeKey.backspace())));
-        addView(bottom);
+        bottomRow = new KeyboardContainer(getContext(), theme);
+        LayoutParams brLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
+        bottomRow.setLayoutParams(brLp);
+        bottomRow.setOnKeyEmitListener(this::emit);
+        addView(bottomRow);
 
-        selectTab(0);
+        bottomRow.setLayout(SymbolLayout.buildBottomRow(currentTab));
+        installTabHandlers();
+
+        loadTab(currentTab);
     }
 
-    private void selectTab(int idx) {
-        currentTab = idx;
-        for (int i = 0; i < tabViews.length; i++) {
-            tabViews[i].setTypeface(null, i == idx ? Typeface.BOLD : Typeface.NORMAL);
-            tabViews[i].setTextColor(
-                    i == idx ? theme.accentColor : theme.barForeground);
-        }
-        populateGrid();
-    }
-
-    private void populateGrid() {
-        grid.removeAllViews();
-        String[] syms = Symbols.TABS[currentTab];
-        int rows = (syms.length + COLS - 1) / COLS;
-        for (int r = 0; r < rows; r++) {
-            LinearLayout row = makeRow();
-            for (int c = 0; c < COLS; c++) {
-                int idx = r * COLS + c;
-                if (idx < syms.length) {
-                    final String s = syms[idx];
-                    row.addView(makeKey(s, 1f, 16f, false,
-                            () -> emit(SimeKey.punctuation(s))));
-                } else {
-                    row.addView(makeFiller(1f));
-                }
+    private void installTabHandlers() {
+        for (int i = 0; i < SymbolLayout.tabCount(); i++) {
+            final int idx = i;
+            KeyView kv = bottomRow.findKeyById(SymbolLayout.ID_TAB_PREFIX + i);
+            if (kv != null) {
+                kv.setListener((def, action) -> {
+                    if (action != KeyView.KeyAction.CLICK) return;
+                    if (idx != currentTab) loadTab(idx);
+                });
             }
-            grid.addView(row);
+        }
+    }
+
+    private void loadTab(int tab) {
+        currentTab = tab;
+        grid.setLayout(SymbolLayout.buildPage(tab));
+        // Refresh tab highlight on the bottom row.
+        for (int i = 0; i < SymbolLayout.tabCount(); i++) {
+            KeyView kv = bottomRow.findKeyById(SymbolLayout.ID_TAB_PREFIX + i);
+            if (kv != null) kv.setHighlighted(i == tab);
         }
     }
 }

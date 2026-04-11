@@ -33,6 +33,7 @@ public class CandidatesBar extends FrameLayout {
     public interface OnSettingsListener       { void onSettingsClick(); }
     public interface OnHideListener           { void onHideClick(); }
     public interface OnExpandToggleListener   { void onExpandToggle(); }
+    public interface OnSettingsBackListener   { void onSettingsBackClick(); }
 
     private final SimeTheme theme;
 
@@ -40,13 +41,18 @@ public class CandidatesBar extends FrameLayout {
     private LinearLayout activeView;
     private TextView preeditView;
     private LinearLayout candidateContainer;
+    private HorizontalScrollView candidateScroll;
     private TextView expandToggleButton;
+    /** Idle view's leftmost button — flips between ⚙ and ← in settings mode. */
+    private TextView idleLeftButton;
     private boolean expanded = false;
+    private boolean settingsMode = false;
 
     private OnCandidatePickListener pickListener;
     private OnSettingsListener settingsListener;
     private OnHideListener hideListener;
     private OnExpandToggleListener expandToggleListener;
+    private OnSettingsBackListener settingsBackListener;
 
     public CandidatesBar(Context context) {
         super(context);
@@ -73,11 +79,15 @@ public class CandidatesBar extends FrameLayout {
         idleView.setGravity(Gravity.CENTER_VERTICAL);
         idleView.setPadding(dp(12), 0, dp(12), 0);
 
-        TextView settings = iconButton("⚙");
-        settings.setOnClickListener(v -> {
-            if (settingsListener != null) settingsListener.onSettingsClick();
+        idleLeftButton = iconButton("⚙");
+        idleLeftButton.setOnClickListener(v -> {
+            if (settingsMode) {
+                if (settingsBackListener != null) settingsBackListener.onSettingsBackClick();
+            } else {
+                if (settingsListener != null) settingsListener.onSettingsClick();
+            }
         });
-        idleView.addView(settings);
+        idleView.addView(idleLeftButton);
 
         View spacer = new View(getContext());
         LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(
@@ -112,18 +122,18 @@ public class CandidatesBar extends FrameLayout {
         preeditView.setLayoutParams(pLp);
         activeView.addView(preeditView);
 
-        HorizontalScrollView scroll = new HorizontalScrollView(getContext());
-        scroll.setHorizontalScrollBarEnabled(false);
+        candidateScroll = new HorizontalScrollView(getContext());
+        candidateScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        scroll.setLayoutParams(sLp);
+        candidateScroll.setLayoutParams(sLp);
         candidateContainer = new LinearLayout(getContext());
         candidateContainer.setOrientation(LinearLayout.HORIZONTAL);
         candidateContainer.setGravity(Gravity.CENTER_VERTICAL);
-        scroll.addView(candidateContainer, new LinearLayout.LayoutParams(
+        candidateScroll.addView(candidateContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.MATCH_PARENT));
-        activeView.addView(scroll);
+        activeView.addView(candidateScroll);
 
         expandToggleButton = iconButton("∨");
         expandToggleButton.setOnClickListener(v -> {
@@ -282,41 +292,69 @@ public class CandidatesBar extends FrameLayout {
         return n;
     }
 
+    /**
+     * Recycled view slots — each slot is a (candidate TextView, divider
+     * View) pair appended in interleaved order so {@code candidateContainer}'s
+     * child sequence stays {@code [cand0, div0, cand1, div1, …]}.
+     * Shrinking just hides extra slots; growing appends new pairs at
+     * the end. Avoids allocating ~20 views on every keystroke.
+     */
+    private final java.util.List<TextView> candidatePool = new java.util.ArrayList<>();
+    private final java.util.List<View> dividerPool = new java.util.ArrayList<>();
+
     private void populateCandidates(List<Candidate> candidates) {
-        candidateContainer.removeAllViews();
-        if (candidates == null) return;
-        int n = candidates.size();
-        for (int i = 0; i < n; i++) {
-            final int idx = i;
-            Candidate c = candidates.get(i);
+        int n = candidates == null ? 0 : candidates.size();
+
+        // Grow the pool to cover the current candidate count. New
+        // entries are appended in pair order (candidate then divider)
+        // so the container's child order remains interleaved.
+        while (candidatePool.size() < n) {
             TextView tv = new TextView(getContext());
-            tv.setText(c.text);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
             tv.setGravity(Gravity.CENTER);
             tv.setPadding(dp(12), dp(8), dp(12), dp(8));
             tv.setClickable(true);
             tv.setFocusable(true);
-            if (i == 0) {
-                tv.setTextColor(theme.candidateHighlight);
-                tv.setTypeface(null, Typeface.BOLD);
-            } else {
-                tv.setTextColor(theme.candidateText);
-            }
-            tv.setOnClickListener(v -> {
-                if (pickListener != null) pickListener.onCandidatePick(idx);
-            });
             candidateContainer.addView(tv);
+            candidatePool.add(tv);
 
-            if (i < n - 1) {
-                View divider = new View(getContext());
-                divider.setBackgroundColor(Color.argb(40,
-                        Color.red(theme.dividerColor),
-                        Color.green(theme.dividerColor),
-                        Color.blue(theme.dividerColor)));
-                LinearLayout.LayoutParams dLp =
-                        new LinearLayout.LayoutParams(dp(1), dp(22));
-                dLp.gravity = Gravity.CENTER_VERTICAL;
-                candidateContainer.addView(divider, dLp);
+            View divider = new View(getContext());
+            divider.setBackgroundColor(Color.argb(40,
+                    Color.red(theme.dividerColor),
+                    Color.green(theme.dividerColor),
+                    Color.blue(theme.dividerColor)));
+            LinearLayout.LayoutParams dLp =
+                    new LinearLayout.LayoutParams(dp(1), dp(22));
+            dLp.gravity = Gravity.CENTER_VERTICAL;
+            candidateContainer.addView(divider, dLp);
+            dividerPool.add(divider);
+        }
+
+        // Bind visible slots; hide extras from previous longer renders.
+        for (int i = 0; i < candidatePool.size(); i++) {
+            TextView tv = candidatePool.get(i);
+            View div = dividerPool.get(i);
+            if (i < n) {
+                final int idx = i;
+                Candidate c = candidates.get(i);
+                tv.setText(c.text);
+                if (i == 0) {
+                    tv.setTextColor(theme.candidateHighlight);
+                    tv.setTypeface(null, Typeface.BOLD);
+                } else {
+                    tv.setTextColor(theme.candidateText);
+                    tv.setTypeface(null, Typeface.NORMAL);
+                }
+                tv.setOnClickListener(v -> {
+                    if (pickListener != null) pickListener.onCandidatePick(idx);
+                });
+                tv.setVisibility(VISIBLE);
+                // Last visible slot hides its trailing divider so the
+                // bar doesn't end with a stray vertical line.
+                div.setVisibility(i < n - 1 ? VISIBLE : GONE);
+            } else {
+                tv.setVisibility(GONE);
+                div.setVisibility(GONE);
             }
         }
     }
@@ -325,12 +363,47 @@ public class CandidatesBar extends FrameLayout {
     public void setOnSettingsListener(OnSettingsListener l)           { this.settingsListener = l; }
     public void setOnHideListener(OnHideListener l)                   { this.hideListener = l; }
     public void setOnExpandToggleListener(OnExpandToggleListener l)   { this.expandToggleListener = l; }
+    public void setOnSettingsBackListener(OnSettingsBackListener l)   { this.settingsBackListener = l; }
 
-    /** Update the toggle glyph to reflect the current expanded state. */
+    /**
+     * Toggle the bar between normal mode (left icon = ⚙ → opens
+     * settings) and settings mode (left icon = ← → pops one settings
+     * layer / exits). Forces idle layout because the active candidate
+     * view is meaningless inside settings.
+     */
+    public void setSettingsMode(boolean inSettings) {
+        if (this.settingsMode == inSettings) return;
+        this.settingsMode = inSettings;
+        if (idleLeftButton != null) {
+            idleLeftButton.setText(inSettings ? "←" : "⚙");
+        }
+    }
+
+    /**
+     * Reflect the expanded/collapsed state. When expanded, the inline
+     * candidate scroll is hidden because the {@code ExpandedCandidatesView}
+     * already shows them — leaving the bar with just preedit + ∧. The
+     * preedit's layout weight is flipped so it fills the freed space.
+     */
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
         if (expandToggleButton != null) {
             expandToggleButton.setText(expanded ? "∧" : "∨");
+        }
+        if (candidateScroll != null) {
+            candidateScroll.setVisibility(expanded ? GONE : VISIBLE);
+        }
+        if (preeditView != null) {
+            LinearLayout.LayoutParams pLp =
+                    (LinearLayout.LayoutParams) preeditView.getLayoutParams();
+            if (expanded) {
+                pLp.width = 0;
+                pLp.weight = 1f;
+            } else {
+                pLp.width = LinearLayout.LayoutParams.WRAP_CONTENT;
+                pLp.weight = 0f;
+            }
+            preeditView.setLayoutParams(pLp);
         }
     }
 
