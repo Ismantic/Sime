@@ -64,6 +64,29 @@ public class QwertyKeyboardView extends KeyboardView {
     }
 
     /**
+     * Override so that English-mode shift actually flips the emitted
+     * char, not just the label. The KeyDef's clickAction is hard-wired
+     * to lowercase letter('q'); intercepting at the emit boundary is
+     * the cleanest place to apply case without rewriting per-key
+     * listeners on every shift toggle.
+     */
+    @Override
+    protected void emit(SimeKey key) {
+        if (mode == KeyboardMode.ENGLISH && shift
+                && key.type == KeyType.LETTER) {
+            char upper = Character.toUpperCase(key.ch);
+            super.emit(SimeKey.letter(upper));
+            // iOS-style: shift auto-releases after one letter so the
+            // next tap returns to lowercase. Hold shift = caps lock
+            // would need a long-press toggle, not implemented here.
+            shift = false;
+            refreshLetters();
+            return;
+        }
+        super.emit(key);
+    }
+
+    /**
      * The shift key has dual semantics. We override its per-key listener
      * once: in English mode it toggles shift; in Chinese mode it emits
      * a pinyin separator. The listener checks {@link #mode} at click

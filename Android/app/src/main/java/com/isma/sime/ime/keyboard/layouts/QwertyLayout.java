@@ -86,6 +86,9 @@ public final class QwertyLayout {
                 .id(LETTER_ID_PREFIX + letter)
                 .width(1f)
                 .labelSize(18f)
-                .hint(hint);
+                .hint(hint)
+                // Long-press the letter to commit the hint glyph (digit
+                // / symbol) directly. Matches the visual cue.
+                .longPress(SimeKey.punctuation(hint));
     }
 }
