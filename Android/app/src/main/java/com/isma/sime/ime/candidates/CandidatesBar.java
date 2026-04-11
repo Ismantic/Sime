@@ -3,6 +3,9 @@ package com.isma.sime.ime.candidates;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.style.BackgroundColorSpan;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -151,7 +154,7 @@ public class CandidatesBar extends FrameLayout {
         boolean active = (state != null) && !state.isEmpty();
         if (active) {
             showActive();
-            preeditView.setText(formatPreedit(kernel, state));
+            preeditView.setText(buildPreedit(kernel, state));
             populateCandidates(candidates);
         } else {
             showIdle();
@@ -168,16 +171,65 @@ public class CandidatesBar extends FrameLayout {
         activeView.setVisibility(VISIBLE);
     }
 
-    private String formatPreedit(InputKernel kernel, InputState state) {
+    /**
+     * Build the preedit display: committed hanzi (from selections) +
+     * space + annotated remaining buffer. The "confirmed" prefix —
+     * committed hanzi plus the buffer's already-picked pinyin region
+     * (bufferLetters) — is wrapped in a {@link BackgroundColorSpan} so
+     * the user can see what's been locked in vs what's still tentative.
+     */
+    private CharSequence buildPreedit(InputKernel kernel, InputState state) {
         StringBuilder sb = new StringBuilder();
         String committed = state.committedText();
         if (!committed.isEmpty()) {
             sb.append(committed).append(' ');
         }
+        int annotStart = sb.length();
         String units = kernel != null ? kernel.getTopUnits() : "";
         sb.append(annotateRemaining(state.remaining(),
                 units != null ? units : ""));
-        return sb.toString();
+
+        // Compute the highlight end index in the assembled string.
+        // Two cases:
+        //   - bufferLetters region is non-empty (user picked pinyin alts):
+        //     extend the highlight from 0 through the committed hanzi,
+        //     through the separator space, into the annotated portion
+        //     until we've covered as many real chars as bufferLetters has,
+        //     plus a trailing `'` if the next char is one.
+        //   - bufferLetters is empty but committed is non-empty (only
+        //     hanzi picks): highlight just the committed hanzi (no
+        //     trailing space — avoids an isolated highlighted gap).
+        int sel = state.selectedLength();
+        int lettersEnd = state.lettersEnd;
+        int bufferRealChars = 0;
+        if (lettersEnd > sel) {
+            bufferRealChars = countNonSeparator(
+                    state.buffer.substring(sel, lettersEnd));
+        }
+
+        int hiEnd = 0;
+        if (bufferRealChars > 0) {
+            int realSeen = 0;
+            int idx = annotStart;
+            while (idx < sb.length() && realSeen < bufferRealChars) {
+                if (sb.charAt(idx) != '\'') realSeen++;
+                idx++;
+            }
+            // Pull a trailing '\'' into the highlight so the boundary
+            // marker visually belongs to the locked-in region.
+            if (idx < sb.length() && sb.charAt(idx) == '\'') idx++;
+            hiEnd = idx;
+        } else if (!committed.isEmpty()) {
+            hiEnd = committed.length();
+        }
+
+        SpannableString out = new SpannableString(sb.toString());
+        if (hiEnd > 0) {
+            int bg = (theme.accentColor & 0x00FFFFFF) | 0x40000000;  // ~25% alpha
+            out.setSpan(new BackgroundColorSpan(bg),
+                    0, hiEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return out;
     }
 
     /**
