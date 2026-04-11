@@ -30,12 +30,17 @@ public class SimeService extends InputMethodService
     public void onCreate() {
         super.onCreate();
         engine = new SimeEngine();
-        new Thread(() -> {
-            boolean ok = engine.init(getApplicationContext());
-            Log.i(TAG, "Engine init: " + ok);
-        }).start();
+        engine.start(getApplicationContext());
         kernel = new InputKernel(new SimeEngineDecoder(engine));
         applyPrefs();
+    }
+
+    @Override
+    public void onDestroy() {
+        Log.i(TAG, "onDestroy");
+        if (kernel != null) kernel.detach();
+        if (engine != null) engine.stop();
+        super.onDestroy();
     }
 
     private void applyPrefs() {

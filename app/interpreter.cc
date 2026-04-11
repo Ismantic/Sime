@@ -17,6 +17,7 @@ struct Options {
     std::filesystem::path userdict;
     std::filesystem::path nine_model;
     std::size_t n = 5;
+    std::size_t extra = 0;  // extra Layer 1 sentences for DecodeNumSentence
     bool sentence = false;
     bool num = false;
     bool nine = false;
@@ -30,7 +31,9 @@ void PrintUsage() {
               << "  --trie, -d <path>   Interpreter trie\n"
               << "  --cnt,  -c <path>   Interpreter LM model\n"
               << "  --user, -u <path>   User dictionary\n"
-              << "  -n <N>              Number of results (default 5)\n"
+              << "  -n <N>              Max results to display (default 5)\n"
+              << "  -e <N>              Extra Layer 1 sentences for --num -s\n"
+              << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
               << "  --nine <path>       NineDecoder standalone (digits -> pinyin)\n";
@@ -47,6 +50,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.userdict = argv[++i];
         } else if (arg == "-n" && i + 1 < argc) {
             opts.n = static_cast<std::size_t>(std::stoul(argv[++i]));
+        } else if (arg == "-e" && i + 1 < argc) {
+            opts.extra = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "--sentence" || arg == "-s") {
             opts.sentence = true;
         } else if (arg == "--num") {
@@ -188,8 +193,10 @@ int main(int argc, char** argv) {
                 std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
                 continue;
             }
+            // Pass `extra` directly (== extra Layer 1 sentences); -n
+            // controls only how many results we display.
             results = interpreter.DecodeNumSentence(
-                digits, prefix, opts.n > 0 ? opts.n - 1 : 0);
+                digits, prefix, opts.extra);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
             std::string prefix;

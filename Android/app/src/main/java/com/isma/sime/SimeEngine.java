@@ -4,16 +4,38 @@ import android.content.Context;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.IOException;
 
 /**
- * Java wrapper for native SIME engine.
- * Handles asset extraction and JNI calls.
+ * Java wrapper for the native SIME engine.
+ *
+ * <p>Asset extraction and {@code nativeLoadResources} run on a one-shot
+ * background thread (started by {@link #start(Context)}); decode methods
+ * are synchronous and called from whatever thread the IME is currently
+ * on (in practice, the Android main thread). The decoder is fast enough
+ * (single-digit milliseconds for typical inputs) that on-main-thread
+ * execution does not cause perceptible jank.
+ *
+ * <p>The single shared bit of state between init and decode is the
+ * {@code volatile boolean ready} flag: init flips it to {@code true}
+ * after {@code nativeLoadResources} returns successfully, and decode
+ * methods return an empty result while it's {@code false}.
  */
 public class SimeEngine {
     private static final String TAG = "SimeEngine";
+
+    /**
+     * Bumped whenever the bundled {@code sime.trie} / {@code sime.cnt}
+     * assets change. The deployed copy in app private storage carries
+     * a marker file with the version it was extracted from; mismatches
+     * trigger a re-extract on the next {@link #start(Context)}.
+     */
+    private static final int ASSET_VERSION = 1;
+    private static final String ASSET_VERSION_MARKER = ".deployed_version";
+
     private static boolean sLoaded = false;
 
     static {
@@ -25,14 +47,15 @@ public class SimeEngine {
         }
     }
 
-    // Native methods — both return triplets [text, units, cnt, ...]
+    // ===== Native methods =====
     private static native boolean nativeLoadResources(String triePath, String modelPath);
     private static native boolean nativeLoadUserDict(String userDictPath);
-    private static native String[] nativeDecodeSentence(String input, int num);
-    private static native String[] nativeDecodeNumSentence(String prefixLetters, String digits, int num);
+    private static native String[] nativeDecodeSentence(String input, int extra);
+    private static native String[] nativeDecodeNumSentence(String prefixLetters, String digits, int extra);
     private static native boolean nativeIsReady();
 
-    private boolean mReady = false;
+    /** Set true once init has loaded the native resources successfully. */
+    private volatile boolean ready = false;
 
     /** Decode result: text + segmented units + input consumed. */
     public static class Candidate {
@@ -47,33 +70,49 @@ public class SimeEngine {
         }
     }
 
-    public boolean init(Context context) {
-        if (!sLoaded) return false;
-
-        File dataDir = new File(context.getFilesDir(), "sime");
-        if (!dataDir.exists()) dataDir.mkdirs();
-
-        String triePath = extractAsset(context, "sime.trie", dataDir);
-        String modelPath = extractAsset(context, "sime.cnt", dataDir);
-
-        if (triePath == null || modelPath == null) {
-            Log.e(TAG, "Failed to extract assets");
-            return false;
-        }
-
-        if (!nativeLoadResources(triePath, modelPath)) {
-            Log.e(TAG, "Failed to load resources");
-            return false;
-        }
-
-        mReady = true;
-        Log.i(TAG, "Engine initialized");
-        return true;
-    }
-
     public boolean isReady() {
-        return mReady && sLoaded && nativeIsReady();
+        return ready;
     }
+
+    /**
+     * Kick off engine initialization on a one-shot background thread.
+     * Returns immediately. Until init finishes, {@link #isReady()}
+     * returns {@code false} and the decode methods return empty arrays.
+     */
+    public void start(Context context) {
+        final Context appCtx = context.getApplicationContext();
+        new Thread(() -> doStart(appCtx), "sime-init").start();
+    }
+
+    /**
+     * Mark the engine as no longer ready. The native library is
+     * process-wide and is not unloaded.
+     */
+    public void stop() {
+        ready = false;
+    }
+
+    /** Decode unit input to candidates. */
+    public Candidate[] decodeSentence(String input, int extra) {
+        if (!ready) return new Candidate[0];
+        return parseTriplets(nativeDecodeSentence(input, extra));
+    }
+
+    /**
+     * Num-key (T9 / nine-key) decode: digit string with an optional
+     * pinyin prefix. Mirrors {@code sime::Interpreter::DecodeNumSentence}.
+     *
+     * @param extra extra Layer 1 sentences beyond the top one (0 means
+     *              just the single best sentence; Layer 2 word/char
+     *              alternatives are always returned in full)
+     */
+    public Candidate[] decodeNumSentence(String prefixLetters, String digits, int extra) {
+        if (!ready) return new Candidate[0];
+        return parseTriplets(nativeDecodeNumSentence(
+                prefixLetters != null ? prefixLetters : "", digits, extra));
+    }
+
+    // ===== Internals =====
 
     /** Parse JNI triplet array into Candidate[]. */
     private static Candidate[] parseTriplets(String[] raw) {
@@ -88,27 +127,80 @@ public class SimeEngine {
         return result;
     }
 
-    /** Decode unit input to candidates. */
-    public Candidate[] decodeSentence(String input, int num) {
-        if (!isReady()) return new Candidate[0];
-        return parseTriplets(nativeDecodeSentence(input, num));
+    private void doStart(Context appCtx) {
+        if (!sLoaded) {
+            Log.e(TAG, "native library not loaded");
+            return;
+        }
+        try {
+            File dataDir = new File(appCtx.getFilesDir(), "sime");
+            if (!dataDir.exists() && !dataDir.mkdirs()) {
+                Log.e(TAG, "cannot create data dir: " + dataDir);
+                return;
+            }
+            ensureAssetsFresh(appCtx, dataDir);
+            String triePath = new File(dataDir, "sime.trie").getAbsolutePath();
+            String modelPath = new File(dataDir, "sime.cnt").getAbsolutePath();
+            if (!nativeLoadResources(triePath, modelPath)) {
+                Log.e(TAG, "nativeLoadResources failed: trie=" + triePath
+                        + " model=" + modelPath);
+                return;
+            }
+            ready = true;
+            Log.i(TAG, "engine ready");
+        } catch (Throwable t) {
+            Log.e(TAG, "engine start failed", t);
+        }
     }
 
     /**
-     * Num-key (T9 / nine-key) decode: digit string with an optional pinyin
-     * prefix. Mirrors {@code sime::Interpreter::DecodeNumSentence}.
+     * Compare the deployed asset version with {@link #ASSET_VERSION} and
+     * delete the cached files if they don't match, so the subsequent
+     * {@link #extractAsset} calls re-extract from the APK. The new
+     * version is written back to the marker file after both extracts
+     * succeed.
      */
-    public Candidate[] decodeNumSentence(String prefixLetters, String digits, int num) {
-        if (!isReady()) return new Candidate[0];
-        return parseTriplets(nativeDecodeNumSentence(
-                prefixLetters != null ? prefixLetters : "", digits, num));
+    private void ensureAssetsFresh(Context ctx, File dataDir) {
+        File marker = new File(dataDir, ASSET_VERSION_MARKER);
+        int deployed = readMarkerVersion(marker);
+        if (deployed != ASSET_VERSION) {
+            Log.i(TAG, "asset version " + deployed + " → " + ASSET_VERSION
+                    + ", re-extracting");
+            new File(dataDir, "sime.trie").delete();
+            new File(dataDir, "sime.cnt").delete();
+        }
+        boolean trieOk = extractAsset(ctx, "sime.trie", dataDir);
+        boolean cntOk  = extractAsset(ctx, "sime.cnt",  dataDir);
+        if (trieOk && cntOk && deployed != ASSET_VERSION) {
+            writeMarkerVersion(marker, ASSET_VERSION);
+        }
     }
 
-    private static String extractAsset(Context context, String assetName, File destDir) {
-        File dest = new File(destDir, assetName);
-        if (dest.exists() && dest.length() > 0) {
-            return dest.getAbsolutePath();
+    private static int readMarkerVersion(File marker) {
+        if (!marker.exists()) return -1;
+        try (FileInputStream fis = new FileInputStream(marker)) {
+            byte[] buf = new byte[16];
+            int n = fis.read(buf);
+            if (n <= 0) return -1;
+            return Integer.parseInt(new String(buf, 0, n).trim());
+        } catch (IOException | NumberFormatException e) {
+            Log.w(TAG, "marker read failed, treating as stale", e);
+            return -1;
         }
+    }
+
+    private static void writeMarkerVersion(File marker, int version) {
+        try (FileOutputStream fos = new FileOutputStream(marker)) {
+            fos.write(Integer.toString(version).getBytes());
+        } catch (IOException e) {
+            Log.w(TAG, "marker write failed", e);
+        }
+    }
+
+    /** Returns true on success (file exists and is non-empty after the call). */
+    private static boolean extractAsset(Context context, String assetName, File destDir) {
+        File dest = new File(destDir, assetName);
+        if (dest.exists() && dest.length() > 0) return true;
         try (InputStream is = context.getAssets().open(assetName);
              FileOutputStream os = new FileOutputStream(dest)) {
             byte[] buf = new byte[8192];
@@ -117,10 +209,10 @@ public class SimeEngine {
                 os.write(buf, 0, n);
             }
             Log.i(TAG, "Extracted " + assetName + " (" + dest.length() + " bytes)");
-            return dest.getAbsolutePath();
+            return true;
         } catch (IOException e) {
             Log.e(TAG, "Failed to extract " + assetName, e);
-            return null;
+            return false;
         }
     }
 }

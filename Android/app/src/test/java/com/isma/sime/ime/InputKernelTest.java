@@ -29,15 +29,19 @@ public class InputKernelTest {
     private static final class FakeDecoder implements Decoder {
         final Map<String, DecodeResult[]> sentenceMap = new HashMap<>();
         final Map<String, DecodeResult[]> numSentenceMap = new HashMap<>();
+        int sentenceCalls = 0;
+        int numSentenceCalls = 0;
 
         @Override
         public DecodeResult[] decodeSentence(String pinyin, int limit) {
+            sentenceCalls++;
             DecodeResult[] r = sentenceMap.get(pinyin);
             return r != null ? r : new DecodeResult[0];
         }
 
         @Override
         public DecodeResult[] decodeNumSentence(String startLetters, String digits, int limit) {
+            numSentenceCalls++;
             DecodeResult[] r = numSentenceMap.get(startLetters + "|" + digits);
             return r != null ? r : new DecodeResult[0];
         }
@@ -437,4 +441,147 @@ public class InputKernelTest {
         assertFalse("partial pick must not commit",
                 listener.committed.contains("你"));
     }
+
+    // ---------- Pinyin alts (extracted from main DecodeNumSentence result) ----------
+
+    @Test
+    public void pinyinAltsExtractedFromMainDecodeWithoutLetterPrefix() {
+        // Case 1: start="" (typical T9 start). For each raw entry, split
+        // units by `'` and take element [0] (= first syllable) as the
+        // next-position alt label. Order follows raw[] insertion order
+        // with first-occurrence dedup.
+        kernel.setChineseLayout(ChineseLayout.T9);
+        // raw fixture (in order):
+        //   你好 / ni'hao / 4   → first syllable "ni"
+        //   米   / mi     / 2   → first syllable "mi"
+        //   你   / ni     / 2   → "ni" already seen, dedup
+        //   摸   / mo     / 2   → "mo"
+        //   能   / n      / 1   → "n"
+        decoder.putNumSentence("", "6426",
+                r("你好", "ni'hao", 4),
+                r("米",   "mi",     2),
+                r("你",   "ni",     2),
+                r("摸",   "mo",     2),
+                r("能",   "n",      1));
+
+        for (char c : "6426".toCharArray()) kernel.onKey(SimeKey.digit(c));
+
+        // Sanity: candidates contain ALL raw entries (no kernel-side
+        // filtering). 你好 is deduped against the implicit Layer 1 entry
+        // only when shared dedup applies — here all 5 are distinct.
+        assertEquals(5, kernel.getCandidates().size());
+
+        List<InputKernel.PinyinAlt> alts = kernel.getPinyinAlts();
+        assertEquals(4, alts.size());
+        assertEquals("ni", alts.get(0).letters);
+        assertEquals(2,    alts.get(0).digitCount);
+        assertEquals("mi", alts.get(1).letters);
+        assertEquals("mo", alts.get(2).letters);
+        assertEquals("n",  alts.get(3).letters);
+        assertEquals(1,    alts.get(3).digitCount);
+
+        // CRITICAL: only ONE decoder call per keystroke (no second alt call).
+        assertEquals("must not issue a second alt-only decode",
+                4, decoder.numSentenceCalls);
+    }
+
+    @Test
+    public void pinyinAltsExtractedFromMainDecodeWithLetterPrefix() {
+        // Case 2: start="ni" (after a pinyin pick). startSyllables=1, so
+        // strip 1 leading segment from each raw entry's units; the next
+        // segment (index [1]) is the alt label. Layer 2 entries from the
+        // C++ side now begin with "ni'" because they walk net[0].es and
+        // the first column is fixed to "ni".
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putNumSentence("ni", "26",
+                // Layer 1 sentence: split → ["ni", "e"] → next = "e"
+                r("你饿", "ni'e",  4),
+                // Layer 2 single token covering only "ni": split → ["ni"],
+                // length 1 ≤ 1, no next syllable, skip.
+                r("你",   "ni",    2),
+                // Layer 2 multi-char compound: split → ["ni", "en"] → "en"
+                r("你恩", "ni'en", 4));
+
+        for (char c : "64".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("64", "ni", false);
+        // buffer="ni", lettersEnd=2
+        for (char c : "26".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        // buffer="ni26", lettersEnd=2 → triggers ("ni", "26") decode
+
+        List<InputKernel.PinyinAlt> alts = kernel.getPinyinAlts();
+        assertEquals(2, alts.size());
+        assertEquals("e",  alts.get(0).letters);
+        assertEquals(1,    alts.get(0).digitCount);
+        assertEquals("en", alts.get(1).letters);
+        assertEquals(2,    alts.get(1).digitCount);
+    }
+
+    @Test
+    public void consecutivePinyinAltPicksDecodeWithJoinedStart() {
+        // The user's reported scenario: T9 input, pick "hao" then "de"
+        // from the left strip (no hanzi pick yet). The kernel must call
+        // decodeNumSentence("hao'de", "985426", ...) so the LM has the
+        // full context, not "haode" (which loses the syllable boundary).
+        kernel.setChineseLayout(ChineseLayout.T9);
+        // Fixture for the post-pick decode call. If start gets passed
+        // wrong (e.g. "haode" instead of "hao'de"), this lookup misses
+        // and the test sees an empty candidate list.
+        decoder.putNumSentence("hao'de", "985426",
+                r("好的组件", "hao'de'zu'jian", 12),
+                r("组件", "zu'jian", 12),
+                r("组",   "zu",      9));
+
+        for (char c : "42633985426".toCharArray()) kernel.onKey(SimeKey.digit(c));
+        kernel.onPinyinCandidatePick("426", "hao", false);
+        kernel.onPinyinCandidatePick("33",  "de",  false);
+
+        // Buffer should have the separator: "hao'de985426" (12 bytes).
+        assertEquals("hao'de985426", kernel.getState().buffer);
+        assertEquals(6, kernel.getState().lettersEnd);
+
+        // Candidates are decoder.decodeNumSentence("hao'de", "985426", ...)
+        // results, pass-through (with consumed normalized).
+        java.util.List<Candidate> after = kernel.getCandidates();
+        assertTrue("must produce candidates from the fixture",
+                after.size() >= 1);
+        assertEquals("好的组件", after.get(0).text);
+        assertEquals(12, after.get(0).consumed);
+    }
+
+    @Test
+    public void layer1AndLayer2DupesAreDeduped() {
+        // Even without a prior selection, Layer 1 top sentence and a
+        // Layer 2 multi-char word edge can return the exact same text +
+        // consumed. Dedup should keep only the first.
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putNumSentence("", "98",
+                r("组件", "zu'jian", 2),  // Layer 1
+                r("组件", "zu'jian", 2),  // Layer 2 dup
+                r("组",   "zu",      1)); // Layer 2 single
+        kernel.onKey(SimeKey.digit('9'));
+        kernel.onKey(SimeKey.digit('8'));
+        java.util.List<Candidate> after = kernel.getCandidates();
+        assertEquals(2, after.size());
+        assertEquals("组件", after.get(0).text);
+        assertEquals("组",   after.get(1).text);
+    }
+
+    @Test
+    public void pinyinAltsRejectTailExpansionBeyondBuffer() {
+        // Tail-expanded entries (a syllable longer than the available
+        // remaining digits) cannot be picked because applyLetterPick
+        // would need more digit chars than the buffer has. The kernel
+        // filters them out of the alt strip even though they remain in
+        // the raw[] (and thus in the candidate bar).
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putNumSentence("", "5",
+                r("看", "kan", 1),   // 3 letters > 1 digit → reject
+                r("拉", "la",  1));  // 2 letters > 1 digit → reject
+        kernel.onKey(SimeKey.digit('5'));
+        assertTrue(kernel.getPinyinAlts().isEmpty());
+        // Both still appear in the candidate bar (no kernel-side filter
+        // there).
+        assertEquals(2, kernel.getCandidates().size());
+    }
+
 }

@@ -84,15 +84,15 @@ Java_com_isma_sime_SimeEngine_nativeLoadUserDict(
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
     JNIEnv* env, jclass /*clazz*/,
-    jstring input, jint num) {
+    jstring input, jint extra) {
 
     jclass stringClass = env->FindClass("java/lang/String");
     if (!g_interpreter || !g_interpreter->Ready())
         return env->NewObjectArray(0, stringClass, nullptr);
 
     auto input_str = jstringToString(env, input);
-    std::size_t extra = num > 0 ? static_cast<std::size_t>(num) : 0;
-    auto results = g_interpreter->DecodeSentence(input_str, extra);
+    std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
+    auto results = g_interpreter->DecodeSentence(input_str, e);
 
     return packResults(env, stringClass, results);
 }
@@ -101,7 +101,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
 JNIEXPORT jobjectArray JNICALL
 Java_com_isma_sime_SimeEngine_nativeDecodeNumSentence(
     JNIEnv* env, jclass /*clazz*/,
-    jstring prefixLetters, jstring digits, jint num) {
+    jstring prefixLetters, jstring digits, jint extra) {
 
     jclass stringClass = env->FindClass("java/lang/String");
     if (!g_interpreter || !g_interpreter->Ready())
@@ -109,8 +109,8 @@ Java_com_isma_sime_SimeEngine_nativeDecodeNumSentence(
 
     auto prefix = jstringToString(env, prefixLetters);
     auto d = jstringToString(env, digits);
-    std::size_t extra = num > 0 ? static_cast<std::size_t>(num) : 0;
-    auto results = g_interpreter->DecodeNumSentence(d, prefix, extra);
+    std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
+    auto results = g_interpreter->DecodeNumSentence(d, prefix, e);
 
     return packResults(env, stringClass, results);
 }

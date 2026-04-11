@@ -400,29 +400,38 @@ public class InputKernel {
     // ===== Decoding =====
 
     private void redecodeAndPublish() {
-        candidates = decode();
+        decode();
         publish();
     }
 
-    private List<Candidate> decode() {
-        pinyinAlts = Collections.emptyList();
-        if (mode != KeyboardMode.CHINESE) {
+    /**
+     * Recompute candidates / alts / topUnits from a single synchronous
+     * decoder call.
+     *
+     * <p>Model is dead-simple: the kernel slices the buffer into a
+     * letter region and a digit region (skipping bytes already covered
+     * by hanzi selections), passes them as {@code start} and
+     * {@code digits} to the decoder, and shows whatever the decoder
+     * returns. No filtering, no synthesis, no prefix stripping. The
+     * only post-processing is a {@code (text, consumed)} dedup pass to
+     * collapse the case where Layer 1 and a multi-char Layer 2 edge
+     * happen to return the exact same hanzi for the exact same span.
+     */
+    private void decode() {
+        if (mode != KeyboardMode.CHINESE || state.buffer.isEmpty()) {
+            candidates = Collections.emptyList();
+            pinyinAlts = Collections.emptyList();
             topUnits = "";
-            return Collections.emptyList();
-        }
-        if (state.buffer.isEmpty()) {
-            topUnits = "";
-            return Collections.emptyList();
+            return;
         }
 
+        // Buffer slicing — start AFTER any hanzi selections, since those
+        // bytes are no longer "in flux".
         int sel = state.selectedLength();
         int len = state.buffer.length();
-        // Un-selected letter region: [max(sel, 0) .. lettersEnd)
-        // Un-selected digit region:  [max(sel, lettersEnd) .. len)
-        // Both must skip the bytes already consumed by existing selections.
         int letterStart = Math.min(sel, state.lettersEnd);
         int letterEnd = state.lettersEnd;
-        String letters = (letterEnd > letterStart)
+        String bufferLetters = (letterEnd > letterStart)
                 ? state.buffer.substring(letterStart, letterEnd)
                 : "";
         int digitStart = Math.max(sel, state.lettersEnd);
@@ -430,32 +439,61 @@ public class InputKernel {
                 ? state.buffer.substring(digitStart, len)
                 : "";
 
+        // start IS bufferLetters. Selections.pinyin is NOT included —
+        // those syllables are committed (gone from `state.remaining()`)
+        // and the next decode is for what comes after them.
+        String start = bufferLetters;
+
         DecodeResult[] raw;
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
-            raw = decoder.decodeNumSentence(letters, digits, EXTRA_SENTENCES);
-            pinyinAlts = computePinyinAlts(digits);
-        } else if (!letters.isEmpty()) {
-            raw = decoder.decodeSentence(letters, EXTRA_SENTENCES);
+            raw = decoder.decodeNumSentence(start, digits, EXTRA_SENTENCES);
+        } else if (!start.isEmpty()) {
+            raw = decoder.decodeSentence(start, EXTRA_SENTENCES);
         } else {
             raw = new DecodeResult[0];
         }
 
-        topUnits = (raw.length > 0 && raw[0].units != null) ? raw[0].units : "";
-        // Both DecodeSentence and DecodeNumSentence enable tail expansion:
-        // a dangling initial like "k" may be completed to "kan", adding
-        // letters the user never typed. Clip the preedit pinyin back to
-        // the real input-letter count (prefix letters + digits for T9)
-        // so the display stays 1:1 with the raw buffer region being
-        // decoded.
-        if (!topUnits.isEmpty()) {
-            int rawLen = countRealChars(letters) + countRealChars(digits);
-            topUnits = clipUnitsToLetterCount(topUnits, rawLen);
-        }
+        // Pass-through with dedup. consumed comes straight from the
+        // decoder; since start IS bufferLetters, C++ start.size() ==
+        // start.length() and the returned consumed is already in the
+        // correct buffer-byte coordinate system.
         List<Candidate> out = new ArrayList<>(raw.length);
+        java.util.HashSet<String> seenKeys = new java.util.HashSet<>();
+        Candidate topCandidate = null;
         for (DecodeResult r : raw) {
-            out.add(Candidate.fromDecode(r));
+            String text = r.text != null ? r.text : "";
+            if (text.isEmpty()) continue;
+            int consumed = r.consumed;
+            if (consumed <= 0) continue;
+            String key = text + "\u0001" + consumed;
+            if (!seenKeys.add(key)) continue;
+            Candidate c = new Candidate(text, r.units != null ? r.units : "", consumed);
+            out.add(c);
+            if (topCandidate == null) topCandidate = c;
         }
-        return out;
+        candidates = out;
+
+        // topUnits = the top candidate's pinyin, clipped against tail
+        // expansion (the C++ may complete an incomplete initial like
+        // "k" → "kan", which we trim back to the user's actual chars).
+        String topU = topCandidate != null ? topCandidate.pinyin : "";
+        if (!topU.isEmpty()) {
+            int rawLen = countRealChars(bufferLetters) + countRealChars(digits);
+            topU = clipUnitsToLetterCount(topU, rawLen);
+        }
+        topUnits = topU;
+
+        // Pinyin alts for the NEXT syllable position: take raw[]'s units,
+        // skip the syllables already fixed by `start`, and the next
+        // segment is a candidate next-syllable label. Bounded by the
+        // remaining digit count so tail-expanded entries (which would
+        // consume past the end of the buffer) are not offered.
+        if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
+            pinyinAlts = computePinyinAltsFromRaw(
+                    raw, countSyllables(start), digits.length());
+        } else {
+            pinyinAlts = Collections.emptyList();
+        }
     }
 
     /** Count real chars (non-separator) in a raw input region. */
@@ -494,30 +532,51 @@ public class InputKernel {
     private static final int MAX_PINYIN_ALTS = 12;
 
     /**
-     * Compute single-syllable pinyin alternatives for the first digits in
-     * the undecided region. Only results whose {@code units} contain no
-     * syllable separator are kept — the left strip is a first-syllable
-     * picker, not a full segmentation picker. See
-     * {@code private/SimeAndroidRefactor.md} §0.2 (4).
+     * Extract pinyin alternatives for the next syllable position from a
+     * {@code raw} array returned by {@code DecodeNumSentence}.
+     *
+     * <p>The decoder built its lattice with {@code start} syllables fixed
+     * in columns {@code [0, p)}, so every result's {@code units} string
+     * begins with the same {@code start.split("'")} sequence (the first
+     * {@code startSyllables} segments). Stripping those by index gives
+     * the next-position syllable directly — no value-level prefix match
+     * is needed because the lattice already enforces it.
+     *
+     * <p>Each pinyin letter maps to exactly one T9 digit, so
+     * {@code digitCount = nextSyllable.length()}. A syllable longer than
+     * the available digits ({@code maxDigits}) is a tail-expanded
+     * candidate (the lattice's {@code tail_expansion} pass invents
+     * "what the user might be typing" syllables that span past the
+     * existing buffer); the alt strip rejects these because picking
+     * one would consume more digits than the buffer actually has.
      */
-    private List<PinyinAlt> computePinyinAlts(String digits) {
-        DecodeResult[] raw = decoder.decodeNumSentence("", digits, EXTRA_SENTENCES);
+    private static List<PinyinAlt> computePinyinAltsFromRaw(
+            DecodeResult[] raw, int startSyllables, int maxDigits) {
         if (raw.length == 0) return Collections.emptyList();
-        // Deduplicate by units string, keeping first occurrence order.
-        java.util.LinkedHashMap<String, PinyinAlt> seen = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashMap<String, PinyinAlt> seen =
+                new java.util.LinkedHashMap<>();
         for (DecodeResult r : raw) {
             if (r.units == null || r.units.isEmpty()) continue;
-            // Reject multi-syllable: must contain no separator.
-            if (r.units.indexOf('\'') >= 0 || r.units.indexOf(' ') >= 0) continue;
-            // Reject tail-expanded alts: each T9 digit maps to exactly
-            // one letter, so an alt is only faithful when its pinyin
-            // letters equal the digits it consumes.
-            if (r.units.length() != r.consumed) continue;
-            if (seen.containsKey(r.units)) continue;
-            seen.put(r.units, new PinyinAlt(r.units, r.units, r.consumed));
+            String[] segs = r.units.split("'");
+            if (segs.length <= startSyllables) continue;
+            String nextSyl = segs[startSyllables];
+            if (nextSyl.isEmpty()) continue;
+            if (nextSyl.length() > maxDigits) continue;  // tail-expanded
+            if (seen.containsKey(nextSyl)) continue;
+            seen.put(nextSyl, new PinyinAlt(nextSyl, nextSyl, nextSyl.length()));
             if (seen.size() >= MAX_PINYIN_ALTS) break;
         }
         return new ArrayList<>(seen.values());
+    }
+
+    /** Number of non-empty pinyin syllables in a {@code '}-separated string. */
+    private static int countSyllables(String s) {
+        if (s == null || s.isEmpty()) return 0;
+        int n = 0;
+        for (String seg : s.split("'")) {
+            if (!seg.isEmpty()) n++;
+        }
+        return n;
     }
 
     // ===== Helpers =====
