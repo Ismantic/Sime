@@ -10,6 +10,7 @@ import com.isma.sime.ime.candidates.ExpandedCandidatesView;
 import com.isma.sime.ime.engine.Candidate;
 import com.isma.sime.ime.keyboard.KeyboardView;
 import com.isma.sime.ime.keyboard.NumberKeyboardView;
+import com.isma.sime.ime.keyboard.SimeKey;
 import com.isma.sime.ime.keyboard.QwertyKeyboardView;
 import com.isma.sime.ime.keyboard.SettingsKeyboardView;
 import com.isma.sime.ime.keyboard.SymbolKeyboardView;
@@ -49,6 +50,11 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         setOrientation(VERTICAL);
         SimeTheme theme = SimeTheme.fromContext(getContext());
         setBackgroundColor(theme.keyboardBackground);
+        // Lift the entire IME up off the screen edge so the bottom row
+        // of keys doesn't sit flush against the gesture bar / nav line
+        // and is easier to tap. Matches reference IMEs which leave a
+        // visible margin below the lowest key.
+        setPadding(0, 0, 0, dp(24));
 
         candidatesBar = new CandidatesBar(getContext());
         LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
@@ -62,8 +68,21 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     public void attach(InputKernel kernel) {
         this.kernel = kernel;
         candidatesBar.setOnExpandToggleListener(this::toggleExpanded);
+        candidatesBar.setOnSettingsBackListener(this::onSettingsBack);
         // Install initial keyboard.
         swapKeyboardIfNeeded();
+    }
+
+    /**
+     * Called when the user taps the ← icon on the candidates bar
+     * (which only appears in settings mode). Pops one settings layer;
+     * the SettingsKeyboardView decides whether to exit when the stack
+     * is at the root.
+     */
+    private void onSettingsBack() {
+        if (currentKeyboard instanceof SettingsKeyboardView) {
+            ((SettingsKeyboardView) currentKeyboard).goBack();
+        }
     }
 
     @Override
@@ -80,7 +99,9 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         candidatesBar.render(kernel, state, candidates);
 
         if (expanded) {
-            if (expandedView != null) expandedView.render(candidates);
+            if (expandedView != null) {
+                expandedView.render(candidates, kernel.getPinyinAlts());
+            }
             return;
         }
 
@@ -93,7 +114,9 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
                     firstDigitLetters(state));
         }
         if (currentKeyboard instanceof QwertyKeyboardView) {
-            ((QwertyKeyboardView) currentKeyboard).setMode(kernel.getMode());
+            QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
+            qw.setMode(kernel.getMode());
+            qw.setActive(state != null && !state.isEmpty());
         }
     }
 
@@ -127,7 +150,10 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
                         kernel.getPinyinAlts(), firstDigitLetters(s));
             }
             if (currentKeyboard instanceof QwertyKeyboardView && kernel != null) {
-                ((QwertyKeyboardView) currentKeyboard).setMode(kernel.getMode());
+                QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
+                qw.setMode(kernel.getMode());
+                InputState s = kernel.getState();
+                qw.setActive(s != null && !s.isEmpty());
             }
         }
     }
@@ -142,9 +168,15 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             expandedView.setOnCandidatePickListener(idx -> {
                 if (kernel != null) kernel.onHanziCandidatePick(idx);
             });
+            expandedView.setOnPinyinAltPickListener(idx -> {
+                if (kernel != null) kernel.onPinyinAltPick(idx);
+            });
         }
-        expandedView.render(kernel != null ? kernel.getCandidates() : null);
-        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(240));
+        expandedView.render(
+                kernel != null ? kernel.getCandidates() : null,
+                kernel != null ? kernel.getPinyinAlts() : null);
+        LayoutParams lp = new LayoutParams(
+                LayoutParams.MATCH_PARENT, getKeyboardHeightPx());
         addView(expandedView, lp);
     }
 
@@ -186,17 +218,24 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             ((QwertyKeyboardView) next).setMode(mode);
         }
         if (next instanceof SettingsKeyboardView) {
-            ((SettingsKeyboardView) next).setOnLayoutChangedListener(
-                    picked -> kernel.setChineseLayout(picked));
+            SettingsKeyboardView sk = (SettingsKeyboardView) next;
+            sk.setOnLayoutChangedListener(picked -> kernel.setChineseLayout(picked));
+            sk.setOnExitListener(() -> kernel.onKey(SimeKey.toBack()));
         }
         if (currentKeyboard != null) {
             removeView(currentKeyboard);
         }
         currentKeyboard = next;
-        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(240));
+        LayoutParams lp = new LayoutParams(
+                LayoutParams.MATCH_PARENT, getKeyboardHeightPx());
         addView(currentKeyboard, lp);
         shownMode = mode;
         shownLayout = layout;
+
+        // Settings mode flips the candidates bar's leftmost icon
+        // (⚙ → ←) so the user has somewhere to tap to navigate back
+        // through the settings hierarchy.
+        candidatesBar.setSettingsMode(mode == KeyboardMode.SETTINGS);
     }
 
     private KeyboardView buildKeyboard(KeyboardMode mode, ChineseLayout layout) {
@@ -218,5 +257,22 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         return (int) android.util.TypedValue.applyDimension(
                 android.util.TypedValue.COMPLEX_UNIT_DIP,
                 v, getResources().getDisplayMetrics());
+    }
+
+    /**
+     * Keyboard area height (the part below the candidates bar).
+     * Portrait keeps the historical 240dp baseline so the keys stay
+     * the same size users are used to. Landscape caps at ~half the
+     * screen height so the IME doesn't eat the visible content.
+     */
+    private int getKeyboardHeightPx() {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        int screenH = dm.heightPixels;
+        int screenW = dm.widthPixels;
+        boolean landscape = screenW > screenH;
+        if (landscape) {
+            return Math.min(dp(240), Math.round(screenH * 0.55f));
+        }
+        return dp(240);
     }
 }

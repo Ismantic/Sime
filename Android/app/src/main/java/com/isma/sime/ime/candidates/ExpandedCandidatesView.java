@@ -10,56 +10,156 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.isma.sime.ime.InputKernel;
 import com.isma.sime.ime.engine.Candidate;
 import com.isma.sime.ime.theme.SimeTheme;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
- * Full-page candidate grid shown in place of the keyboard when the user
- * taps the {@code ∨} (expand) glyph on the candidates bar. Candidates
- * are laid out greedily into rows: each row keeps adding cells until the
- * estimated row width exceeds the available width, then wraps. The
- * outer {@link ScrollView} handles vertical overflow.
+ * Full-page candidate panel shown in place of the keyboard when the
+ * user taps {@code ∨} on the candidates bar. Two regions side by side:
  *
- * <p>Click semantics match the bar: a tap fires the
- * {@link OnCandidatePickListener}, which the host {@code InputView}
- * forwards to {@code InputKernel.onHanziCandidatePick(idx)}.
+ * <ul>
+ *   <li><b>Left strip</b> — pinyin alternatives for the next syllable
+ *       position (same data as the T9 keyboard's left strip). Tapping
+ *       one fires {@link OnPinyinAltPickListener}.
+ *   <li><b>Main grid</b> — hanzi candidates packed greedily into rows.
+ *       Tapping one fires {@link OnCandidatePickListener}.
+ * </ul>
+ *
+ * <p>The preedit pinyin display lives in the {@code CandidatesBar} above
+ * — this view is purely the body. Together with the bar, the user sees
+ * preedit + pinyin alts + hanzi candidates simultaneously.
  */
-public class ExpandedCandidatesView extends ScrollView {
+public class ExpandedCandidatesView extends LinearLayout {
 
     public interface OnCandidatePickListener {
         void onCandidatePick(int index);
     }
 
+    public interface OnPinyinAltPickListener {
+        void onPinyinAltPick(int index);
+    }
+
+    private static final int LEFT_ITEM_HEIGHT_DP = 42;
+
     private final SimeTheme theme;
-    private final LinearLayout root;
+
+    private ScrollView leftScroll;
+    private LinearLayout leftStrip;
+    private ScrollView mainScroll;
+    private LinearLayout grid;
+
     private OnCandidatePickListener pickListener;
+    private OnPinyinAltPickListener altPickListener;
 
     public ExpandedCandidatesView(Context ctx) {
         super(ctx);
         theme = SimeTheme.fromContext(ctx);
+        setOrientation(HORIZONTAL);
         setBackgroundColor(theme.keyboardBackground);
-        setVerticalScrollBarEnabled(false);
-        setFillViewport(true);
+        setPadding(dp(4), dp(6), dp(4), dp(6));
 
-        root = new LinearLayout(ctx);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(6), dp(6), dp(6), dp(6));
-        addView(root, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        // ===== Left strip: pinyin alts (vertical, narrow column) =====
+        // Hidden when there are no alts (e.g. Qwerty mode), letting the
+        // grid take the full width.
+        leftScroll = new ScrollView(ctx);
+        leftScroll.setVerticalScrollBarEnabled(false);
+        leftScroll.setFillViewport(true);
+        addView(leftScroll, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+
+        leftStrip = new LinearLayout(ctx);
+        leftStrip.setOrientation(VERTICAL);
+        leftScroll.addView(leftStrip, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
+
+        // ===== Main grid: hanzi candidates (greedy row pack inside scroll) =====
+        mainScroll = new ScrollView(ctx);
+        mainScroll.setVerticalScrollBarEnabled(false);
+        mainScroll.setFillViewport(true);
+        addView(mainScroll, new LayoutParams(0, LayoutParams.MATCH_PARENT, 5f));
+
+        grid = new LinearLayout(ctx);
+        grid.setOrientation(VERTICAL);
+        grid.setPadding(dp(4), 0, dp(4), 0);
+        mainScroll.addView(grid, new ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
     }
 
     public void setOnCandidatePickListener(OnCandidatePickListener l) {
         this.pickListener = l;
     }
 
-    public void render(List<Candidate> candidates) {
-        root.removeAllViews();
+    public void setOnPinyinAltPickListener(OnPinyinAltPickListener l) {
+        this.altPickListener = l;
+    }
+
+    public void render(List<Candidate> candidates,
+                        List<InputKernel.PinyinAlt> alts) {
+        List<InputKernel.PinyinAlt> safeAlts =
+                alts != null ? alts : Collections.<InputKernel.PinyinAlt>emptyList();
+        // Hide the left strip entirely when there are no pinyin alts
+        // (Qwerty mode) so the grid spans the full width instead of
+        // wasting 1/6 on a blank column.
+        leftScroll.setVisibility(safeAlts.isEmpty() ? GONE : VISIBLE);
+        renderLeftStrip(safeAlts);
+        renderGrid(candidates, !safeAlts.isEmpty());
+    }
+
+    private void renderLeftStrip(List<InputKernel.PinyinAlt> alts) {
+        leftStrip.removeAllViews();
+        for (int i = 0; i < alts.size(); i++) {
+            final int idx = i;
+            String label = alts.get(i).letters;
+            leftStrip.addView(makeLeftItem(label, () -> {
+                if (altPickListener != null) altPickListener.onPinyinAltPick(idx);
+            }));
+        }
+    }
+
+    private TextView makeLeftItem(String label, Runnable onClick) {
+        TextView tv = new TextView(getContext());
+        tv.setText(label);
+        tv.setGravity(Gravity.CENTER);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        // Pinyin alts use the darker function-key palette so they're
+        // visually distinct from the white hanzi cells on the right.
+        tv.setTextColor(theme.keyTextFunction);
+        tv.setBackground(makeFunctionCellBg());
+        tv.setClickable(true);
+        tv.setFocusable(true);
+        tv.setSingleLine(true);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(LEFT_ITEM_HEIGHT_DP));
+        int m = dp(3);
+        lp.setMargins(m, m, m, m);
+        tv.setLayoutParams(lp);
+        tv.setOnClickListener(v -> onClick.run());
+        return tv;
+    }
+
+    private StateListDrawable makeFunctionCellBg() {
+        StateListDrawable sl = new StateListDrawable();
+        sl.addState(new int[]{android.R.attr.state_pressed},
+                roundedRect(theme.functionKeyBackgroundPressed));
+        sl.addState(new int[]{}, roundedRect(theme.functionKeyBackground));
+        return sl;
+    }
+
+    private void renderGrid(List<Candidate> candidates, boolean leftStripVisible) {
+        grid.removeAllViews();
         if (candidates == null || candidates.isEmpty()) return;
 
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
-        int availableWidth = screenWidth - dp(12);  // root padding
+        // The grid occupies the full width when the left strip is
+        // hidden, otherwise the right 5/6 of it.
+        int availableWidth = (leftStripVisible
+                ? screenWidth * 5 / 6
+                : screenWidth) - dp(20);
 
         LinearLayout currentRow = newRow();
         int currentRowWidth = 0;
@@ -71,7 +171,7 @@ public class ExpandedCandidatesView extends ScrollView {
 
             if (currentRowWidth + cellWidth > availableWidth
                     && currentRow.getChildCount() > 0) {
-                root.addView(currentRow);
+                grid.addView(currentRow);
                 currentRow = newRow();
                 currentRowWidth = 0;
             }
@@ -79,7 +179,7 @@ public class ExpandedCandidatesView extends ScrollView {
             currentRowWidth += cellWidth;
         }
         if (currentRow.getChildCount() > 0) {
-            root.addView(currentRow);
+            grid.addView(currentRow);
         }
     }
 

@@ -1,21 +1,26 @@
 package com.isma.sime.ime.keyboard;
 
 import android.content.Context;
-import android.graphics.Typeface;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import com.isma.sime.ime.ChineseLayout;
+import com.isma.sime.ime.keyboard.framework.KeyView;
+import com.isma.sime.ime.keyboard.framework.KeyboardContainer;
+import com.isma.sime.ime.keyboard.layouts.SettingsLayout;
+import com.isma.sime.ime.keyboard.layouts.SettingsNode;
 import com.isma.sime.ime.prefs.SimePrefs;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 /**
- * Inline settings panel. Shown in place of the keyboard when the user taps
- * the ⚙ icon on the candidates bar. For now only the Chinese keyboard
- * layout (QWERTY vs T9) is configurable here. A back button ({@code ←})
- * emits {@link SimeKey#toBack()} which the kernel interprets as "return to
- * previous mode".
+ * Settings panel rendered as a layered 4×2 grid menu. Each layer is a
+ * {@link SettingsNode} whose children become the cells. Tapping a
+ * category pushes a new layer; tapping a leaf executes its action.
+ *
+ * <p>The "back" button is <b>not</b> in the grid — it lives on the
+ * candidates bar via {@code CandidatesBar.setSettingsMode(true)}.
+ * The host (SimeService / InputView) routes the bar's back press to
+ * {@link #goBack()}.
  */
 public class SettingsKeyboardView extends KeyboardView {
 
@@ -23,10 +28,17 @@ public class SettingsKeyboardView extends KeyboardView {
         void onLayoutChanged(ChineseLayout layout);
     }
 
+    public interface OnExitListener {
+        /** Called when the user pops past the root — exit settings. */
+        void onExitSettings();
+    }
+
     private OnLayoutChangedListener layoutListener;
+    private OnExitListener exitListener;
+
     private final SimePrefs prefs;
-    private LinearLayout qwertyCard;
-    private LinearLayout t9Card;
+    private KeyboardContainer container;
+    private final Deque<SettingsNode> stack = new ArrayDeque<>();
 
     public SettingsKeyboardView(Context context) {
         super(context);
@@ -38,96 +50,79 @@ public class SettingsKeyboardView extends KeyboardView {
         this.layoutListener = l;
     }
 
-    private void build() {
-        // Header row with title and back button.
-        LinearLayout header = new LinearLayout(getContext());
-        header.setOrientation(HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        LayoutParams hLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
-        header.setLayoutParams(hLp);
-        addView(header);
-
-        TextView title = new TextView(getContext());
-        title.setText("键盘布局");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
-        title.setTextColor(theme.keyText);
-        title.setPadding(dp(16), 0, 0, 0);
-        LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        title.setLayoutParams(titleLp);
-        header.addView(title);
-
-        TextView back = makeKey("←", 1f, 18f, true,
-                () -> emit(SimeKey.toBack()));
-        LinearLayout.LayoutParams backLp = new LinearLayout.LayoutParams(
-                dp(56), LinearLayout.LayoutParams.MATCH_PARENT);
-        int m = dp(6);
-        backLp.setMargins(m, m, m, m);
-        back.setLayoutParams(backLp);
-        header.addView(back);
-
-        // Two side-by-side cards.
-        LinearLayout cards = new LinearLayout(getContext());
-        cards.setOrientation(HORIZONTAL);
-        LayoutParams cLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
-        cards.setLayoutParams(cLp);
-        cards.setPadding(dp(12), dp(8), dp(12), dp(12));
-        addView(cards);
-
-        ChineseLayout current = prefs.getChineseLayout();
-        qwertyCard = buildCard("全键盘", "QWERTY",
-                current == ChineseLayout.QWERTY,
-                () -> pickLayout(ChineseLayout.QWERTY));
-        cards.addView(qwertyCard);
-
-        android.view.View gap = new android.view.View(getContext());
-        cards.addView(gap, new LinearLayout.LayoutParams(dp(12), 1));
-
-        t9Card = buildCard("九宫格", "T9",
-                current == ChineseLayout.T9,
-                () -> pickLayout(ChineseLayout.T9));
-        cards.addView(t9Card);
+    public void setOnExitListener(OnExitListener l) {
+        this.exitListener = l;
     }
 
-    private LinearLayout buildCard(String title, String subtitle,
-                                    boolean selected, Runnable onClick) {
-        LinearLayout card = new LinearLayout(getContext());
-        card.setOrientation(VERTICAL);
-        card.setGravity(Gravity.CENTER);
-        card.setPadding(dp(8), dp(24), dp(8), dp(24));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        card.setLayoutParams(lp);
+    private void build() {
+        container = new KeyboardContainer(getContext(), theme);
+        LayoutParams lp = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
+        container.setLayoutParams(lp);
+        addView(container);
 
-        int bg = selected ? theme.accentColor : theme.keyBackground;
-        card.setBackground(makeKeyBg(bg));
-        card.setClickable(true);
-        card.setFocusable(true);
-        card.setOnClickListener(v -> onClick.run());
+        push(buildRoot());
+    }
 
-        TextView t = new TextView(getContext());
-        t.setText(title);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
-        t.setGravity(Gravity.CENTER);
-        t.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
-        t.setTextColor(selected ? theme.candidateHighlight : theme.keyText);
-        card.addView(t);
+    /**
+     * Settings tree. Add new categories / options here. Two-level for
+     * now: 根 → 键盘 → {全键盘, 九宫格}.
+     */
+    private SettingsNode buildRoot() {
+        SettingsNode qwerty = SettingsNode.leaf("全键盘",
+                () -> pickLayout(ChineseLayout.QWERTY),
+                () -> prefs.getChineseLayout() == ChineseLayout.QWERTY);
+        SettingsNode t9 = SettingsNode.leaf("九宫格",
+                () -> pickLayout(ChineseLayout.T9),
+                () -> prefs.getChineseLayout() == ChineseLayout.T9);
+        SettingsNode keyboardCat = SettingsNode.category("键盘", qwerty, t9);
+        return SettingsNode.category("设置", keyboardCat);
+    }
 
-        TextView s = new TextView(getContext());
-        s.setText(subtitle);
-        s.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
-        s.setGravity(Gravity.CENTER);
-        s.setPadding(0, dp(4), 0, 0);
-        s.setTextColor(theme.keyTextFunction);
-        card.addView(s);
+    private void push(SettingsNode node) {
+        stack.push(node);
+        renderTop();
+    }
 
-        return card;
+    /** Pop one layer. If we pop past the root, notify the host to exit. */
+    public void goBack() {
+        if (stack.size() <= 1) {
+            if (exitListener != null) exitListener.onExitSettings();
+            return;
+        }
+        stack.pop();
+        renderTop();
+    }
+
+    private void renderTop() {
+        SettingsNode current = stack.peek();
+        if (current == null) return;
+        container.setLayout(SettingsLayout.build(current));
+        installChildHandlers(current);
+    }
+
+    private void installChildHandlers(SettingsNode current) {
+        for (int i = 0; i < current.children.size(); i++) {
+            final SettingsNode child = current.children.get(i);
+            KeyView kv = container.findKeyById(SettingsLayout.ID_CHILD_PREFIX + i);
+            if (kv == null) continue;
+            kv.setListener((def, action) -> {
+                if (action != KeyView.KeyAction.CLICK) return;
+                if (child.isLeaf()) {
+                    if (child.action != null) child.action.run();
+                    // Auto-exit settings after picking a leaf so the
+                    // user immediately sees the new option take effect
+                    // — matches the pre-refactor UX.
+                    if (exitListener != null) exitListener.onExitSettings();
+                } else {
+                    push(child);
+                }
+            });
+        }
     }
 
     private void pickLayout(ChineseLayout layout) {
         prefs.setChineseLayout(layout);
         if (layoutListener != null) layoutListener.onLayoutChanged(layout);
-        // After picking, return to main input so the user sees the effect.
-        emit(SimeKey.toBack());
     }
 }
