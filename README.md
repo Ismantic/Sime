@@ -9,7 +9,7 @@
 - 量化压缩（概率/backoff 权重量化 + threaded backoff 索引）
 - 拼音 Trie 前缀匹配，支持多音字和不完整拼音
 - Viterbi beam search 解码
-- 九宫格 (T9) 输入
+- 支持全键盘（QWERTY）和九宫格 (T9) 输入
 
 ## 构建
 
