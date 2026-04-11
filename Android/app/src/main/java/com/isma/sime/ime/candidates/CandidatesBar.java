@@ -237,21 +237,16 @@ public class CandidatesBar extends FrameLayout {
      * segmentation so that user-typed {@code '} boundaries stay visible
      * while real digits are replaced by their decoded pinyin letters.
      *
-     * <p>The zip assumes {@code units} and {@code rem} have the same
-     * non-separator character count, which holds in steady state. After
-     * a keystroke but before the async decoder callback returns, the
-     * kernel publishes once with the new buffer and the OLD topUnits
-     * still in place — that older units string covers fewer chars than
-     * the new buffer, and naively zipping would emit garbage like
-     * "s4" (new buffer "74" annotated with stale units "s"). Detect
-     * the mismatch and fall back to showing the raw buffer for the
-     * brief decoding window.
+     * <p>If {@code units} covers fewer real chars than {@code rem}
+     * (legitimate partial decode, e.g. T9 input "7457" → top candidate
+     * units "pi" only covers digits 7+4), the zip walks as far as
+     * units allows and then falls through to append the leftover raw
+     * chars verbatim. So "7457" with units "pi" renders as "pi57",
+     * making it visually obvious which prefix the engine matched and
+     * which suffix was unprocessable.
      */
     private static String annotateRemaining(String rem, String units) {
         if (units.isEmpty()) return rem;
-        if (countNonSeparator(units) != countNonSeparator(rem)) {
-            return rem;
-        }
         StringBuilder sb = new StringBuilder(rem.length() + units.length());
         int ri = 0;
         int ui = 0;
