@@ -176,22 +176,32 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
         // normal loop only finds syllables whose digit count fits inside
         // the remaining tail; expansion finds longer syllables whose
         // digit prefix matches.
+        //
+        // Only fire when the current run of digits reaches the end of
+        // nums — i.e. this is the trailing digit segment with no more
+        // user input after it. Without this guard, an input like
+        // "94'26" would fire tail expansion at column 0 with tail "94"
+        // and invent zhong / xiang / xin / zhi (longer syllables that
+        // ignore the user's already-typed "26"), out-scoring the real
+        // xi'an path because frequent unigrams beat 西安 in the LM.
         if (tail_expansion) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
                 ++tail_len;
             }
-            std::string tail(nums.substr(dpos, tail_len));
-            if (!tail.empty() && tail.size() <= MaxSyllableCnt) {
-                for (const auto& [dkey, units] : num_map_) {
-                    if (dkey.size() <= tail.size()) continue;
-                    if (dkey.compare(0, tail.size(), tail) != 0) continue;
-                    for (const auto& u : units) {
-                        const Trie::Node* next = trie_.DoMove(node, u);
-                        if (!next) continue;
-                        std::string new_acc =
-                            append_py(acc, UnitData::Decode(u));
-                        emit(s, total, next, new_acc);
+            if (dpos + tail_len == d) {
+                std::string tail(nums.substr(dpos, tail_len));
+                if (!tail.empty() && tail.size() <= MaxSyllableCnt) {
+                    for (const auto& [dkey, units] : num_map_) {
+                        if (dkey.size() <= tail.size()) continue;
+                        if (dkey.compare(0, tail.size(), tail) != 0) continue;
+                        for (const auto& u : units) {
+                            const Trie::Node* next = trie_.DoMove(node, u);
+                            if (!next) continue;
+                            std::string new_acc =
+                                append_py(acc, UnitData::Decode(u));
+                            emit(s, total, next, new_acc);
+                        }
                     }
                 }
             }
