@@ -1,6 +1,6 @@
 # Sime 是语输入法
 
-纯 C++ 实现的中文拼音输入法引擎，当前支持 Linux 和 Android。
+开源中文拼音输入法引擎实现，当前支持 Linux 和 Android。
 
 ## 特性
 
