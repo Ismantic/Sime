@@ -580,9 +580,12 @@ void Interpreter::InitNet(const std::vector<Unit>& units,
             }
         }
 
-        if (!inserted) {
-            bucket.push_back({start, start + 1, ScoreNotToken});
-        }
+        // No fallback ScoreNotToken edge: if a column couldn't match
+        // any real trie token (e.g. unparseable input like "pggguj"
+        // where bare initials don't path through the trie), the
+        // lattice should fail cleanly rather than offer free-cost
+        // pass-throughs that let the LM hallucinate fake characters
+        // (普[g]股价 from "pggguj"). Same convention as InitNumNet.
     }
 
     // Prune each position
