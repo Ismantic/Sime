@@ -1,6 +1,6 @@
 package com.semantic.sime.ime;
 
-import com.semantic.sime.ime.engine.Candidate;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.Decoder;
 import com.semantic.sime.ime.PinyinUtil;
@@ -47,7 +47,7 @@ public class InputKernel {
 
     /** Pulled by the UI whenever the state changes. */
     public interface StateObserver {
-        void onStateChanged(InputState state, List<Candidate> candidates);
+        void onStateChanged(InputState state, List<DecodeResult> candidates);
     }
 
     private final Decoder decoder;
@@ -57,7 +57,7 @@ public class InputKernel {
     private KeyboardMode previousMode = KeyboardMode.CHINESE;
     private ChineseLayout chineseLayout = ChineseLayout.QWERTY;
 
-    private List<Candidate> candidates = Collections.emptyList();
+    private List<DecodeResult> candidates = Collections.emptyList();
     /**
      * True when the candidate list is showing T9 "1 key" punctuation
      * options instead of decoded hanzi. Picking commits the punctuation
@@ -124,7 +124,7 @@ public class InputKernel {
     public InputState getState()             { return state; }
     public KeyboardMode getMode()            { return mode; }
     public ChineseLayout getChineseLayout()  { return chineseLayout; }
-    public List<Candidate> getCandidates()   { return candidates; }
+    public List<DecodeResult> getCandidates()   { return candidates; }
     public List<PinyinAlt> getPinyinAlts()   { return pinyinAlts; }
     public String getTopUnits()              { return topUnits; }
 
@@ -166,10 +166,10 @@ public class InputKernel {
             if (listener != null) listener.onCommitText(T9_NUM_PUNCTUATION[0]);
             return;
         }
-        java.util.ArrayList<Candidate> out =
+        java.util.ArrayList<DecodeResult> out =
                 new java.util.ArrayList<>(T9_NUM_PUNCTUATION.length);
         for (String p : T9_NUM_PUNCTUATION) {
-            out.add(new Candidate(p, "", 0));
+            out.add(new DecodeResult(p, "", 0));
         }
         candidates = out;
         topUnits = "";
@@ -359,8 +359,8 @@ public class InputKernel {
     }
 
     private void commitFirstCandidateInline() {
-        Candidate c = candidates.get(0);
-        state.select(c.text, c.pinyin, c.consumed);
+        DecodeResult c = candidates.get(0);
+        state.select(c.text, c.units, c.consumed);
         if (state.fullySelected()) {
             String out = state.committedText();
             if (listener != null) listener.onCommitText(out);
@@ -424,7 +424,7 @@ public class InputKernel {
 
     public void onHanziCandidatePick(int index) {
         if (index < 0 || index >= candidates.size()) return;
-        Candidate c = candidates.get(index);
+        DecodeResult c = candidates.get(index);
         if (inPunctuationPicker) {
             // The "1 key" picker commits the punctuation as raw text and
             // immediately collapses the bar. There's no buffer to consume.
@@ -432,7 +432,7 @@ public class InputKernel {
             dismissPunctuationPicker(/*publish=*/true);
             return;
         }
-        state.select(c.text, c.pinyin, c.consumed);
+        state.select(c.text, c.units, c.consumed);
         if (state.fullySelected()) {
             String out = state.committedText();
             if (listener != null) listener.onCommitText(out);
@@ -548,9 +548,9 @@ public class InputKernel {
         // decoder; since start IS bufferLetters, C++ start.size() ==
         // start.length() and the returned consumed is already in the
         // correct buffer-byte coordinate system.
-        List<Candidate> out = new ArrayList<>(raw.length);
+        List<DecodeResult> out = new ArrayList<>(raw.length);
         java.util.HashSet<String> seenKeys = new java.util.HashSet<>();
-        Candidate topCandidate = null;
+        DecodeResult topCandidate = null;
         for (DecodeResult r : raw) {
             String text = r.text != null ? r.text : "";
             if (text.isEmpty()) continue;
@@ -558,7 +558,7 @@ public class InputKernel {
             if (consumed <= 0) continue;
             String key = text + "\u0001" + consumed;
             if (!seenKeys.add(key)) continue;
-            Candidate c = new Candidate(text, r.units != null ? r.units : "", consumed);
+            DecodeResult c = new DecodeResult(text, r.units != null ? r.units : "", consumed);
             out.add(c);
             if (topCandidate == null) topCandidate = c;
         }
@@ -567,7 +567,7 @@ public class InputKernel {
         // topUnits = the top candidate's pinyin, clipped against tail
         // expansion (the C++ may complete an incomplete initial like
         // "k" → "kan", which we trim back to the user's actual chars).
-        String topU = topCandidate != null ? topCandidate.pinyin : "";
+        String topU = topCandidate != null ? topCandidate.units : "";
         if (!topU.isEmpty()) {
             int rawLen = PinyinUtil.countRealChars(bufferLetters) + PinyinUtil.countRealChars(digits);
             topU = clipUnitsToLetterCount(topU, rawLen);

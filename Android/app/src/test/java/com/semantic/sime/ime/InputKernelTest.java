@@ -4,7 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import com.semantic.sime.ime.engine.Candidate;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.Decoder;
 import com.semantic.sime.ime.keyboard.SimeKey;
@@ -541,7 +541,7 @@ public class InputKernelTest {
 
         // Candidates are decoder.decodeNumSentence("hao'de", "985426", ...)
         // results, pass-through (with consumed normalized).
-        java.util.List<Candidate> after = kernel.getCandidates();
+        java.util.List<DecodeResult> after = kernel.getCandidates();
         assertTrue("must produce candidates from the fixture",
                 after.size() >= 1);
         assertEquals("好的组件", after.get(0).text);
@@ -560,7 +560,7 @@ public class InputKernelTest {
                 r("组",   "zu",      1)); // Layer 2 single
         kernel.onKey(SimeKey.digit('9'));
         kernel.onKey(SimeKey.digit('8'));
-        java.util.List<Candidate> after = kernel.getCandidates();
+        java.util.List<DecodeResult> after = kernel.getCandidates();
         assertEquals(2, after.size());
         assertEquals("组件", after.get(0).text);
         assertEquals("组",   after.get(1).text);

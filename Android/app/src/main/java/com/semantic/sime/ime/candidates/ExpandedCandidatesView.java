@@ -11,7 +11,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import com.semantic.sime.ime.InputKernel;
-import com.semantic.sime.ime.engine.Candidate;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.keyboard.StripHelper;
 import com.semantic.sime.ime.theme.SimeTheme;
 
@@ -177,7 +177,7 @@ public class ExpandedCandidatesView extends LinearLayout {
      *        {@code CandidatesBar.getVisibleCandidateCount()} for a
      *        dynamic value so bar and grid never show duplicates.
      */
-    public void render(List<Candidate> candidates,
+    public void render(List<DecodeResult> candidates,
                         List<InputKernel.PinyinAlt> alts,
                         String fallbackLetters,
                         int gridStartIndex) {
@@ -242,7 +242,7 @@ public class ExpandedCandidatesView extends LinearLayout {
      * 3-5 → 2 cols, 6+ → 4 cols. Rows past the visible viewport
      * scroll vertically; the right column's ∧/∨ buttons handle paging.
      */
-    private void renderGrid(List<Candidate> candidates, int startIdx) {
+    private void renderGrid(List<DecodeResult> candidates, int startIdx) {
         grid.removeAllViews();
         int n = candidates == null ? 0 : candidates.size();
         startIdx = Math.min(startIdx, n);
@@ -252,7 +252,7 @@ public class ExpandedCandidatesView extends LinearLayout {
         int colsRemaining = 0;
 
         for (int i = startIdx; i < n; i++) {
-            Candidate c = candidates.get(i);
+            DecodeResult c = candidates.get(i);
             int span = colSpanFor(c.text);
             if (currentRow == null || colsRemaining < span) {
                 if (currentRow != null) {

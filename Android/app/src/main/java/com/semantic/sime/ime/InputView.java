@@ -7,7 +7,7 @@ import android.widget.LinearLayout;
 
 import com.semantic.sime.ime.candidates.CandidatesBar;
 import com.semantic.sime.ime.candidates.ExpandedCandidatesView;
-import com.semantic.sime.ime.engine.Candidate;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.keyboard.KeyboardView;
 import com.semantic.sime.ime.keyboard.NumberKeyboardView;
 import com.semantic.sime.ime.keyboard.SimeKey;
@@ -89,7 +89,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     }
 
     @Override
-    public void onStateChanged(InputState state, List<Candidate> candidates) {
+    public void onStateChanged(InputState state, List<DecodeResult> candidates) {
         if (kernel == null) return;
 
         // If the buffer cleared (e.g., the user committed) while the
