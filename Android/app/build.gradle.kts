@@ -12,11 +12,11 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.isma.sime"
+    namespace = "com.semantic.sime"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.isma.sime"
+        applicationId = "com.semantic.sime"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
