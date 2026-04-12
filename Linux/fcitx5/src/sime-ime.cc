@@ -1,6 +1,6 @@
 // Sime Fcitx5 Engine
 
-#include "sime.h"
+#include "sime-ime.h"
 #include <cstdlib>
 #include <fcitx-utils/key.h>
 #include <fcitx-utils/utf8.h>
@@ -105,7 +105,7 @@ Sime::Sime(Instance *instance)
       factory_([](InputContext &) { return new SimeState(); }) {
     instance_->inputContextManager().registerProperty("simeState", &factory_);
     reloadConfig();
-    initInterpreter();
+    initSime();
 }
 
 Sime::~Sime() {}
@@ -114,14 +114,14 @@ void Sime::reloadConfig() {
     readAsIni(config_, "conf/sime.conf");
 }
 
-void Sime::initInterpreter() {
-    interpreter_ = std::make_unique<sime::Interpreter>(
+void Sime::initSime() {
+    sime_ = std::make_unique<sime::Sime>(
         *config_.triePath, *config_.lmPath);
-    if (!interpreter_->Ready()) {
+    if (!sime_->Ready()) {
         FCITX_ERROR() << "Sime: failed to load resources"
                       << " trie=" << *config_.triePath
                       << " lm=" << *config_.lmPath;
-        interpreter_.reset();
+        sime_.reset();
     } else {
         FCITX_INFO() << "Sime: resources loaded";
         std::string udPath = *config_.userDictPath;
@@ -137,7 +137,7 @@ void Sime::initInterpreter() {
                 }
             }
         }
-        if (!udPath.empty() && interpreter_->LoadDict(udPath)) {
+        if (!udPath.empty() && sime_->LoadDict(udPath)) {
             FCITX_INFO() << "Sime: user dict loaded from " << udPath;
         }
     }
@@ -148,7 +148,7 @@ SimeState *Sime::state(InputContext *ic) {
 }
 
 void Sime::activate(const InputMethodEntry &, InputContextEvent &event) {
-    if (!interpreter_) initInterpreter();
+    if (!sime_) initSime();
 }
 
 void Sime::deactivate(const InputMethodEntry &, InputContextEvent &event) {
@@ -193,7 +193,7 @@ void Sime::updateUI(InputContext *ic) {
     auto &panel = ic->inputPanel();
     panel.reset();
 
-    if (st->empty() || !interpreter_) {
+    if (st->empty() || !sime_) {
         ic->updatePreedit();
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
         return;
@@ -203,7 +203,7 @@ void Sime::updateUI(InputContext *ic) {
     std::string rem = st->remaining();
     std::vector<sime::DecodeResult> results;
     if (!rem.empty()) {
-        results = interpreter_->DecodeSentence(
+        results = sime_->DecodeSentence(
             rem, static_cast<std::size_t>(*config_.nbest));
     }
 

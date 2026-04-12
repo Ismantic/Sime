@@ -19,7 +19,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/score.cc
     ${NEW_SRC_DIR}/trie.cc
     ${NEW_SRC_DIR}/state.cc
-    ${NEW_SRC_DIR}/interpret.cc
+    ${NEW_SRC_DIR}/sime.cc
     ${NEW_SRC_DIR}/dict.cc
     ${NEW_SRC_DIR}/nine.cc
 )
@@ -41,7 +41,7 @@ target_link_libraries(sime-converter PRIVATE sime_core)
 add_executable(sime-compact ${NEW_ROOT}/app/compact.cc)
 target_link_libraries(sime-compact PRIVATE sime_core)
 
-add_executable(sime ${NEW_ROOT}/app/interpreter.cc)
+add_executable(sime ${NEW_ROOT}/app/sime.cc)
 target_link_libraries(sime PRIVATE sime_core)
 
 add_executable(sime-dump ${NEW_ROOT}/app/dump.cc)

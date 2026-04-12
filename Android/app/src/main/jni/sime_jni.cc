@@ -1,6 +1,6 @@
 // JNI bridge for SIME input method engine
 
-#include "interpret.h"
+#include "sime.h"
 #include "ustr.h"
 
 #include <jni.h>
@@ -14,7 +14,7 @@
 
 namespace {
 
-std::unique_ptr<sime::Interpreter> g_interpreter;
+std::unique_ptr<sime::Sime> g_sime;
 
 std::string jstringToString(JNIEnv* env, jstring js) {
     if (!js) return {};
@@ -54,10 +54,10 @@ Java_com_semantic_sime_SimeEngine_nativeLoadResources(
     auto trie = jstringToString(env, triePath);
     auto model = jstringToString(env, modelPath);
 
-    g_interpreter = std::make_unique<sime::Interpreter>(trie, model);
-    if (!g_interpreter->Ready()) {
+    g_sime = std::make_unique<sime::Sime>(trie, model);
+    if (!g_sime->Ready()) {
         LOGE("Failed to load resources: trie=%s model=%s", trie.c_str(), model.c_str());
-        g_interpreter.reset();
+        g_sime.reset();
         return JNI_FALSE;
     }
     LOGI("Resources loaded: trie=%s model=%s", trie.c_str(), model.c_str());
@@ -70,9 +70,9 @@ Java_com_semantic_sime_SimeEngine_nativeLoadUserDict(
     JNIEnv* env, jclass /*clazz*/,
     jstring userDictPath) {
 
-    if (!g_interpreter) return JNI_FALSE;
+    if (!g_sime) return JNI_FALSE;
     auto path = jstringToString(env, userDictPath);
-    if (!g_interpreter->LoadDict(path)) {
+    if (!g_sime->LoadDict(path)) {
         LOGE("Failed to load dict: %s", path.c_str());
         return JNI_FALSE;
     }
@@ -87,12 +87,12 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
     jstring input, jint extra) {
 
     jclass stringClass = env->FindClass("java/lang/String");
-    if (!g_interpreter || !g_interpreter->Ready())
+    if (!g_sime || !g_sime->Ready())
         return env->NewObjectArray(0, stringClass, nullptr);
 
     auto input_str = jstringToString(env, input);
     std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
-    auto results = g_interpreter->DecodeSentence(input_str, e);
+    auto results = g_sime->DecodeSentence(input_str, e);
 
     return packResults(env, stringClass, results);
 }
@@ -104,13 +104,13 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
     jstring prefixLetters, jstring digits, jint extra) {
 
     jclass stringClass = env->FindClass("java/lang/String");
-    if (!g_interpreter || !g_interpreter->Ready())
+    if (!g_sime || !g_sime->Ready())
         return env->NewObjectArray(0, stringClass, nullptr);
 
     auto prefix = jstringToString(env, prefixLetters);
     auto d = jstringToString(env, digits);
     std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
-    auto results = g_interpreter->DecodeNumSentence(d, prefix, e);
+    auto results = g_sime->DecodeNumSentence(d, prefix, e);
 
     return packResults(env, stringClass, results);
 }
@@ -119,7 +119,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
 JNIEXPORT jboolean JNICALL
 Java_com_semantic_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {
-    return (g_interpreter && g_interpreter->Ready()) ? JNI_TRUE : JNI_FALSE;
+    return (g_sime && g_sime->Ready()) ? JNI_TRUE : JNI_FALSE;
 }
 
 } // extern "C"

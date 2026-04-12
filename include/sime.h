@@ -22,10 +22,10 @@ struct DecodeResult {
     std::size_t cnt = 0;     // bytes of input consumed
 };
 
-class Interpreter {
+class Sime {
 public:
-    Interpreter() = default;
-    Interpreter(const std::filesystem::path& trie_path,
+    Sime() = default;
+    Sime(const std::filesystem::path& trie_path,
                 const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
