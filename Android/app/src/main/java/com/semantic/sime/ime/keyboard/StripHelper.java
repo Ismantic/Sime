@@ -40,7 +40,7 @@ public final class StripHelper {
         TextView tv = new TextView(ctx);
         tv.setText(label);
         tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, functionBg ? 14f : 13f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         tv.setTextColor(functionBg ? theme.keyTextFunction : theme.keyText);
         tv.setBackground(functionBg
                 ? makeFunctionSelector(ctx, theme)
