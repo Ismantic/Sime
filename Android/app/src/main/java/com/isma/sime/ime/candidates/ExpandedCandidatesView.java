@@ -275,7 +275,7 @@ public class ExpandedCandidatesView extends LinearLayout {
                 currentRow = newRow();
                 colsRemaining = GRID_COLS;
             }
-            currentRow.addView(makeCandidateCell(c.text, i, span, false));
+            currentRow.addView(makeCandidateCell(c.text, i, span));
             colsRemaining -= span;
         }
         if (currentRow != null) {
@@ -321,17 +321,12 @@ public class ExpandedCandidatesView extends LinearLayout {
         return row;
     }
 
-    private TextView makeCandidateCell(String text, int idx, int span, boolean highlight) {
+    private TextView makeCandidateCell(String text, int idx, int span) {
         TextView tv = new TextView(getContext());
         tv.setText(text);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
         tv.setGravity(Gravity.CENTER);
-        if (highlight) {
-            tv.setTextColor(theme.candidateHighlight);
-            tv.setTypeface(null, Typeface.BOLD);
-        } else {
-            tv.setTextColor(theme.candidateText);
-        }
+        tv.setTextColor(theme.candidateText);
         tv.setPadding(dp(8), 0, dp(8), 0);
         tv.setBackground(makeCellBg());
         tv.setClickable(true);
