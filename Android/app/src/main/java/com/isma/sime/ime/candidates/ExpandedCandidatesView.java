@@ -6,7 +6,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -20,19 +19,16 @@ import java.util.List;
 
 /**
  * Full-page candidate panel shown in place of the keyboard when the
- * user taps {@code ∨} on the candidates bar. Two regions side by side:
+ * user taps {@code ∨} on the candidates bar. Three columns side by side:
  *
  * <ul>
- *   <li><b>Left strip</b> — pinyin alternatives for the next syllable
- *       position (same data as the T9 keyboard's left strip). Tapping
- *       one fires {@link OnPinyinAltPickListener}.
- *   <li><b>Main grid</b> — hanzi candidates packed greedily into rows.
- *       Tapping one fires {@link OnCandidatePickListener}.
+ *   <li><b>Left strip</b> — pinyin alternatives + T9 fallback letters
+ *       (hidden in Qwerty mode when empty).
+ *   <li><b>Main grid</b> — hanzi candidates in a scrollable 4-column
+ *       grid; paging via the right column's ∧/∨ buttons.
+ *   <li><b>Right control column</b> — 返回 (collapse), ∧ (page up),
+ *       ∨ (page down), ⌫ (backspace).
  * </ul>
- *
- * <p>The preedit pinyin display lives in the {@code CandidatesBar} above
- * — this view is purely the body. Together with the bar, the user sees
- * preedit + pinyin alts + hanzi candidates simultaneously.
  */
 public class ExpandedCandidatesView extends LinearLayout {
 
@@ -52,6 +48,10 @@ public class ExpandedCandidatesView extends LinearLayout {
         void onFallbackLetter(char letter);
     }
 
+    public interface OnCollapseListener {
+        void onCollapse();
+    }
+
     private static final int LEFT_ITEM_HEIGHT_DP = 42;
 
     /**
@@ -60,10 +60,6 @@ public class ExpandedCandidatesView extends LinearLayout {
      * vertically.
      */
     private static final int GRID_ROW_HEIGHT_DP = 46;
-    /** Grid horizontal padding (one side). Mirrors {@code grid.setPadding}. */
-    private static final int GRID_PADDING_DP = 4;
-    /** Per-side cell horizontal margin set in {@link #makeCandidateCell}. */
-    private static final int CELL_MARGIN_DP = 2;
 
     private final SimeTheme theme;
 
@@ -76,6 +72,7 @@ public class ExpandedCandidatesView extends LinearLayout {
     private OnPinyinAltPickListener altPickListener;
     private OnBackspaceListener backspaceListener;
     private OnFallbackLetterListener fallbackLetterListener;
+    private OnCollapseListener collapseListener;
 
     public ExpandedCandidatesView(Context ctx) {
         super(ctx);
@@ -98,22 +95,11 @@ public class ExpandedCandidatesView extends LinearLayout {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        // Main area: scrollable grid + floating backspace overlay.
-        // FrameLayout pins the backspace at the viewport's bottom-right
-        // corner regardless of the user's scroll position. The grid
-        // itself renders ALL candidates with rows of fixed height; the
-        // first 5 rows fit, anything beyond scrolls. The backspace
-        // overlaps the candidate that happens to sit at the bottom-right
-        // of the viewport — pulling the grid up exposes that candidate.
-        FrameLayout mainArea = new FrameLayout(ctx);
-        addView(mainArea, new LayoutParams(0, LayoutParams.MATCH_PARENT, 5f));
-
+        // ===== Middle: scrollable hanzi grid =====
         mainScroll = new ScrollView(ctx);
         mainScroll.setVerticalScrollBarEnabled(false);
         mainScroll.setFillViewport(true);
-        mainArea.addView(mainScroll, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
+        addView(mainScroll, new LayoutParams(0, LayoutParams.MATCH_PARENT, 5f));
 
         grid = new LinearLayout(ctx);
         grid.setOrientation(VERTICAL);
@@ -122,52 +108,46 @@ public class ExpandedCandidatesView extends LinearLayout {
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT));
 
-        final TextView backspace = new TextView(ctx);
-        backspace.setText("⌫");
-        backspace.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
-        backspace.setGravity(Gravity.CENTER);
-        backspace.setTextColor(theme.keyTextFunction);
-        backspace.setBackground(makeFunctionCellBg());
-        backspace.setClickable(true);
-        backspace.setFocusable(true);
-        backspace.setOnClickListener(v -> {
-            if (backspaceListener != null) backspaceListener.onBackspace();
-        });
-        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        blp.gravity = Gravity.BOTTOM | Gravity.RIGHT;
-        mainArea.addView(backspace, blp);
+        // ===== Right control column: 返回 / 上 / 下 / ⌫ =====
+        // Vertical strip of 4 function buttons (each 1/4 of column
+        // height). 返回 collapses the panel; 上/下 page-scroll the
+        // grid; ⌫ deletes one char from the buffer.
+        LinearLayout rightCol = new LinearLayout(ctx);
+        rightCol.setOrientation(VERTICAL);
+        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
-        // Resize the backspace to exactly one grid cell whenever
-        // mainArea's width changes (e.g., when the left strip toggles).
-        // Width / margins mirror the grid's cell sizing rules so the
-        // overlay sits perfectly on top of the bottom-right cell.
-        final int cellHeight = dp(GRID_ROW_HEIGHT_DP) - dp(CELL_MARGIN_DP * 2);
-        mainArea.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, orr, ob) -> {
-            int width = r - l;
-            if (width <= 0 || (width == orr - ol)) return;
-            int cellWidth =
-                    (width - dp(GRID_PADDING_DP * 2)) / GRID_COLS - dp(CELL_MARGIN_DP * 2);
-            if (cellWidth <= 0) return;
-            FrameLayout.LayoutParams lp =
-                    (FrameLayout.LayoutParams) backspace.getLayoutParams();
-            if (lp.width == cellWidth && lp.height == cellHeight) return;
-            lp.width = cellWidth;
-            lp.height = cellHeight;
-            // Right margin = grid right padding + cell right margin
-            // so the overlay's right edge aligns with the cell's
-            // visual edge. Bottom margin = 0: with 5 rows × 46dp =
-            // 230dp grid extending slightly past the ~228dp mainArea,
-            // the last row's cell visual bottom (row_bottom - cell
-            // margin) coincides exactly with mainArea bottom, so the
-            // overlay (anchored to mainArea bottom) needs no extra
-            // bottom margin.
-            lp.setMargins(0, 0,
-                    dp(GRID_PADDING_DP + CELL_MARGIN_DP),
-                    0);
-            backspace.setLayoutParams(lp);
-        });
+        rightCol.addView(makeControlButton("返回", () -> {
+            if (collapseListener != null) collapseListener.onCollapse();
+        }));
+        rightCol.addView(makeControlButton("∧", () -> {
+            int dy = -mainScroll.getHeight() / 2;
+            if (dy != 0) mainScroll.smoothScrollBy(0, dy);
+        }));
+        rightCol.addView(makeControlButton("∨", () -> {
+            int dy = mainScroll.getHeight() / 2;
+            if (dy != 0) mainScroll.smoothScrollBy(0, dy);
+        }));
+        rightCol.addView(makeControlButton("⌫", () -> {
+            if (backspaceListener != null) backspaceListener.onBackspace();
+        }));
+    }
+
+    private TextView makeControlButton(String label, Runnable onClick) {
+        TextView tv = new TextView(getContext());
+        tv.setText(label);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        tv.setGravity(Gravity.CENTER);
+        tv.setTextColor(theme.keyTextFunction);
+        tv.setBackground(makeFunctionCellBg());
+        tv.setClickable(true);
+        tv.setFocusable(true);
+        tv.setOnClickListener(v -> onClick.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        int m = dp(2);
+        lp.setMargins(m, m, m, m);
+        tv.setLayoutParams(lp);
+        return tv;
     }
 
     public void setOnCandidatePickListener(OnCandidatePickListener l) {
@@ -184,6 +164,10 @@ public class ExpandedCandidatesView extends LinearLayout {
 
     public void setOnFallbackLetterListener(OnFallbackLetterListener l) {
         this.fallbackLetterListener = l;
+    }
+
+    public void setOnCollapseListener(OnCollapseListener l) {
+        this.collapseListener = l;
     }
 
     public void render(List<Candidate> candidates,
@@ -262,11 +246,9 @@ public class ExpandedCandidatesView extends LinearLayout {
     /**
      * Lay out ALL candidates into a {@link #GRID_COLS}-column grid with
      * fixed row height. Each cell's column span depends on its char
-     * length: 1-2 chars → 1 col, 3-5 → 2 cols, 6+ → 4 cols. Rows past
-     * the visible viewport scroll vertically. The backspace lives in
-     * the {@link FrameLayout} overlay above this grid, not in the cell
-     * flow — it visually overlaps whichever cell happens to sit at the
-     * viewport's bottom-right corner.
+     * length: 1-2 chars → 1 col, 3-5 → 2 cols, 6+ → 4 cols. Rows
+     * past the visible viewport scroll vertically; the right control
+     * column's ∧/∨ buttons handle paging.
      */
     private void renderGrid(List<Candidate> candidates) {
         grid.removeAllViews();
@@ -348,8 +330,7 @@ public class ExpandedCandidatesView extends LinearLayout {
         tv.setBackground(makeCellBg());
         tv.setClickable(true);
         tv.setFocusable(true);
-        // Fill the row height (MATCH_PARENT) so the cell and the
-        // floating backspace overlay end up the same visual size.
+        // Fill the row height (MATCH_PARENT) for consistent cell sizing.
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, span);
         lp.setMargins(dp(2), dp(2), dp(2), dp(2));
