@@ -29,14 +29,4 @@ fcitx5 -r  # 重启 fcitx5
 1. 在 fcitx5-configtool 中添加 "Sime" 输入法
 2. 切换到 Sime，输入拼音，数字键或空格选词
 
-## 故障排除
 
-```bash
-# 检查插件是否安装
-ls /usr/lib/fcitx5/sime.so
-ls /usr/share/fcitx5/inputmethod/sime.conf
-
-# 查看日志
-FCITX_VERBOSE=sime=10 fcitx5 -r
-journalctl --user -f | grep sime
-```
