@@ -34,17 +34,17 @@ if(NOT DEFINED FCITX5_ADDON_CONFIG_INSTALL_DIR)
 endif()
 
 # 构建 Sime fcitx5 插件
-add_library(sime MODULE
+add_library(fcitx5_sime MODULE
     src/sime.cc
     src/sime-state.cc
 )
 
-target_include_directories(sime PRIVATE
+target_include_directories(fcitx5_sime PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
 )
 
-target_link_libraries(sime
+target_link_libraries(fcitx5_sime
     Fcitx5::Core
     Fcitx5::Config
     Fcitx5::Utils
@@ -52,12 +52,12 @@ target_link_libraries(sime
 )
 
 # 设置输出名称
-set_target_properties(sime PROPERTIES
+set_target_properties(fcitx5_sime PROPERTIES
     OUTPUT_NAME "sime"
 )
 
 # 安装插件
-install(TARGETS sime
+install(TARGETS fcitx5_sime
     LIBRARY DESTINATION "${FCITX5_ADDON_INSTALL_DIR}"
 )
 

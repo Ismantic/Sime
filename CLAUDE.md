@@ -15,14 +15,14 @@ cmake --build build
 
 For the Fcitx5 plugin: add `-DSIME_ENABLE_FCITX5=ON`.
 
-Build outputs in `./build/`: `sime-count`, `sime-construct`, `sime-converter`, `sime-compact`, `sime-interpreter`, `sime-dump`.
+Build outputs in `./build/`: `sime-count`, `sime-construct`, `sime-converter`, `sime-compact`, `sime`, `sime-dump`.
 
 ## Testing
 
 No automated test suite. Use the interactive interpreter to verify behavior:
 
 ```bash
-./build/sime-interpreter --trie sime/output/sime.trie --cnt sime/output/sime.cnt
+./build/sime --trie sime/output/sime.trie --cnt sime/output/sime.cnt
 # Sentence mode: add -s
 # T9 mode: add --num
 ```

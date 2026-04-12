@@ -22,10 +22,10 @@ cmake --build build
 
 ```bash
 # 全键盘拼音（交互式）
-./build/sime-interpreter --trie data/sime.trie --cnt data/sime.cnt -s
+./build/sime --trie data/sime.trie --cnt data/sime.cnt -s
 
 # 九宫格模式
-./build/sime-interpreter --trie data/sime.trie --cnt data/sime.cnt --num -s
+./build/sime --trie data/sime.trie --cnt data/sime.cnt --num -s
 ```
 
 ```
