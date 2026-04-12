@@ -5,23 +5,11 @@
 ## 特性
 
 **引擎**
-- Modified Kneser-Ney N-gram 语言模型 + Entropy pruning
-- 量化压缩（16-bit 概率 / 14-bit backoff / 18-bit token）
-- 拼音 Trie 前缀匹配，支持多音字与不完整拼音
-- Viterbi beam search 解码，两层输出（Layer 1 全句 + Layer 2 单字）
-- T9 九宫格数字到拼音的解码，支持分隔符 `'` 和 tail expansion
-
-**Android**
-- 九宫格 / 全键盘 / 数字 / 符号 / 设置 五种键盘，自建 UI 框架（KeyDef → KeyboardLayout → KeyboardContainer → KeyView）
-- 三块结构键盘（左 strip + 中网格 + 右列，换行键插到底）
-- 候选展开面板：左拼音 strip + 中 4 列汉字网格 + 右控制列（返回 / 上翻 / 下翻 / 删除）
-- Preedit 拼音独立行 + 候选汉字行，互不挤压
-- 长按退格连删、长按空格切语言、长按字母出数字/符号
-- 逗号/句号双态键（中英自动切换）、T9 "1 键" 标点选择器
-- 主题系统：浅色/深色自动跟随系统，圆角阴影按键
-
-**Linux**
-- Fcitx5 输入法插件
+- Modified Kneser-Ney N-gram 语言模型 + Entropy Pruning
+- 量化压缩（16-bit 概率 / 14-bit Backoff / 18-bit Token）
+- 支持完全自训练，需要提供切词语料与汉字-拼音词典
+- 两层输出（全句 + 单字/词），支持分隔符 `'` 和 Tail Expansion
+- 提供 Linux 与 Android 双端支持，QWERTY 与 T9 两种输入方式支持；
 
 ## 构建
 
@@ -39,10 +27,10 @@ cmake --build build
 
 ```bash
 # 全键盘拼音（交互式）
-./build/sime-interpreter --trie sime/output/sime.trie --cnt sime/output/sime.cnt -s
+./build/sime-interpreter --trie data/sime.trie --cnt data/sime.cnt -s
 
 # 九宫格模式
-./build/sime-interpreter --trie sime/output/sime.trie --cnt sime/output/sime.cnt --num -s
+./build/sime-interpreter --trie data/sime.trie --cnt data/sime.cnt --num -s
 ```
 
 ```
@@ -58,7 +46,7 @@ cmake --build build
 
 **前置准备**
 - `sentences.cut.txt` — 切词后的语料（空格分隔）
-- `chinese_units.txt` — 拼音词典
+- `units.txt` — 拼音词典
 
 **步骤**
 
