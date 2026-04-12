@@ -49,7 +49,9 @@ public class T9KeyboardView extends KeyboardView {
         return T9_LETTERS[idx];
     }
 
-    private static final String[] IDLE_PUNC = {"，", "。", "？", "！"};
+    private static final String[] IDLE_PUNC = {
+            "，", "。", "？", "！", "：", "、", "…", "～"
+    };
 
     /** Max items in the left strip (pinyin alts + fallback letters). */
     private static final int MAX_LEFT_ITEMS = 12;
@@ -160,8 +162,9 @@ public class T9KeyboardView extends KeyboardView {
                 if (active) {
                     emit(SimeKey.separator());
                 } else {
-                    // Idle: commit '@' as a quick shortcut.
-                    emit(SimeKey.punctuation("@"));
+                    // Idle: open the T9 "1 key" punctuation picker in
+                    // the candidate bar (matches phone IME convention).
+                    emit(SimeKey.numPunctuation());
                 }
             });
         }

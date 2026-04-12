@@ -57,7 +57,10 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         setPadding(0, 0, 0, dp(24));
 
         candidatesBar = new CandidatesBar(getContext());
-        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(44));
+        // Tall enough to host the active 2-row layout (preedit on top
+        // of the candidates row). Idle / settings modes use the same
+        // height with center-vertical icons.
+        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
         addView(candidatesBar, cbLp);
     }
 
@@ -100,7 +103,9 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
 
         if (expanded) {
             if (expandedView != null) {
-                expandedView.render(candidates, kernel.getPinyinAlts());
+                expandedView.render(candidates,
+                        kernel.getPinyinAlts(),
+                        firstDigitLetters(state));
             }
             return;
         }
@@ -171,10 +176,17 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             expandedView.setOnPinyinAltPickListener(idx -> {
                 if (kernel != null) kernel.onPinyinAltPick(idx);
             });
+            expandedView.setOnBackspaceListener(() -> {
+                if (kernel != null) kernel.onKey(SimeKey.backspace());
+            });
+            expandedView.setOnFallbackLetterListener(letter -> {
+                if (kernel != null) kernel.onFallbackLetterPick(letter);
+            });
         }
         expandedView.render(
                 kernel != null ? kernel.getCandidates() : null,
-                kernel != null ? kernel.getPinyinAlts() : null);
+                kernel != null ? kernel.getPinyinAlts() : null,
+                kernel != null ? firstDigitLetters(kernel.getState()) : null);
         LayoutParams lp = new LayoutParams(
                 LayoutParams.MATCH_PARENT, getKeyboardHeightPx());
         addView(expandedView, lp);

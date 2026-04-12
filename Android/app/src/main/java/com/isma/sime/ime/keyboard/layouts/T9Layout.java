@@ -60,7 +60,8 @@ public final class T9Layout {
                 .keyMargin(3);
 
         b.row(KeyRow.builder(1f)
-                .key(KeyDef.function("@#", null).id(ID_TOP_LEFT).width(1f).labelSize(15f))
+                .key(KeyDef.function("@#", null).id(ID_TOP_LEFT).width(1f).labelSize(15f)
+                        .hint("1"))
                 .key(t9digit("2", "ABC"))
                 .key(t9digit("3", "DEF")));
 

@@ -106,21 +106,36 @@ public class CandidatesBar extends FrameLayout {
     }
 
     private void buildActive() {
+        // Two-row stack: a slim preedit row on top of the candidates
+        // row. This way long pinyin no longer pushes the hanzi off the
+        // visible bar — they live on independent rows.
         activeView = new LinearLayout(getContext());
-        activeView.setOrientation(LinearLayout.HORIZONTAL);
-        activeView.setGravity(Gravity.CENTER_VERTICAL);
+        activeView.setOrientation(LinearLayout.VERTICAL);
         activeView.setPadding(dp(8), 0, dp(8), 0);
 
+        // ===== Top row: preedit pinyin (left-aligned, small) =====
         preeditView = new TextView(getContext());
-        preeditView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        preeditView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
         preeditView.setTextColor(theme.preeditText);
         preeditView.setSingleLine(true);
-        preeditView.setPadding(dp(4), 0, dp(8), 0);
+        preeditView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        preeditView.setPadding(dp(4), dp(2), dp(8), 0);
         LinearLayout.LayoutParams pLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
         preeditView.setLayoutParams(pLp);
         activeView.addView(preeditView);
+
+        // ===== Bottom row: candidates scroll + expand toggle =====
+        // Gravity END so the toggle button stays glued to the right
+        // edge even when the scroll is hidden in expanded mode (where
+        // the toggle is the only remaining child).
+        LinearLayout bottomRow = new LinearLayout(getContext());
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        bottomRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        bottomRow.setLayoutParams(brLp);
 
         candidateScroll = new HorizontalScrollView(getContext());
         candidateScroll.setHorizontalScrollBarEnabled(false);
@@ -129,17 +144,21 @@ public class CandidatesBar extends FrameLayout {
         candidateScroll.setLayoutParams(sLp);
         candidateContainer = new LinearLayout(getContext());
         candidateContainer.setOrientation(LinearLayout.HORIZONTAL);
-        candidateContainer.setGravity(Gravity.CENTER_VERTICAL);
+        // Pin candidates to the top of the bottom row so they hug the
+        // preedit instead of vertically centering with a gap below it.
+        candidateContainer.setGravity(Gravity.TOP);
         candidateScroll.addView(candidateContainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.MATCH_PARENT));
-        activeView.addView(candidateScroll);
+        bottomRow.addView(candidateScroll);
 
         expandToggleButton = iconButton("∨");
         expandToggleButton.setOnClickListener(v -> {
             if (expandToggleListener != null) expandToggleListener.onExpandToggle();
         });
-        activeView.addView(expandToggleButton);
+        bottomRow.addView(expandToggleButton);
+
+        activeView.addView(bottomRow);
 
         addView(activeView, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -161,10 +180,14 @@ public class CandidatesBar extends FrameLayout {
     }
 
     public void render(InputKernel kernel, InputState state, List<Candidate> candidates) {
-        boolean active = (state != null) && !state.isEmpty();
-        if (active) {
+        boolean stateActive = (state != null) && !state.isEmpty();
+        boolean hasCandidates = (candidates != null) && !candidates.isEmpty();
+        // Show "active" mode whenever there's something to display.
+        // The T9 "1 key" picker has an empty state but a non-empty
+        // candidate list — it should still occupy the bar.
+        if (stateActive || hasCandidates) {
             showActive();
-            preeditView.setText(buildPreedit(kernel, state));
+            preeditView.setText(stateActive ? buildPreedit(kernel, state) : "");
             populateCandidates(candidates);
         } else {
             showIdle();
@@ -245,7 +268,15 @@ public class CandidatesBar extends FrameLayout {
     /**
      * Zip the raw remaining buffer with the decoder-returned pinyin
      * segmentation so that user-typed {@code '} boundaries stay visible
-     * while real digits are replaced by their decoded pinyin letters.
+     * while T9 digits are replaced by their decoded pinyin letters.
+     *
+     * <p>For T9 input ({@code r} is a digit) the visible char comes
+     * from {@code units} so the user sees pinyin instead of digits.
+     * For QWERTY ({@code r} is already a letter) the user's typed
+     * letter is preserved verbatim — units is only consulted for
+     * separator insertions. This avoids cases like typing "hi" in
+     * Qwerty getting rendered as "he" because the decoder happened
+     * to return units = "he" for an unparseable input.
      *
      * <p>If {@code units} covers fewer real chars than {@code rem}
      * (legitimate partial decode, e.g. T9 input "7457" → top candidate
@@ -274,7 +305,9 @@ public class CandidatesBar extends FrameLayout {
                 sb.append('\'');
                 ri++;
             } else {
-                sb.append(u);
+                // T9: r is a digit, u is the decoded letter — show u.
+                // Qwerty: r is already a letter — preserve r as typed.
+                sb.append(Character.isDigit(r) ? u : r);
                 ri++;
                 ui++;
             }
@@ -312,7 +345,7 @@ public class CandidatesBar extends FrameLayout {
             TextView tv = new TextView(getContext());
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
             tv.setGravity(Gravity.CENTER);
-            tv.setPadding(dp(12), dp(8), dp(12), dp(8));
+            tv.setPadding(dp(12), dp(3), dp(12), dp(3));
             tv.setClickable(true);
             tv.setFocusable(true);
             candidateContainer.addView(tv);
@@ -380,10 +413,10 @@ public class CandidatesBar extends FrameLayout {
     }
 
     /**
-     * Reflect the expanded/collapsed state. When expanded, the inline
-     * candidate scroll is hidden because the {@code ExpandedCandidatesView}
-     * already shows them — leaving the bar with just preedit + ∧. The
-     * preedit's layout weight is flipped so it fills the freed space.
+     * Reflect the expanded/collapsed state. When expanded the inline
+     * candidate scroll is hidden because {@code ExpandedCandidatesView}
+     * already shows them — leaving the bar with just the preedit row
+     * on top and the ∧ toggle on the (otherwise empty) bottom row.
      */
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
@@ -392,18 +425,6 @@ public class CandidatesBar extends FrameLayout {
         }
         if (candidateScroll != null) {
             candidateScroll.setVisibility(expanded ? GONE : VISIBLE);
-        }
-        if (preeditView != null) {
-            LinearLayout.LayoutParams pLp =
-                    (LinearLayout.LayoutParams) preeditView.getLayoutParams();
-            if (expanded) {
-                pLp.width = 0;
-                pLp.weight = 1f;
-            } else {
-                pLp.width = LinearLayout.LayoutParams.WRAP_CONTENT;
-                pLp.weight = 0f;
-            }
-            preeditView.setLayoutParams(pLp);
         }
     }
 
