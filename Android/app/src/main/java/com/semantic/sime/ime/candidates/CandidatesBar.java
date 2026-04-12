@@ -18,7 +18,7 @@ import android.widget.TextView;
 import com.semantic.sime.ime.InputKernel;
 import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.PinyinUtil;
-import com.semantic.sime.ime.engine.Candidate;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.theme.SimeTheme;
 
 import java.util.List;
@@ -179,7 +179,7 @@ public class CandidatesBar extends FrameLayout {
         return tv;
     }
 
-    public void render(InputKernel kernel, InputState state, List<Candidate> candidates) {
+    public void render(InputKernel kernel, InputState state, List<DecodeResult> candidates) {
         boolean stateActive = (state != null) && !state.isEmpty();
         boolean hasCandidates = (candidates != null) && !candidates.isEmpty();
         // Show "active" mode whenever there's something to display.
@@ -327,7 +327,7 @@ public class CandidatesBar extends FrameLayout {
     private final java.util.List<TextView> candidatePool = new java.util.ArrayList<>();
     private final java.util.List<View> dividerPool = new java.util.ArrayList<>();
 
-    private void populateCandidates(List<Candidate> candidates) {
+    private void populateCandidates(List<DecodeResult> candidates) {
         int n = candidates == null ? 0 : candidates.size();
 
         // Grow the pool to cover the current candidate count. New
@@ -361,7 +361,7 @@ public class CandidatesBar extends FrameLayout {
             View div = dividerPool.get(i);
             if (i < n) {
                 final int idx = i;
-                Candidate c = candidates.get(i);
+                DecodeResult c = candidates.get(i);
                 tv.setText(c.text);
                 if (i == 0) {
                     tv.setTextColor(theme.candidateHighlight);
