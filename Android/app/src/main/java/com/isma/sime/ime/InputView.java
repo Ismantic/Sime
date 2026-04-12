@@ -182,6 +182,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             expandedView.setOnFallbackLetterListener(letter -> {
                 if (kernel != null) kernel.onFallbackLetterPick(letter);
             });
+            expandedView.setOnCollapseListener(() -> setExpanded(false));
         }
         expandedView.render(
                 kernel != null ? kernel.getCandidates() : null,

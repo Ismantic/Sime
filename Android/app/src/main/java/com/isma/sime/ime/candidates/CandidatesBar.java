@@ -39,6 +39,7 @@ public class CandidatesBar extends FrameLayout {
 
     private LinearLayout idleView;
     private LinearLayout activeView;
+    private LinearLayout activeBottomRow;
     private TextView preeditView;
     private LinearLayout candidateContainer;
     private HorizontalScrollView candidateScroll;
@@ -130,12 +131,13 @@ public class CandidatesBar extends FrameLayout {
         // Gravity END so the toggle button stays glued to the right
         // edge even when the scroll is hidden in expanded mode (where
         // the toggle is the only remaining child).
-        LinearLayout bottomRow = new LinearLayout(getContext());
-        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
-        bottomRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        activeBottomRow = new LinearLayout(getContext());
+        activeBottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        activeBottomRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        bottomRow.setLayoutParams(brLp);
+        activeBottomRow.setLayoutParams(brLp);
+        LinearLayout bottomRow = activeBottomRow;
 
         candidateScroll = new HorizontalScrollView(getContext());
         candidateScroll.setHorizontalScrollBarEnabled(false);
@@ -413,18 +415,19 @@ public class CandidatesBar extends FrameLayout {
     }
 
     /**
-     * Reflect the expanded/collapsed state. When expanded the inline
-     * candidate scroll is hidden because {@code ExpandedCandidatesView}
-     * already shows them — leaving the bar with just the preedit row
-     * on top and the ∧ toggle on the (otherwise empty) bottom row.
+     * Reflect the expanded/collapsed state. When expanded the entire
+     * bottom row of the bar (candidates scroll + ∧ toggle) is hidden
+     * because the ExpandedCandidatesView's right control column has
+     * its own 返回 / 上 / 下 / ⌫ controls — the bar shrinks to just
+     * the preedit row.
      */
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
         if (expandToggleButton != null) {
             expandToggleButton.setText(expanded ? "∧" : "∨");
         }
-        if (candidateScroll != null) {
-            candidateScroll.setVisibility(expanded ? GONE : VISIBLE);
+        if (activeBottomRow != null) {
+            activeBottomRow.setVisibility(expanded ? GONE : VISIBLE);
         }
     }
 
