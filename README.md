@@ -55,25 +55,8 @@ make convert     # 5. 编译拼音 Trie
 make compact     # 6. 量化压缩
 ```
 
-产出文件：`sime/output/sime.trie`（拼音 Trie）和 `sime/output/sime.cnt`（压缩语言模型）。
+产出文件：`sime/output/sime.trie` 和 `sime/output/sime.cnt` 。
 
-## 项目结构
-
-```
-include/         C++ 引擎头文件
-src/             C++ 引擎实现
-app/             CLI 工具入口
-Android/         Android 输入法应用
-  app/src/main/java/com/isma/sime/
-    ime/keyboard/framework/   键盘 UI 框架
-    ime/keyboard/layouts/     各键盘布局数据
-    ime/keyboard/             键盘 View 子类
-    ime/candidates/           候选条 + 展开面板
-    ime/                      InputKernel / InputState 等
-Linux/fcitx5/    Fcitx5 插件
-sime/            训练 pipeline + Makefile
-data/            预编译模型文件
-```
 
 ## License
 
