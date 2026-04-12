@@ -22,6 +22,7 @@ public final class QwertyLayout {
     public static final String ID_SHIFT = "qwerty.shift";
     public static final String ID_LANG  = "qwerty.lang";
     public static final String ID_ENTER = "qwerty.enter";
+    public static final String ID_COMMA = "qwerty.comma";
     public static final String LETTER_ID_PREFIX = "qwerty.letter.";
 
     public static final String[] ROW1 = {"q","w","e","r","t","y","u","i","o","p"};
@@ -65,16 +66,23 @@ public final class QwertyLayout {
         r3.key(KeyDef.function("⌫", SimeKey.backspace()).width(1.5f).repeatable(true));
         b.row(r3);
 
-        // Row 4: 123(1.5) + ,(1) + space(4) + 中\n英(1) + 换行(1.5) = 9
+        // Row 4: 符号 | 123 | , | space | 中\n英 | 换行
+        // 符号 and 123 are equal-width function keys; , aligns with x;
+        // space spans c+v+b; 中\n英 is 1.25× n width; 换行 fills the
+        // remaining space on the right. Total: 10 weight units = row 3.
         KeyRow.Builder r4 = KeyRow.builder(0.95f);
-        r4.key(KeyDef.function("123", SimeKey.toNumber()).width(1.5f).labelSize(14f));
-        r4.key(KeyDef.normal(",", SimeKey.punctuation(",")).width(1f).labelSize(15f));
-        r4.key(KeyDef.normal("空格", SimeKey.space()).width(4f).labelSize(14f)
+        r4.key(KeyDef.function("符号", SimeKey.toSymbol()).width(1.25f).labelSize(14f));
+        r4.key(KeyDef.function("123", SimeKey.toNumber()).width(1.25f).labelSize(14f));
+        r4.key(KeyDef.normal(",", SimeKey.punctuation(","))
+                .id(ID_COMMA).width(1f).labelSize(15f)
+                .topLabel(".")
+                .longPress(SimeKey.punctuation(".")));
+        r4.key(KeyDef.normal("空格", SimeKey.space()).width(3f).labelSize(14f)
                 .longPress(SimeKey.toggleLang()));
         r4.key(KeyDef.function("中\n英", SimeKey.toggleLang())
-                .id(ID_LANG).width(1f).labelSize(14f));
+                .id(ID_LANG).width(1.25f).labelSize(14f));
         r4.key(KeyDef.function("换行", SimeKey.enter())
-                .id(ID_ENTER).width(1.5f).labelSize(14f));
+                .id(ID_ENTER).width(2.25f).labelSize(14f));
         b.row(r4);
 
         return b.build();

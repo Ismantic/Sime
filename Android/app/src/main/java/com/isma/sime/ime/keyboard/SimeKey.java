@@ -35,4 +35,5 @@ public final class SimeKey {
     public static SimeKey toBack()           { return new SimeKey(KeyType.TO_BACK, '\0', null); }
     public static SimeKey toggleLang()       { return new SimeKey(KeyType.TOGGLE_LANG, '\0', null); }
     public static SimeKey punctuation(String s) { return new SimeKey(KeyType.PUNCTUATION, '\0', s); }
+    public static SimeKey numPunctuation()      { return new SimeKey(KeyType.NUM_PUNCTUATION, '\0', null); }
 }

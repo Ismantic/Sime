@@ -41,6 +41,7 @@ public class KeyView extends View {
     private KeyDef def;
     private String label;        // mutable copy of def.label
     private String hintLabel;    // mutable copy of def.hintLabel
+    private String topLabel;     // mutable copy of def.topLabel
     private boolean pressed;
     private boolean highlighted; // for "currently selected" settings entries
     /** True once a long-press has fired during the current touch sequence. */
@@ -85,6 +86,7 @@ public class KeyView extends View {
         this.def = def;
         this.label = def.label;
         this.hintLabel = def.hintLabel;
+        this.topLabel = def.topLabel;
         this.marginPx = dp(keyMarginDp);
         this.cornerRadiusPx = dp(theme.keyCornerRadiusDp);
         this.labelSizePx = sp(def.labelSizeSp > 0 ? def.labelSizeSp : 18f);
@@ -119,6 +121,11 @@ public class KeyView extends View {
         invalidate();
     }
 
+    public void setTopLabel(String s) {
+        this.topLabel = s;
+        invalidate();
+    }
+
     public void setHighlighted(boolean h) {
         if (this.highlighted == h) return;
         this.highlighted = h;
@@ -142,27 +149,40 @@ public class KeyView extends View {
         textPaint.setTextSize(labelSizePx);
         textPaint.setTypeface(Typeface.DEFAULT);
 
+        // Top label (small, centered above the main label). Used by
+        // the Qwerty comma key to show the long-press period (.) above
+        // the tap-emit comma. Pushes the main label slightly down so
+        // both stay visually balanced.
+        boolean hasTop = topLabel != null && !topLabel.isEmpty();
+        float labelCy = hasTop ? h * 0.6f : h / 2f;
+
         if (label != null && !label.isEmpty()) {
             int nl = label.indexOf('\n');
             if (nl < 0) {
-                drawCenteredLine(canvas, label, w / 2f, h / 2f, textPaint);
+                drawCenteredLine(canvas, label, w / 2f, labelCy, textPaint);
             } else {
                 String top = label.substring(0, nl);
                 String bot = label.substring(nl + 1);
                 Paint.FontMetrics fm = textPaint.getFontMetrics();
                 float lineHeight = fm.descent - fm.ascent;
-                float cy = h / 2f;
-                drawCenteredLine(canvas, top, w / 2f, cy - lineHeight * 0.05f, textPaint);
+                drawCenteredLine(canvas, top, w / 2f, labelCy - lineHeight * 0.05f, textPaint);
                 Paint sub = new Paint(textPaint);
                 sub.setTextSize(labelSizePx * 0.6f);
-                drawCenteredLine(canvas, bot, w / 2f, cy + lineHeight * 0.55f, sub);
+                drawCenteredLine(canvas, bot, w / 2f, labelCy + lineHeight * 0.55f, sub);
             }
         }
 
-        // Hint label (top-right corner). Skip on FUNCTION/ACCENT keys
-        // and on EMPTY (already short-circuited above).
-        if (hintLabel != null && !hintLabel.isEmpty()
-                && def.appearance == KeyAppearance.NORMAL) {
+        if (hasTop) {
+            Paint top = new Paint(textPaint);
+            top.setTextSize(labelSizePx * 0.55f);
+            top.setColor(theme.hintLabelColor);
+            drawCenteredLine(canvas, topLabel, w / 2f, h * 0.28f, top);
+        }
+
+        // Hint label (top-right corner). Drawn whenever the def
+        // declares one — function keys can have hints too (e.g. T9 @#
+        // shows "1" for the digit it represents).
+        if (hintLabel != null && !hintLabel.isEmpty()) {
             hintPaint.setColor(theme.hintLabelColor);
             hintPaint.setTextSize(hintSizePx);
             float hx = w - marginPx - dp(6);

@@ -12,19 +12,20 @@ import com.isma.sime.ime.keyboard.framework.KeyboardLayout;
  *
  * <pre>
  *   ┌────┬────┬────┬────┬──────┐
- *   │ %  │ 1  │ 2  │ 3  │  ⌫   │
- *   │ +  ├────┼────┼────┤      │
+ *   │ @  │ 1  │ 2  │ 3  │  ⌫   │
+ *   │ %  ├────┼────┼────┤      │
  *   │ -  │ 4  │ 5  │ 6  │ 空格 │
- *   │ *  ├────┼────┼────┤      │
- *   │    │ 7  │ 8  │ 9  │      │
+ *   │ +  ├────┼────┼────┤      │
+ *   │ ×  │ 7  │ 8  │ 9  │      │
  *   ├────┼────┼────┼────┤ 换行 │
  *   │符号│返回│  0   │ . │      │
  *   └────┴────┴────┴────┴──────┘
  * </pre>
  *
- * <p>Built from five pieces:
+ * <p>The left strip is scrollable and lives in {@code NumberKeyboardView}
+ * directly (built from {@link #LEFT_STRIP_PUNCS}); the rest is exposed
+ * here as four layouts:
  * <ul>
- *   <li>{@link #buildLeftStrip()}    — left column 4 punctuation cells (% + - *).
  *   <li>{@link #buildFuhaoCell()}    — single 符号 cell, sits below the left strip.
  *   <li>{@link #buildMainGrid()}     — center 3×3 digits.
  *   <li>{@link #buildCenterBottomRow()} — center bottom row: 返回, 0(wider), . .
@@ -33,18 +34,16 @@ import com.isma.sime.ime.keyboard.framework.KeyboardLayout;
  */
 public final class NumberLayout {
 
-    private NumberLayout() {}
+    /**
+     * Punctuation shown in the scrollable left strip. First 4 are
+     * visible without scrolling on a typical phone; the rest reveal
+     * by dragging.
+     */
+    public static final String[] LEFT_STRIP_PUNCS = {
+            "@", "%", "-", "+", "×", "/", "=", ":"
+    };
 
-    public static KeyboardLayout buildLeftStrip() {
-        KeyboardLayout.Builder b = KeyboardLayout.builder()
-                .horizontalPadding(4)
-                .verticalPadding(0)
-                .keyMargin(3);
-        for (String s : new String[]{"%", "+", "-", "*"}) {
-            b.row(KeyRow.builder(1f).key(punc(s)));
-        }
-        return b.build();
-    }
+    private NumberLayout() {}
 
     public static KeyboardLayout buildFuhaoCell() {
         return KeyboardLayout.builder()
@@ -73,8 +72,8 @@ public final class NumberLayout {
 
     /**
      * Bottom row of the center block — sits below the digit grid and
-     * spans the same 3 unit widths. 0 is widened relative to 返回 / .
-     * because it's the most-typed cell in this row.
+     * spans the same 3 unit widths. Cells are equal width so 0 lands
+     * directly under 8.
      */
     public static KeyboardLayout buildCenterBottomRow() {
         return KeyboardLayout.builder()
@@ -83,9 +82,9 @@ public final class NumberLayout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("返回", SimeKey.toBack())
-                                .width(0.75f).labelSize(14f))
-                        .key(digit("0").width(1.5f))
-                        .key(punc(".").width(0.75f)))
+                                .width(1f).labelSize(14f))
+                        .key(digit("0").width(1f))
+                        .key(punc(".").width(1f)))
                 .build();
     }
 

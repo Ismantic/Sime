@@ -45,6 +45,7 @@ public class QwertyKeyboardView extends KeyboardView {
         addView(container);
 
         installShiftHandler();
+        installCommaHandler();
         refreshAll();
     }
 
@@ -106,11 +107,43 @@ public class QwertyKeyboardView extends KeyboardView {
         });
     }
 
+    /**
+     * Comma key emits {@code ,} (English) or {@code ，} (Chinese) on
+     * tap, and {@code .} / {@code 。} on long-press. The KeyDef hard-
+     * codes ASCII so the listener checks the live mode and overrides
+     * the emit. The placeholder longPress in the def just turns the
+     * long-press timer on.
+     */
+    private void installCommaHandler() {
+        KeyView commaKey = container.findKeyById(QwertyLayout.ID_COMMA);
+        if (commaKey == null) return;
+        commaKey.setListener((def, action) -> {
+            boolean cn = (mode == KeyboardMode.CHINESE);
+            String comma  = cn ? "，" : ",";
+            String period = cn ? "。" : ".";
+            if (action == KeyView.KeyAction.CLICK) {
+                emit(SimeKey.punctuation(comma));
+            } else if (action == KeyView.KeyAction.LONG_PRESS) {
+                emit(SimeKey.punctuation(period));
+            }
+        });
+    }
+
     private void refreshAll() {
         refreshLetters();
         refreshShiftKey();
         refreshLangKey();
         refreshEnterKey();
+        refreshCommaKey();
+    }
+
+    private void refreshCommaKey() {
+        KeyView kv = container.findKeyById(QwertyLayout.ID_COMMA);
+        if (kv != null) {
+            boolean cn = (mode == KeyboardMode.CHINESE);
+            kv.setLabel(cn ? "，" : ",");
+            kv.setTopLabel(cn ? "。" : ".");
+        }
     }
 
     private void refreshLetters() {

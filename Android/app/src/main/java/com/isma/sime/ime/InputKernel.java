@@ -57,6 +57,17 @@ public class InputKernel {
     private ChineseLayout chineseLayout = ChineseLayout.QWERTY;
 
     private List<Candidate> candidates = Collections.emptyList();
+    /**
+     * True when the candidate list is showing T9 "1 key" punctuation
+     * options instead of decoded hanzi. Picking commits the punctuation
+     * directly; any other key dismisses the picker first.
+     */
+    private boolean inPunctuationPicker = false;
+
+    /** Punctuation shown by the T9 "1 key" picker, in display order. */
+    private static final String[] T9_NUM_PUNCTUATION = {
+            "@", "#", "*", "+", "。", "~", "(", ")", "、"
+    };
     private List<PinyinAlt> pinyinAlts = Collections.emptyList();
     /** Segmented pinyin string of the current top candidate, for preedit. */
     private String topUnits = "";
@@ -124,20 +135,53 @@ public class InputKernel {
 
     public void onKey(SimeKey key) {
         if (key == null) return;
-        switch (key.type) {
-            case LETTER:      handleLetter(key.ch); break;
-            case DIGIT:       handleDigit(key.ch); break;
-            case SEPARATOR:   handleSeparator(); break;
-            case SPACE:       handleSpace(); break;
-            case ENTER:       handleEnter(); break;
-            case BACKSPACE:   handleBackspace(); break;
-            case CLEAR:       resetAll(); break;
-            case PUNCTUATION: handlePunctuation(key.text); break;
-            case TO_NUMBER:   switchMode(KeyboardMode.NUMBER); break;
-            case TO_SYMBOL:   switchMode(KeyboardMode.SYMBOL); break;
-            case TO_BACK:     switchMode(previousMode); break;
-            case TOGGLE_LANG: handleToggleLang(); break;
+        // The T9 "1 key" picker is a modal candidate strip. Re-pressing
+        // the same key keeps it open; any other key dismisses it first
+        // and then runs its normal handler.
+        if (inPunctuationPicker && key.type != KeyType.NUM_PUNCTUATION) {
+            dismissPunctuationPicker(/*publish=*/false);
         }
+        switch (key.type) {
+            case LETTER:          handleLetter(key.ch); break;
+            case DIGIT:           handleDigit(key.ch); break;
+            case SEPARATOR:       handleSeparator(); break;
+            case SPACE:           handleSpace(); break;
+            case ENTER:           handleEnter(); break;
+            case BACKSPACE:       handleBackspace(); break;
+            case CLEAR:           resetAll(); break;
+            case PUNCTUATION:     handlePunctuation(key.text); break;
+            case NUM_PUNCTUATION: showPunctuationPicker(); break;
+            case TO_NUMBER:       switchMode(KeyboardMode.NUMBER); break;
+            case TO_SYMBOL:       switchMode(KeyboardMode.SYMBOL); break;
+            case TO_BACK:         switchMode(previousMode); break;
+            case TOGGLE_LANG:     handleToggleLang(); break;
+        }
+    }
+
+    private void showPunctuationPicker() {
+        if (mode != KeyboardMode.CHINESE) {
+            // Outside of Chinese mode the picker has nowhere to render
+            // — fall back to committing the first punctuation directly.
+            if (listener != null) listener.onCommitText(T9_NUM_PUNCTUATION[0]);
+            return;
+        }
+        java.util.ArrayList<Candidate> out =
+                new java.util.ArrayList<>(T9_NUM_PUNCTUATION.length);
+        for (String p : T9_NUM_PUNCTUATION) {
+            out.add(new Candidate(p, "", 0));
+        }
+        candidates = out;
+        topUnits = "";
+        pinyinAlts = Collections.emptyList();
+        inPunctuationPicker = true;
+        publish();
+    }
+
+    private void dismissPunctuationPicker(boolean publish) {
+        if (!inPunctuationPicker) return;
+        inPunctuationPicker = false;
+        candidates = Collections.emptyList();
+        if (publish) publish();
     }
 
     // ===== Letter / digit =====
@@ -219,11 +263,50 @@ public class InputKernel {
             if (listener != null) listener.onSendEnter();
             return;
         }
-        // Commit the raw text: already-picked hanzi + the remaining raw
-        // buffer (letters + digits as typed).
-        String out = state.committedText() + state.remaining();
+        // Commit what the user actually sees in the preedit:
+        //   already-picked hanzi + the decoded pinyin letters.
+        // For T9 input "743663" this commits "shenme" (the displayed
+        // letters) instead of the raw digits, but for "94'26" it
+        // commits "xi'an" — the user-typed separator is preserved
+        // while decoder-inserted separators are dropped.
+        String tail;
+        if (chineseLayout == ChineseLayout.T9
+                && topUnits != null && !topUnits.isEmpty()) {
+            tail = mergeUnitsWithRawSeparators(state.remaining(), topUnits);
+        } else {
+            tail = state.remaining();
+        }
+        String out = state.committedText() + tail;
         if (listener != null) listener.onCommitText(out);
         resetAll();
+    }
+
+    /**
+     * Walk {@code units} (decoder-segmented pinyin, e.g. "shen'me" or
+     * "xi'an") in lockstep with {@code raw} (the user's actual buffer
+     * — digits + any user-typed separators). Letters from units are
+     * always emitted, but a {@code '} from units is kept only when
+     * the corresponding position in raw also has a {@code '}. Decoder-
+     * inserted separators are dropped.
+     */
+    private static String mergeUnitsWithRawSeparators(String raw, String units) {
+        StringBuilder sb = new StringBuilder(units.length());
+        int bi = 0;
+        for (int ui = 0; ui < units.length(); ui++) {
+            char u = units.charAt(ui);
+            if (u == '\'') {
+                if (bi < raw.length() && raw.charAt(bi) == '\'') {
+                    sb.append('\'');
+                    bi++;
+                }
+            } else {
+                sb.append(u);
+                if (bi < raw.length() && raw.charAt(bi) != '\'') {
+                    bi++;
+                }
+            }
+        }
+        return sb.toString();
     }
 
     // ===== Backspace =====
@@ -341,6 +424,13 @@ public class InputKernel {
     public void onHanziCandidatePick(int index) {
         if (index < 0 || index >= candidates.size()) return;
         Candidate c = candidates.get(index);
+        if (inPunctuationPicker) {
+            // The "1 key" picker commits the punctuation as raw text and
+            // immediately collapses the bar. There's no buffer to consume.
+            if (listener != null) listener.onCommitText(c.text);
+            dismissPunctuationPicker(/*publish=*/true);
+            return;
+        }
         state.select(c.text, c.pinyin, c.consumed);
         if (state.fullySelected()) {
             String out = state.committedText();

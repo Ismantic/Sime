@@ -27,5 +27,7 @@ public enum KeyType {
     /** Toggle between CHINESE and ENGLISH mode. */
     TOGGLE_LANG,
     /** A punctuation shortcut (T9 left strip in idle state, etc.). */
-    PUNCTUATION
+    PUNCTUATION,
+    /** T9 "1 key": opens an inline punctuation picker in the candidate bar. */
+    NUM_PUNCTUATION
 }
