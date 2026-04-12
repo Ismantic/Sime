@@ -3,6 +3,8 @@ package com.isma.sime;
 import android.content.Context;
 import android.util.Log;
 
+import com.isma.sime.ime.engine.DecodeResult;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -57,19 +59,6 @@ public class SimeEngine {
     /** Set true once init has loaded the native resources successfully. */
     private volatile boolean ready = false;
 
-    /** Decode result: text + segmented units + input consumed. */
-    public static class Candidate {
-        public final String text;
-        public final String units;
-        public final int matchedLen;
-
-        Candidate(String text, String units, int matchedLen) {
-            this.text = text;
-            this.units = units;
-            this.matchedLen = matchedLen;
-        }
-    }
-
     public boolean isReady() {
         return ready;
     }
@@ -93,8 +82,8 @@ public class SimeEngine {
     }
 
     /** Decode unit input to candidates. */
-    public Candidate[] decodeSentence(String input, int extra) {
-        if (!ready) return new Candidate[0];
+    public DecodeResult[] decodeSentence(String input, int extra) {
+        if (!ready) return new DecodeResult[0];
         return parseTriplets(nativeDecodeSentence(input, extra));
     }
 
@@ -106,19 +95,19 @@ public class SimeEngine {
      *              just the single best sentence; Layer 2 word/char
      *              alternatives are always returned in full)
      */
-    public Candidate[] decodeNumSentence(String prefixLetters, String digits, int extra) {
-        if (!ready) return new Candidate[0];
+    public DecodeResult[] decodeNumSentence(String prefixLetters, String digits, int extra) {
+        if (!ready) return new DecodeResult[0];
         return parseTriplets(nativeDecodeNumSentence(
                 prefixLetters != null ? prefixLetters : "", digits, extra));
     }
 
     // ===== Internals =====
 
-    /** Parse JNI triplet array into Candidate[]. */
-    private static Candidate[] parseTriplets(String[] raw) {
-        Candidate[] result = new Candidate[raw.length / 3];
+    /** Parse JNI triplet array into DecodeResult[]. */
+    private static DecodeResult[] parseTriplets(String[] raw) {
+        DecodeResult[] result = new DecodeResult[raw.length / 3];
         for (int i = 0; i < result.length; i++) {
-            result[i] = new Candidate(
+            result[i] = new DecodeResult(
                 raw[i * 3],
                 raw[i * 3 + 1],
                 Integer.parseInt(raw[i * 3 + 2])

@@ -1,8 +1,6 @@
 package com.isma.sime.ime.keyboard;
 
 import android.content.Context;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -224,21 +222,11 @@ public class T9KeyboardView extends KeyboardView {
     }
 
     private TextView makeLeftItem(String label, boolean highlight, Runnable onClick) {
-        TextView tv = new TextView(getContext());
-        tv.setText(label);
-        tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
-        tv.setTextColor(highlight ? theme.accentColor : theme.keyText);
-        tv.setBackground(makeKeySelector(theme.keyBackground, theme.keyBackgroundPressed));
-        tv.setClickable(true);
-        tv.setFocusable(true);
-        tv.setSingleLine(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(LEFT_ITEM_HEIGHT_DP));
-        int m = dp(3);
-        lp.setMargins(m, m, m, m);
-        tv.setLayoutParams(lp);
-        tv.setOnClickListener(v -> onClick.run());
+        TextView tv = StripHelper.makeStripCell(
+                getContext(), theme, label, false, onClick, LEFT_ITEM_HEIGHT_DP);
+        if (highlight) {
+            tv.setTextColor(theme.accentColor);
+        }
         return tv;
     }
 }

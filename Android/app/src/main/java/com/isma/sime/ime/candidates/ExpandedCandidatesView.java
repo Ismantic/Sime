@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 import com.isma.sime.ime.InputKernel;
 import com.isma.sime.ime.engine.Candidate;
+import com.isma.sime.ime.keyboard.StripHelper;
 import com.isma.sime.ime.theme.SimeTheme;
 
 import java.util.Collections;
@@ -215,25 +216,11 @@ public class ExpandedCandidatesView extends LinearLayout {
     }
 
     private TextView makeLeftItem(String label, Runnable onClick) {
-        TextView tv = new TextView(getContext());
-        tv.setText(label);
-        tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
         // Pinyin alts: function-style (darker gray) rectangle cells,
         // visually distinct from the white hanzi cells on the right.
         // Matches the reference IME layout.
-        tv.setTextColor(theme.keyTextFunction);
-        tv.setBackground(makeFunctionCellBg());
-        tv.setClickable(true);
-        tv.setFocusable(true);
-        tv.setSingleLine(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(LEFT_ITEM_HEIGHT_DP));
-        int m = dp(3);
-        lp.setMargins(m, m, m, m);
-        tv.setLayoutParams(lp);
-        tv.setOnClickListener(v -> onClick.run());
-        return tv;
+        return StripHelper.makeStripCell(
+                getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
     }
 
     private StateListDrawable makeFunctionCellBg() {
