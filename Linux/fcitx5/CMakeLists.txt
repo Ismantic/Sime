@@ -35,7 +35,7 @@ endif()
 
 # 构建 Sime fcitx5 插件
 add_library(fcitx5_sime MODULE
-    src/sime.cc
+    src/sime-ime.cc
     src/sime-state.cc
 )
 

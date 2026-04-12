@@ -1,4 +1,4 @@
-#include "interpret.h"
+#include "sime.h"
 #include "nine.h"
 #include "unit.h"
 #include "ustr.h"
@@ -28,8 +28,8 @@ void PrintUsage() {
               << "  sime --trie <trie> --cnt <model> [options]\n"
               << "  sime --nine <nine_model> [options]\n"
               << "\nOptions:\n"
-              << "  --trie, -d <path>   Interpreter trie\n"
-              << "  --cnt,  -c <path>   Interpreter LM model\n"
+              << "  --trie, -d <path>   Sime trie\n"
+              << "  --cnt,  -c <path>   Sime LM model\n"
               << "  --user, -u <path>   User dictionary\n"
               << "  -n <N>              Max results to display (default 5)\n"
               << "  -e <N>              Extra Layer 1 sentences for --num -s\n"
@@ -151,9 +151,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Interpreter mode
-    sime::Interpreter interpreter(opts.trie, opts.cnt);
-    if (!interpreter.Ready()) {
+    // Sime mode
+    sime::Sime engine(opts.trie, opts.cnt);
+    if (!engine.Ready()) {
         std::cerr << "Load failed: " << opts.trie << ", " << opts.cnt << "\n";
         return 1;
     }
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
               << "Model: " << opts.cnt << "\n";
 
     if (!opts.userdict.empty()) {
-        if (interpreter.LoadDict(opts.userdict)) {
+        if (engine.LoadDict(opts.userdict)) {
             std::cout << "User: " << opts.userdict << "\n";
         } else {
             std::cerr << "Warning: failed to load dict: " << opts.userdict << "\n";
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             }
             // Pass `extra` directly (== extra Layer 1 sentences); -n
             // controls only how many results we display.
-            results = interpreter.DecodeNumSentence(
+            results = engine.DecodeNumSentence(
                 digits, prefix, opts.extra);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
@@ -205,13 +205,13 @@ int main(int argc, char** argv) {
                 std::cout << "  (invalid input: expect pinyin prefix + digits 2-9)\n";
                 continue;
             }
-            results = interpreter.DecodeNumStr(digits, prefix, opts.n);
+            results = engine.DecodeNumStr(digits, prefix, opts.n);
         } else if (opts.sentence) {
-            results = interpreter.DecodeSentence(
+            results = engine.DecodeSentence(
                 line, opts.n > 0 ? opts.n - 1 : 0);
             if (results.size() > opts.n) results.resize(opts.n);
         } else {
-            results = interpreter.DecodeStr(line, opts.n);
+            results = engine.DecodeStr(line, opts.n);
         }
 
         if (results.empty()) {

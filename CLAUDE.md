@@ -52,7 +52,7 @@ Outputs: `sime/output/sime.trie` and `sime/output/sime.cnt`. Training tools refe
 - **Encoding**: `unit.h/cc` — pinyin syllables packed into 20-bit `Unit` structs (initial + final + tone)
 - **Trie**: `trie.h/cc` — binary pinyin-to-character prefix trie, loaded from `.trie` files
 - **Scorer**: `score.h/cc` — n-gram LM probability lookups with backoff
-- **Decoder**: `interpret.h/cc` — lattice construction + Viterbi beam search. Key constants: `NodeSize=40`, `BeamSize=20`, `MaxSyllableCnt=6`
+- **Decoder**: `sime.h/cc` — lattice construction + Viterbi beam search. Key constants: `NodeSize=40`, `BeamSize=20`, `MaxSyllableCnt=6`
 - **State**: `state.h/cc` — beam search state heap (`NetStates`)
 - **Construction**: `construct.h/cc` — Modified Kneser-Ney with entropy pruning
 - **Compact**: `compact.h/cc` — quantization (16-bit prob, 14-bit backoff, 18-bit tokens)

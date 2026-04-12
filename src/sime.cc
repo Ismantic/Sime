@@ -1,4 +1,4 @@
-#include "interpret.h"
+#include "sime.h"
 
 #include "ustr.h"
 
@@ -10,7 +10,7 @@
 
 namespace sime {
 
-Interpreter::Interpreter(const std::filesystem::path& trie_path,
+Sime::Sime(const std::filesystem::path& trie_path,
                          const std::filesystem::path& model_path) {
     if (!trie_.Load(trie_path)) {
         return;
@@ -23,7 +23,7 @@ Interpreter::Interpreter(const std::filesystem::path& trie_path,
     BuildNumMap();
 }
 
-char Interpreter::LetterToNum(char c) {
+char Sime::LetterToNum(char c) {
     switch (c) {
     case 'a': case 'b': case 'c': return '2';
     case 'd': case 'e': case 'f': return '3';
@@ -37,7 +37,7 @@ char Interpreter::LetterToNum(char c) {
     }
 }
 
-std::string Interpreter::UnitToNum(const char* unit) {
+std::string Sime::UnitToNum(const char* unit) {
     std::string result;
     for (const char* p = unit; *p; ++p) {
         char d = LetterToNum(static_cast<char>(
@@ -49,7 +49,7 @@ std::string Interpreter::UnitToNum(const char* unit) {
     return result;
 }
 
-void Interpreter::BuildNumMap() {
+void Sime::BuildNumMap() {
     num_map_.clear();
     std::size_t count = 0;
     const UnitEntry* entries = UnitData::GetDict(count);
@@ -64,14 +64,14 @@ void Interpreter::BuildNumMap() {
 }
 
 
-std::uint64_t Interpreter::NumEdgeKey(std::size_t start, std::size_t end,
+std::uint64_t Sime::NumEdgeKey(std::size_t start, std::size_t end,
                                        TokenID id) {
     return (static_cast<std::uint64_t>(start) << 48) |
            (static_cast<std::uint64_t>(end) << 32) |
            static_cast<std::uint64_t>(id);
 }
 
-void Interpreter::InitNumNet(const std::vector<Unit>& start,
+void Sime::InitNumNet(const std::vector<Unit>& start,
                               const std::vector<Unit>& start_tail,
                               std::string_view nums,
                               bool tail_expansion,
@@ -224,7 +224,7 @@ void Interpreter::InitNumNet(const std::vector<Unit>& start,
     net[total].es.push_back({total, total + 1, SentenceEnd});
 }
 
-std::string Interpreter::ExtractNumUnits(const std::vector<Link>& path,
+std::string Sime::ExtractNumUnits(const std::vector<Link>& path,
                                             const NumUnitMap& pm) {
     std::string py;
     for (const auto& link : path) {
@@ -238,7 +238,7 @@ std::string Interpreter::ExtractNumUnits(const std::vector<Link>& path,
     return py;
 }
 
-std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
+std::string Sime::ExtractNumText(const std::vector<Link>& path) const {
     std::u32string u32;
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
@@ -252,7 +252,7 @@ std::string Interpreter::ExtractNumText(const std::vector<Link>& path) const {
     return ustr::FromU32(u32);
 }
 
-std::vector<DecodeResult> Interpreter::DecodeNumSentence(
+std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
     std::size_t extra) const {
@@ -383,7 +383,7 @@ std::vector<DecodeResult> Interpreter::DecodeNumSentence(
     return results;
 }
 
-std::vector<DecodeResult> Interpreter::DecodeNumStr(
+std::vector<DecodeResult> Sime::DecodeNumStr(
     std::string_view nums,
     std::string_view start,
     std::size_t num) const {
@@ -444,12 +444,12 @@ std::vector<DecodeResult> Interpreter::DecodeNumStr(
     return results;
 }
 
-bool Interpreter::LoadDict(const std::filesystem::path& path) {
+bool Sime::LoadDict(const std::filesystem::path& path) {
     if (!ready_) return false;
     return dict_.Load(path);
 }
 
-std::vector<DecodeResult> Interpreter::DecodeStr(
+std::vector<DecodeResult> Sime::DecodeStr(
     std::string_view input,
     std::size_t num) const {
     std::vector<Unit> units;
@@ -475,7 +475,7 @@ std::vector<DecodeResult> Interpreter::DecodeStr(
     return Decode(units, num);
 }
 
-std::vector<DecodeResult> Interpreter::Decode(
+std::vector<DecodeResult> Sime::Decode(
     const std::vector<Unit>& units,
     std::size_t num) const {
     std::vector<DecodeResult> results;
@@ -533,7 +533,7 @@ std::vector<DecodeResult> Interpreter::Decode(
     return results;
 }
 
-void Interpreter::InitNet(const std::vector<Unit>& units,
+void Sime::InitNet(const std::vector<Unit>& units,
                           std::vector<Node>& net,
                           const std::vector<Unit>& tail_expansions) const {
     const std::size_t n = units.size();
@@ -597,7 +597,7 @@ void Interpreter::InitNet(const std::vector<Unit>& units,
         {effective_n, effective_n + 1, SentenceEnd});
 }
 
-void Interpreter::PruneNode(std::vector<Link>& edges) const {
+void Sime::PruneNode(std::vector<Link>& edges) const {
     if (edges.size() <= NodeSize) return;
 
     // Group edges by span length, prune each group independently.
@@ -647,7 +647,7 @@ void Interpreter::PruneNode(std::vector<Link>& edges) const {
     edges = std::move(pruned);
 }
 
-void Interpreter::Process(std::vector<Node>& net) const {
+void Sime::Process(std::vector<Node>& net) const {
     // Debug tokens: 以=436 已=1888 刚=759 港方=136945 防疫=203512
     constexpr bool kDebug = false;
     constexpr TokenID kDebugTokens[] = {436, 1888, 759, 136945, 203512};
@@ -796,7 +796,7 @@ void Interpreter::Process(std::vector<Node>& net) const {
     }
 }
 
-std::vector<Interpreter::Link> Interpreter::Backtrace(
+std::vector<Sime::Link> Sime::Backtrace(
     const State& tail_state,
     std::size_t end) {
     std::vector<Link> path;
@@ -813,7 +813,7 @@ std::vector<Interpreter::Link> Interpreter::Backtrace(
     }
     return path;
 }
-std::u32string Interpreter::ToText(const Link& n,
+std::u32string Sime::ToText(const Link& n,
                                    const std::vector<Unit>& units) const {
     if (n.id != ScoreNotToken && n.id != NotToken) {
         const char32_t* chars = trie_.TokenAt(n.id);
@@ -828,7 +828,7 @@ std::u32string Interpreter::ToText(const Link& n,
     return ustr::ToU32("[" + SliceToUnits(units, n.start, n.end) + "]");
 }
 
-std::string Interpreter::SliceToUnits(
+std::string Sime::SliceToUnits(
     const std::vector<Unit>& units,
     std::size_t start,
     std::size_t end) {
@@ -848,7 +848,7 @@ std::string Interpreter::SliceToUnits(
 
 // ===== Sentence: multi-endpoint decode =====
 
-bool Interpreter::ParseWithBoundaries(
+bool Sime::ParseWithBoundaries(
     std::string_view input,
     std::vector<Unit>& units,
     std::vector<std::size_t>& unit_byte_end,
@@ -918,7 +918,7 @@ bool Interpreter::ParseWithBoundaries(
     return !units.empty() || !tail_expansions.empty();
 }
 
-std::vector<DecodeResult> Interpreter::DecodeSentence(
+std::vector<DecodeResult> Sime::DecodeSentence(
     std::string_view input,
     std::size_t num) const {
     std::vector<DecodeResult> results;

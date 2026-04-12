@@ -15,7 +15,7 @@
 #include <memory>
 #include <vector>
 
-#include "interpret.h"
+#include "sime.h"
 
 namespace fcitx {
 
@@ -104,13 +104,13 @@ public:
     const Config &config() const { return config_; }
 
 private:
-    void initInterpreter();
+    void initSime();
     void updateUI(InputContext *ic);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
     Instance *instance_;
     FactoryFor<SimeState> factory_;
-    std::unique_ptr<sime::Interpreter> interpreter_;
+    std::unique_ptr<sime::Sime> sime_;
     Config config_;
 };
 
