@@ -25,8 +25,8 @@ struct Options {
 
 void PrintUsage() {
     std::cerr << "Usage:\n"
-              << "  sime-interpreter --trie <trie> --cnt <model> [options]\n"
-              << "  sime-interpreter --nine <nine_model> [options]\n"
+              << "  sime --trie <trie> --cnt <model> [options]\n"
+              << "  sime --nine <nine_model> [options]\n"
               << "\nOptions:\n"
               << "  --trie, -d <path>   Interpreter trie\n"
               << "  --cnt,  -c <path>   Interpreter LM model\n"
