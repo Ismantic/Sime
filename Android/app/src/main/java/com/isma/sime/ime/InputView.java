@@ -148,19 +148,6 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             shownMode = null;
             shownLayout = null;
             swapKeyboardIfNeeded();
-            // Refresh T9 / QWERTY visual state for the freshly-installed keyboard.
-            if (currentKeyboard instanceof T9KeyboardView && kernel != null) {
-                T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
-                InputState s = kernel.getState();
-                t9.setActive(s != null && !s.isEmpty(),
-                        kernel.getPinyinAlts(), firstDigitLetters(s));
-            }
-            if (currentKeyboard instanceof QwertyKeyboardView && kernel != null) {
-                QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
-                qw.setMode(kernel.getMode());
-                InputState s = kernel.getState();
-                qw.setActive(s != null && !s.isEmpty());
-            }
         }
     }
 

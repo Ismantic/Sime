@@ -3,6 +3,7 @@ package com.isma.sime.ime;
 import com.isma.sime.ime.engine.Candidate;
 import com.isma.sime.ime.engine.DecodeResult;
 import com.isma.sime.ime.engine.Decoder;
+import com.isma.sime.ime.PinyinUtil;
 import com.isma.sime.ime.keyboard.KeyType;
 import com.isma.sime.ime.keyboard.SimeKey;
 
@@ -568,7 +569,7 @@ public class InputKernel {
         // "k" → "kan", which we trim back to the user's actual chars).
         String topU = topCandidate != null ? topCandidate.pinyin : "";
         if (!topU.isEmpty()) {
-            int rawLen = countRealChars(bufferLetters) + countRealChars(digits);
+            int rawLen = PinyinUtil.countRealChars(bufferLetters) + PinyinUtil.countRealChars(digits);
             topU = clipUnitsToLetterCount(topU, rawLen);
         }
         topUnits = topU;
@@ -584,15 +585,6 @@ public class InputKernel {
         } else {
             pinyinAlts = Collections.emptyList();
         }
-    }
-
-    /** Count real chars (non-separator) in a raw input region. */
-    private static int countRealChars(String s) {
-        int n = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) != '\'') n++;
-        }
-        return n;
     }
 
     /**

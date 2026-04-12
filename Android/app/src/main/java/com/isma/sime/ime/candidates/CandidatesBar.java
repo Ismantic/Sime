@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 import com.isma.sime.ime.InputKernel;
 import com.isma.sime.ime.InputState;
+import com.isma.sime.ime.PinyinUtil;
 import com.isma.sime.ime.engine.Candidate;
 import com.isma.sime.ime.theme.SimeTheme;
 
@@ -235,7 +236,7 @@ public class CandidatesBar extends FrameLayout {
         int lettersEnd = state.lettersEnd;
         int bufferRealChars = 0;
         if (lettersEnd > sel) {
-            bufferRealChars = countNonSeparator(
+            bufferRealChars = PinyinUtil.countRealChars(
                     state.buffer.substring(sel, lettersEnd));
         }
 
@@ -314,14 +315,6 @@ public class CandidatesBar extends FrameLayout {
         while (ri < rem.length()) sb.append(rem.charAt(ri++));
         while (ui < units.length()) sb.append(units.charAt(ui++));
         return sb.toString();
-    }
-
-    private static int countNonSeparator(String s) {
-        int n = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) != '\'') n++;
-        }
-        return n;
     }
 
     /**
