@@ -3,11 +3,7 @@
 开源中文拼音输入法，纯 C++ 引擎 + Android / Linux 双平台前端。
 
 ## 特性
-
-- Modified Kneser-Ney N-gram 语言模型 + Entropy Pruning
-- 量化压缩（16-bit 概率 / 14-bit Backoff / 18-bit Token）
-- 支持完全自训练，需要提供切词语料与汉字-拼音词典
-- 两层输出（全句 + 单字/词），支持分隔符 `'` 和 Tail Expansion
+- 语言模型支持完全自训练，需要提供切词语料与汉字-拼音词典；
 - 提供 Linux 与 Android 双端支持，QWERTY 与 T9 两种输入方式支持；
 
 ## 构建
