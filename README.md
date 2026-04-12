@@ -37,7 +37,7 @@ cmake --build build
 
 ## 训练
 
-训练流程在 `sime/` 目录下。
+训练流程在 `pipeline/` 目录下。
 
 **前置准备**
 - `sentences.cut.txt` — 切词后的语料（空格分隔）
@@ -46,7 +46,7 @@ cmake --build build
 **步骤**
 
 ```bash
-cd sime
+cd pipeline
 make chars       # 1. 统计语料词频
 make dict        # 2. 生成拼音词典
 make count       # 3. N-gram 统计
@@ -55,7 +55,7 @@ make convert     # 5. 编译拼音 Trie
 make compact     # 6. 量化压缩
 ```
 
-产出文件：`sime/output/sime.trie` 和 `sime/output/sime.cnt` 。
+产出文件：`pipeline/output/sime.trie` 和 `pipeline/output/sime.cnt` 。
 
 
 ## License
