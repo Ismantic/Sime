@@ -105,7 +105,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             if (expandedView != null) {
                 expandedView.render(candidates,
                         kernel.getPinyinAlts(),
-                        firstDigitLetters(state));
+                        firstDigitLetters(state),
+                        candidatesBar.getVisibleCandidateCount());
             }
             return;
         }
@@ -187,7 +188,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         expandedView.render(
                 kernel != null ? kernel.getCandidates() : null,
                 kernel != null ? kernel.getPinyinAlts() : null,
-                kernel != null ? firstDigitLetters(kernel.getState()) : null);
+                kernel != null ? firstDigitLetters(kernel.getState()) : null,
+                candidatesBar.getVisibleCandidateCount());
         LayoutParams lp = new LayoutParams(
                 LayoutParams.MATCH_PARENT, getKeyboardHeightPx());
         addView(expandedView, lp);
