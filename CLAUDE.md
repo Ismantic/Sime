@@ -22,16 +22,16 @@ Build outputs in `./build/`: `sime-count`, `sime-construct`, `sime-converter`, `
 No automated test suite. Use the interactive interpreter to verify behavior:
 
 ```bash
-./build/sime --trie sime/output/sime.trie --cnt sime/output/sime.cnt
+./build/sime --trie pipeline/output/sime.trie --cnt pipeline/output/sime.cnt
 # Sentence mode: add -s
 # T9 mode: add --num
 ```
 
-Test case files: `sime/cases.1.txt`, `sime/cases.2.txt`, `sime/cases.num.1.txt`, `sime/cases.num.2.txt`.
+Test case files: `pipeline/cases.1.txt`, `pipeline/cases.2.txt`, `pipeline/cases.num.1.txt`, `pipeline/cases.num.2.txt`.
 
 ## Training Pipeline
 
-Run from `sime/` directory. Requires `sentences.cut.txt` (pre-segmented corpus) and `chinese_units.txt` (pinyin table). Steps are sequential via Makefile targets:
+Run from `pipeline/` directory. Requires `sentences.cut.txt` (pre-segmented corpus) and `chinese_units.txt` (pinyin table). Steps are sequential via Makefile targets:
 
 ```bash
 cd sime
@@ -43,7 +43,7 @@ make convert    # 5. Build pinyin Trie
 make compact    # 6. Quantize and compress
 ```
 
-Outputs: `sime/output/sime.trie` and `sime/output/sime.cnt`. Training tools reference `../build/` so the C++ tools must be built first.
+Outputs: `pipeline/output/sime.trie` and `pipeline/output/sime.cnt`. Training tools reference `../build/` so the C++ tools must be built first.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ Outputs: `sime/output/sime.trie` and `sime/output/sime.cnt`. Training tools refe
 - **Compact**: `compact.h/cc` — quantization (16-bit prob, 14-bit backoff, 18-bit tokens)
 - **T9**: `nine.h/cc` — digit-to-pinyin decoder for nine-key input
 
-**CLI tools** (`app/`): Each tool is a thin entry point linking `sime_core`.
+**CLI tools** (`bin/`): Each tool is a thin entry point linking `sime_core`.
 
 **Platform layers**:
 - `Linux/fcitx5/` — Fcitx5 engine plugin (`sime.cc`, `sime-state.cc`)

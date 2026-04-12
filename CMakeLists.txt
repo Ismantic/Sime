@@ -29,22 +29,22 @@ target_compile_features(sime_core PUBLIC cxx_std_20)
 target_compile_options(sime_core PRIVATE -Wall -Wextra -pedantic -Wconversion)
 set_target_properties(sime_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_executable(sime-count ${NEW_ROOT}/app/counter.cc)
+add_executable(sime-count ${NEW_ROOT}/bin/counter.cc)
 target_link_libraries(sime-count PRIVATE sime_core)
 
-add_executable(sime-construct ${NEW_ROOT}/app/constructor.cc)
+add_executable(sime-construct ${NEW_ROOT}/bin/constructor.cc)
 target_link_libraries(sime-construct PRIVATE sime_core)
 
-add_executable(sime-converter ${NEW_ROOT}/app/converter.cc)
+add_executable(sime-converter ${NEW_ROOT}/bin/converter.cc)
 target_link_libraries(sime-converter PRIVATE sime_core)
 
-add_executable(sime-compact ${NEW_ROOT}/app/compact.cc)
+add_executable(sime-compact ${NEW_ROOT}/bin/compact.cc)
 target_link_libraries(sime-compact PRIVATE sime_core)
 
-add_executable(sime ${NEW_ROOT}/app/sime.cc)
+add_executable(sime ${NEW_ROOT}/bin/sime.cc)
 target_link_libraries(sime PRIVATE sime_core)
 
-add_executable(sime-dump ${NEW_ROOT}/app/dump.cc)
+add_executable(sime-dump ${NEW_ROOT}/bin/dump.cc)
 target_link_libraries(sime-dump PRIVATE sime_core)
 
 
