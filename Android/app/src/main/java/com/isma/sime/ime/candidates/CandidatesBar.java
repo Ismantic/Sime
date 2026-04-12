@@ -39,7 +39,6 @@ public class CandidatesBar extends FrameLayout {
 
     private LinearLayout idleView;
     private LinearLayout activeView;
-    private LinearLayout activeBottomRow;
     private TextView preeditView;
     private LinearLayout candidateContainer;
     private HorizontalScrollView candidateScroll;
@@ -131,13 +130,12 @@ public class CandidatesBar extends FrameLayout {
         // Gravity END so the toggle button stays glued to the right
         // edge even when the scroll is hidden in expanded mode (where
         // the toggle is the only remaining child).
-        activeBottomRow = new LinearLayout(getContext());
-        activeBottomRow.setOrientation(LinearLayout.HORIZONTAL);
-        activeBottomRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        LinearLayout bottomRow = new LinearLayout(getContext());
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        bottomRow.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams brLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        activeBottomRow.setLayoutParams(brLp);
-        LinearLayout bottomRow = activeBottomRow;
+        bottomRow.setLayoutParams(brLp);
 
         candidateScroll = new HorizontalScrollView(getContext());
         candidateScroll.setHorizontalScrollBarEnabled(false);
@@ -415,20 +413,43 @@ public class CandidatesBar extends FrameLayout {
     }
 
     /**
-     * Reflect the expanded/collapsed state. When expanded the entire
-     * bottom row of the bar (candidates scroll + ∧ toggle) is hidden
-     * because the ExpandedCandidatesView's right control column has
-     * its own 返回 / 上 / 下 / ⌫ controls — the bar shrinks to just
-     * the preedit row.
+     * Reflect the expanded/collapsed state. The bar keeps showing
+     * preedit + hanzi candidates in both states — the user can quick-
+     * pick from the bar while also browsing the full grid below.
+     * The toggle button (∨) is hidden when expanded because the
+     * ExpandedCandidatesView's right column has its own 返回 button.
      */
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
         if (expandToggleButton != null) {
             expandToggleButton.setText(expanded ? "∧" : "∨");
+            expandToggleButton.setVisibility(expanded ? GONE : VISIBLE);
         }
-        if (activeBottomRow != null) {
-            activeBottomRow.setVisibility(expanded ? GONE : VISIBLE);
+    }
+
+    /**
+     * Count how many candidate cells fit in the visible (non-scrolled)
+     * portion of the candidate scroll. Used by the expanded view to
+     * skip these and only show overflow candidates in the grid.
+     */
+    public int getVisibleCandidateCount() {
+        if (candidateScroll == null || candidateContainer == null) return 0;
+        int scrollWidth = candidateScroll.getWidth();
+        if (scrollWidth <= 0) return 0;
+        int count = 0;
+        int consumed = 0;
+        for (int i = 0; i < candidatePool.size(); i++) {
+            TextView tv = candidatePool.get(i);
+            if (tv.getVisibility() != VISIBLE) break;
+            consumed += tv.getWidth();
+            if (consumed > scrollWidth) break;
+            count++;
+            if (i < dividerPool.size()) {
+                View div = dividerPool.get(i);
+                if (div.getVisibility() == VISIBLE) consumed += div.getWidth();
+            }
         }
+        return Math.max(count, 1);
     }
 
     private int dp(int v) {

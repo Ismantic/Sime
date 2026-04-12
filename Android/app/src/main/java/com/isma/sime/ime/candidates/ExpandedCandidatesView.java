@@ -170,19 +170,23 @@ public class ExpandedCandidatesView extends LinearLayout {
         this.collapseListener = l;
     }
 
+    /**
+     * @param gridStartIndex number of leading candidates to skip in
+     *        the grid (already visible in the bar above). Pass
+     *        {@code CandidatesBar.getVisibleCandidateCount()} for a
+     *        dynamic value so bar and grid never show duplicates.
+     */
     public void render(List<Candidate> candidates,
                         List<InputKernel.PinyinAlt> alts,
-                        String fallbackLetters) {
+                        String fallbackLetters,
+                        int gridStartIndex) {
         List<InputKernel.PinyinAlt> safeAlts =
                 alts != null ? alts : Collections.<InputKernel.PinyinAlt>emptyList();
         String safeFallback = fallbackLetters != null ? fallbackLetters : "";
-        // Hide the entire left strip when there's neither alts nor
-        // fallback letters to show — typically Qwerty mode where the
-        // strip would otherwise be a blank gray column.
         leftScroll.setVisibility(
                 (safeAlts.isEmpty() && safeFallback.isEmpty()) ? GONE : VISIBLE);
         renderLeftStrip(safeAlts, safeFallback);
-        renderGrid(candidates);
+        renderGrid(candidates, gridStartIndex);
     }
 
     private void renderLeftStrip(List<InputKernel.PinyinAlt> alts, String fallbackLetters) {
@@ -244,21 +248,23 @@ public class ExpandedCandidatesView extends LinearLayout {
     private static final int GRID_COLS = 4;
 
     /**
-     * Lay out ALL candidates into a {@link #GRID_COLS}-column grid with
-     * fixed row height. Each cell's column span depends on its char
-     * length: 1-2 chars → 1 col, 3-5 → 2 cols, 6+ → 4 cols. Rows
-     * past the visible viewport scroll vertically; the right control
-     * column's ∧/∨ buttons handle paging.
+     * Lay out candidates into a {@link #GRID_COLS}-column grid with
+     * fixed row height, skipping the first {@code startIdx} entries
+     * (already visible in the candidates bar above). Each cell's
+     * column span depends on its char length: 1-2 chars → 1 col,
+     * 3-5 → 2 cols, 6+ → 4 cols. Rows past the visible viewport
+     * scroll vertically; the right column's ∧/∨ buttons handle paging.
      */
-    private void renderGrid(List<Candidate> candidates) {
+    private void renderGrid(List<Candidate> candidates, int startIdx) {
         grid.removeAllViews();
         int n = candidates == null ? 0 : candidates.size();
-        if (n == 0) return;
+        startIdx = Math.min(startIdx, n);
+        if (startIdx >= n) return;
 
         LinearLayout currentRow = null;
         int colsRemaining = 0;
 
-        for (int i = 0; i < n; i++) {
+        for (int i = startIdx; i < n; i++) {
             Candidate c = candidates.get(i);
             int span = colSpanFor(c.text);
             if (currentRow == null || colsRemaining < span) {
@@ -269,7 +275,7 @@ public class ExpandedCandidatesView extends LinearLayout {
                 currentRow = newRow();
                 colsRemaining = GRID_COLS;
             }
-            currentRow.addView(makeCandidateCell(c.text, i, span, i == 0));
+            currentRow.addView(makeCandidateCell(c.text, i, span, false));
             colsRemaining -= span;
         }
         if (currentRow != null) {
