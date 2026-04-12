@@ -14,8 +14,4 @@ public final class Candidate {
         this.pinyin = pinyin;
         this.consumed = consumed;
     }
-
-    public static Candidate fromDecode(DecodeResult r) {
-        return new Candidate(r.text, r.units, r.consumed);
-    }
 }

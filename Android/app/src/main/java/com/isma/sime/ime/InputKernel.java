@@ -676,6 +676,7 @@ public class InputKernel {
         candidates = Collections.emptyList();
         pinyinAlts = Collections.emptyList();
         topUnits = "";
+        inPunctuationPicker = false;
         publish();
     }
 

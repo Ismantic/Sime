@@ -45,7 +45,6 @@ public class CandidatesBar extends FrameLayout {
     private TextView expandToggleButton;
     /** Idle view's leftmost button — flips between ⚙ and ← in settings mode. */
     private TextView idleLeftButton;
-    private boolean expanded = false;
     private boolean settingsMode = false;
 
     private OnCandidatePickListener pickListener;
@@ -420,7 +419,6 @@ public class CandidatesBar extends FrameLayout {
      * ExpandedCandidatesView's right column has its own 返回 button.
      */
     public void setExpanded(boolean expanded) {
-        this.expanded = expanded;
         if (expandToggleButton != null) {
             expandToggleButton.setText(expanded ? "∧" : "∨");
             expandToggleButton.setVisibility(expanded ? GONE : VISIBLE);
@@ -449,7 +447,7 @@ public class CandidatesBar extends FrameLayout {
                 if (div.getVisibility() == VISIBLE) consumed += div.getWidth();
             }
         }
-        return Math.max(count, 1);
+        return count;
     }
 
     private int dp(int v) {
