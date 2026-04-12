@@ -47,7 +47,7 @@ extern "C" {
 
 // 1. Load trie + LM resources.
 JNIEXPORT jboolean JNICALL
-Java_com_isma_sime_SimeEngine_nativeLoadResources(
+Java_com_semantic_sime_SimeEngine_nativeLoadResources(
     JNIEnv* env, jclass /*clazz*/,
     jstring triePath, jstring modelPath) {
 
@@ -66,7 +66,7 @@ Java_com_isma_sime_SimeEngine_nativeLoadResources(
 
 // 2. Load user dictionary.
 JNIEXPORT jboolean JNICALL
-Java_com_isma_sime_SimeEngine_nativeLoadUserDict(
+Java_com_semantic_sime_SimeEngine_nativeLoadUserDict(
     JNIEnv* env, jclass /*clazz*/,
     jstring userDictPath) {
 
@@ -82,7 +82,7 @@ Java_com_isma_sime_SimeEngine_nativeLoadUserDict(
 
 // 3. DecodeSentence: returns triplets [text, units, cnt, ...]
 JNIEXPORT jobjectArray JNICALL
-Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
+Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
     JNIEnv* env, jclass /*clazz*/,
     jstring input, jint extra) {
 
@@ -99,7 +99,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeSentence(
 
 // 4. DecodeNumSentence: returns triplets [text, units, cnt, ...]
 JNIEXPORT jobjectArray JNICALL
-Java_com_isma_sime_SimeEngine_nativeDecodeNumSentence(
+Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
     JNIEnv* env, jclass /*clazz*/,
     jstring prefixLetters, jstring digits, jint extra) {
 
@@ -117,7 +117,7 @@ Java_com_isma_sime_SimeEngine_nativeDecodeNumSentence(
 
 // 5. Check if engine is ready.
 JNIEXPORT jboolean JNICALL
-Java_com_isma_sime_SimeEngine_nativeIsReady(
+Java_com_semantic_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {
     return (g_interpreter && g_interpreter->Ready()) ? JNI_TRUE : JNI_FALSE;
 }
