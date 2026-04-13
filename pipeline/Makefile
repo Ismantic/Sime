@@ -37,8 +37,8 @@ construct: $(OUT)/raw.3gram sime.dict.txt
 		-r $$(($(VOCAB) + 3)),2000000,2000000
 
 # Step 5: convert pinyin dict to trie
-convert: sime.dict.txt
-	$(SIME)/sime-converter sime.dict.txt $(OUT)/sime.trie
+convert: sime.dict.txt en_dict.cut.txt
+	$(SIME)/sime-converter sime.dict.txt $(OUT)/sime.trie en_dict.cut.txt
 
 # Step 6: compact (quantize + compress)
 compact: $(OUT)/raw.slm

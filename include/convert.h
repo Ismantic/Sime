@@ -15,6 +15,7 @@ namespace sime {
 class TrieConverter {
 public:
     bool Load(const std::filesystem::path& path);
+    bool LoadTokens(const std::filesystem::path& path);
     bool Write(const std::filesystem::path& output);
     std::size_t Count() const;
     std::vector<std::string> Dump() const;
@@ -22,7 +23,7 @@ public:
 private:
     struct Node {
         std::map<std::uint32_t, Node*> moves;
-        std::set<std::uint32_t> ids;
+        std::set<std::vector<std::uint32_t>> ids;
     };
 
     struct NodeSize {
@@ -34,11 +35,12 @@ private:
                    std::string& token,
                    std::vector<std::string>& units) const;
 
-    void InsertUnits(std::uint32_t id, const std::vector<Unit>& units);
+    void InsertUnits(const std::vector<std::uint32_t>& ids,
+                     const std::vector<Unit>& units);
 
     Node* CreateNode();
     Node* InsertMove(Node* node, Unit unit);
-    void InsertText(Node* node, std::uint32_t id);
+    void InsertText(Node* node, const std::vector<std::uint32_t>& ids);
 
     std::size_t SerializeTree(std::vector<char>& buffer);
     std::size_t WriteTokenTable(std::vector<char>& buffer);

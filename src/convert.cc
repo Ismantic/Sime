@@ -3,6 +3,7 @@
 #include "unit.h"
 #include "ustr.h"
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -71,12 +72,99 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
             continue;
         }
         std::vector<Unit> units;
+        std::vector<std::uint32_t> id_group = {i};
         for (const auto& u : unit_strs) {
             if (!parser.ParseUnits(u, units)) {
                 continue;
             }
-            InsertUnits(i, units);
+            InsertUnits(id_group, units);
         }
+    }
+    return true;
+}
+
+bool TrieConverter::LoadTokens(const std::filesystem::path& path) {
+    if (root_ == nullptr) {
+        return false;
+    }
+
+    // Build reverse lookup: token string → token ID
+    std::unordered_map<std::string, std::uint32_t> token_ids;
+    for (std::uint32_t i = 0; i < tokens_.size(); ++i) {
+        if (!tokens_[i].empty()) {
+            token_ids[tokens_[i]] = i;
+        }
+    }
+
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        // Split line into pieces by whitespace
+        std::vector<std::string> pieces;
+        const char* ptr = line.c_str();
+        while (*ptr) {
+            while (*ptr && IsWhitespace(*ptr)) {
+                ++ptr;
+            }
+            if (*ptr == '\0') {
+                break;
+            }
+            const char* start = ptr;
+            while (*ptr && !IsWhitespace(*ptr)) {
+                ++ptr;
+            }
+            pieces.emplace_back(start, ptr - start);
+        }
+        if (pieces.empty()) {
+            continue;
+        }
+
+        // Resolve each piece to its token ID
+        std::vector<std::uint32_t> id_group;
+        bool all_found = true;
+        for (const auto& piece : pieces) {
+            auto it = token_ids.find(piece);
+            if (it == token_ids.end()) {
+                all_found = false;
+                break;
+            }
+            id_group.push_back(it->second);
+        }
+        if (!all_found || id_group.empty()) {
+            continue;
+        }
+
+        // Build letter-level Unit path from concatenated lowercase word
+        std::string full_word;
+        for (const auto& piece : pieces) {
+            for (char c : piece) {
+                full_word += static_cast<char>(
+                    std::tolower(static_cast<unsigned char>(c)));
+            }
+        }
+
+        std::vector<Unit> units;
+        bool valid = true;
+        for (char c : full_word) {
+            if (c < 'a' || c > 'z') {
+                valid = false;
+                break;
+            }
+            units.push_back(Unit::Letter(c));
+        }
+        if (!valid || units.empty()) {
+            continue;
+        }
+
+        InsertUnits(id_group, units);
     }
     return true;
 }
@@ -130,16 +218,16 @@ bool TrieConverter::ParseLine(const std::string& line,
     return !units.empty();
 }
 
-void TrieConverter::InsertUnits(std::uint32_t id,
+void TrieConverter::InsertUnits(const std::vector<std::uint32_t>& ids,
                                 const std::vector<Unit>& units) {
-    if (units.empty() || root_ == nullptr) {
+    if (units.empty() || ids.empty() || root_ == nullptr) {
         return;
     }
     Node* node = root_;
     for (const auto& u : units) {
         node = InsertMove(node, u);
     }
-    InsertText(node, id);
+    InsertText(node, ids);
 }
 
 TrieConverter::Node* TrieConverter::CreateNode() {
@@ -161,8 +249,8 @@ TrieConverter::Node* TrieConverter::InsertMove(Node* node, Unit u) {
 }
 
 void TrieConverter::InsertText(Node* node,
-                               std::uint32_t id) {
-    node->ids.insert(id);
+                               const std::vector<std::uint32_t>& ids) {
+    node->ids.insert(ids);
 }
 
 std::size_t TrieConverter::Count() const {
@@ -183,11 +271,15 @@ std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
     const std::uint32_t header = 3 * sizeof(std::uint32_t);
     std::uint32_t offset = header;
     for (Node* node : order_) {
+        std::size_t total_tokens = 0;
+        for (const auto& group : node->ids) {
+            total_tokens += group.size();
+        }
         NodeSize metrics;
         metrics.size =
             sizeof(TrieNodeHeader) +
             node->moves.size() * sizeof(TrieMove) +
-            node->ids.size() * sizeof(std::uint32_t);
+            total_tokens * sizeof(std::uint32_t);
         metrics.i = offset;
         metrics_[node] = metrics;
         offset += static_cast<std::uint32_t>(metrics.size);
@@ -205,12 +297,16 @@ void TrieConverter::SerializeNode(const Node* node,
     auto* base =
         reinterpret_cast<TrieNodeHeader*>(buffer.data() + metrics.i);
     TrieNodeHeader header{};
+    std::size_t total_tokens = 0;
+    for (const auto& group : node->ids) {
+        total_tokens += group.size();
+    }
     auto entry_count =
         static_cast<std::uint32_t>(std::min<std::size_t>(
-            node->ids.size(), static_cast<std::size_t>(0xFFF)));
+            total_tokens, static_cast<std::size_t>(0xFFFF)));
     auto move_count =
         static_cast<std::uint32_t>(std::min<std::size_t>(
-            node->moves.size(), static_cast<std::size_t>(0xFFF)));
+            node->moves.size(), static_cast<std::size_t>(0xFFFF)));
     header.count = static_cast<std::uint16_t>(entry_count);
     header.move_count = static_cast<std::uint16_t>(move_count);
     *base = header;
@@ -225,8 +321,14 @@ void TrieConverter::SerializeNode(const Node* node,
 
     auto* entries = reinterpret_cast<std::uint32_t*>(moves + node->moves.size());
     idx = 0;
-    for (std::uint32_t id : node->ids) {
-        entries[idx++] = id;
+    for (const auto& group : node->ids) {
+        for (std::size_t j = 0; j < group.size(); ++j) {
+            std::uint32_t val = group[j];
+            if (j + 1 == group.size()) {
+                val |= GroupEnd;
+            }
+            entries[idx++] = val;
+        }
     }
 }
 
