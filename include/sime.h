@@ -37,12 +37,11 @@ public:
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
-                                             std::size_t num = 0) const;
+                                             std::size_t extra = 0) const;
 
     // Num-key decode (T9/nine-key).
-    // `start` is the confirmed pinyin prefix (letters, possibly with `'`
-    // separators). It is parsed internally via ParseWithBoundaries, so a
-    // trailing incomplete initial (e.g. "q") is supported via tail expansion.
+    // `start` is the confirmed prefix (letters, possibly with `'`
+    // separators). Supports both pinyin and English prefixes.
     std::vector<DecodeResult> DecodeNumStr(
         std::string_view nums,
         std::string_view start = {},
@@ -65,6 +64,8 @@ private:
         std::size_t start = 0;
         std::size_t end = 0;
         TokenID id = 0;
+        const std::uint32_t* group = nullptr;
+        std::uint16_t group_len = 1;
     };
 
     struct Node {
@@ -83,6 +84,8 @@ private:
     void InitNet(const std::vector<Unit>& units,
                  std::vector<Node>& net,
                  const std::vector<Unit>& tail_expansions = {}) const;
+    void InitMixNet(std::string_view input,
+                    std::vector<Node>& net) const;
     void PruneNode(std::vector<Link>& edges) const;
 
     // Beam search
@@ -96,13 +99,6 @@ private:
     static std::string SliceToUnits(const std::vector<Unit>& units,
                                     std::size_t start, std::size_t end);
 
-    // Pinyin parsing
-    static bool ParseWithBoundaries(
-        std::string_view input,
-        std::vector<Unit>& units,
-        std::vector<std::size_t>& unit_byte_end,
-        std::vector<Unit>& tail_expansions);
-
     // Num-key mapping
     void BuildNumMap();
     static char LetterToNum(char c);
@@ -111,15 +107,9 @@ private:
     // Num-key lattice
     using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
     static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
-    // Builds a unified lattice that walks the confirmed pinyin prefix
-    // (`start` = fixed units, `start_tail` = alternatives for an incomplete
-    // trailing initial) followed by the digit columns. Edges may freely cross
-    // the prefix/digit boundary so the beam search keeps a real LM context
-    // through the prefix. `start_tail` is empty when the prefix is fully
-    // parsed; when non-empty it contributes one extra column after `start`
-    // whose edges fan out over all listed Units.
-    void InitNumNet(const std::vector<Unit>& start,
-                     const std::vector<Unit>& start_tail,
+    // Builds a unified lattice: prefix letter columns (InitMixNet-style)
+    // followed by digit columns. Both support pinyin + Letter edges.
+    void InitNumNet(std::string_view start,
                      std::string_view nums,
                      bool tail_expansion,
                      std::vector<Node>& net,
@@ -133,6 +123,7 @@ private:
     Scorer scorer_;
     Dict dict_;
     std::unordered_map<std::string, std::vector<Unit>> num_map_;
+    std::unordered_map<std::string, std::vector<Unit>> unit_map_;
     bool ready_ = false;
 };
 

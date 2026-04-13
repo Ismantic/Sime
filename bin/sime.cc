@@ -81,8 +81,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
 // Split "ni426" → prefix = "ni", digits = "426".
 // Pinyin (letters) must come first, digits 2-9 must come last. Returns false
 // if the digit portion has invalid chars. The prefix is passed through to
-// the interpreter as-is; incomplete trailing initials (e.g. "niq") are
-// handled by ParseWithBoundaries inside DecodeNum*.
+// the engine as-is; incomplete trailing initials (e.g. "niq") are
+// handled by InitNumNet's prefix tail expansion.
 bool SplitPyDigits(std::string_view input,
                    std::string& prefix,
                    std::string& digits) {
@@ -207,8 +207,7 @@ int main(int argc, char** argv) {
             }
             results = engine.DecodeNumStr(digits, prefix, opts.n);
         } else if (opts.sentence) {
-            results = engine.DecodeSentence(
-                line, opts.n > 0 ? opts.n - 1 : 0);
+            results = engine.DecodeSentence(line, opts.extra);
             if (results.size() > opts.n) results.resize(opts.n);
         } else {
             results = engine.DecodeStr(line, opts.n);

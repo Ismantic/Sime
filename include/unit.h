@@ -37,6 +37,17 @@ struct Unit {
     }
 
     constexpr bool Full() const { return A() != 0; }
+
+    // Letter Unit for English word paths: initial = LetterBase + (0..25),
+    // final = 0, tone = 0.  Distinct from all pinyin Units (initial 0..24).
+    static constexpr int LetterBase = 30;
+    static constexpr Unit Letter(char c) {
+        return Unit(LetterBase + (c - 'a'), 0, 0);
+    }
+    constexpr bool IsLetter() const {
+        int i = I();
+        return i >= LetterBase && i < LetterBase + 26 && A() == 0 && T() == 0;
+    }
 };
 
 struct UnitEntry {

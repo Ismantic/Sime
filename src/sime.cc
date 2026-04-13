@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <iostream>
 #include <unordered_set>
 
@@ -51,6 +50,7 @@ std::string Sime::UnitToNum(const char* unit) {
 
 void Sime::BuildNumMap() {
     num_map_.clear();
+    unit_map_.clear();
     std::size_t count = 0;
     const UnitEntry* entries = UnitData::GetDict(count);
     for (std::size_t i = 0; i < count; ++i) {
@@ -60,6 +60,7 @@ void Sime::BuildNumMap() {
         if (!nums.empty()) {
             num_map_[nums].push_back(unit);
         }
+        unit_map_[entries[i].text].push_back(unit);
     }
 }
 
@@ -71,23 +72,17 @@ std::uint64_t Sime::NumEdgeKey(std::size_t start, std::size_t end,
            static_cast<std::uint64_t>(id);
 }
 
-void Sime::InitNumNet(const std::vector<Unit>& start,
-                              const std::vector<Unit>& start_tail,
+void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
                               bool tail_expansion,
                               std::vector<Node>& net,
                               NumUnitMap* pm) const {
     // Lattice layout:
-    //   columns [0, pc)        — complete pinyin prefix (fixed unit per col)
-    //   column  pc  (optional) — incomplete trailing initial, fans out over
-    //                            start_tail expansions (present only when
-    //                            start_tail is non-empty)
-    //   columns [p, p+d)       — digit columns
-    //   column  p+d            — pre-terminal (SentenceEnd edge attached here)
-    //   column  p+d+1          — terminal
-    const std::size_t pc = start.size();
-    const bool has_ptail = !start_tail.empty();
-    const std::size_t p = pc + (has_ptail ? 1 : 0);
+    //   columns [0, p)     — prefix letter columns (InitMixNet-style)
+    //   columns [p, p+d)   — digit columns (num_map_ + Letter edges)
+    //   column  p+d        — SentenceEnd
+    //   column  p+d+1      — terminal
+    const std::size_t p = start.size();
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
 
@@ -98,9 +93,14 @@ void Sime::InitNumNet(const std::vector<Unit>& start,
                     const Trie::Node* node, const std::string& acc) {
         std::uint32_t count = 0;
         const std::uint32_t* tokens = trie_.GetToken(node, count);
-        for (std::uint32_t idx = 0; idx < count; ++idx) {
-            auto tid = static_cast<TokenID>(tokens[idx]);
-            net[s].es.push_back({s, new_col, tid});
+        std::uint32_t gi = 0;
+        while (gi < count) {
+            const std::uint32_t* grp = tokens + gi;
+            std::uint16_t glen = 1;
+            while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
+            if (gi < count) ++gi;
+            auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
+            net[s].es.push_back({s, new_col, tid, grp, glen});
             if (pm) pm->emplace(NumEdgeKey(s, new_col, tid), acc);
         }
     };
@@ -111,51 +111,99 @@ void Sime::InitNumNet(const std::vector<Unit>& start,
         return acc + "'" + s;
     };
 
-    // DFS from starting column s: walk the trie, emitting edges whenever the
-    // current trie node carries tokens. Prefix columns step by a fixed unit;
-    // digit columns try every syllable length that matches num_map_.
-    //
-    // '\'' inside nums is treated as a hard syllable boundary: syllables may
-    // neither start nor span across it. When the walker reaches a boundary
-    // column it passes through for free (no trie move, no emitted edge),
-    // allowing multi-syllable words like "xi'an" to span the boundary.
     auto walk = [&](auto& self, std::size_t s, std::size_t pos,
                     const Trie::Node* node, const std::string& acc) -> void {
         if (!node || pos >= total) return;
 
-        if (pos < pc) {
-            const Unit u = start[pos];
-            const Trie::Node* next = trie_.DoMove(node, u);
-            if (!next) return;
-            std::string new_acc = append_py(acc, UnitData::Decode(u));
-            emit(s, pos + 1, next, new_acc);
-            self(self, s, pos + 1, next, new_acc);
-            return;
-        }
+        // === Prefix letter columns ===
+        if (pos < p) {
+            char ch = start[pos];
 
-        if (pos == pc && has_ptail) {
-            for (const auto& u : start_tail) {
-                const Trie::Node* next = trie_.DoMove(node, u);
-                if (!next) continue;
-                std::string new_acc = append_py(acc, UnitData::Decode(u));
-                emit(s, pos + 1, next, new_acc);
-                self(self, s, pos + 1, next, new_acc);
+            // Boundary — skip without trie move
+            if (ch == '\'') {
+                self(self, s, pos + 1, node, acc);
+                return;
             }
+
+            // Pinyin syllable matches via unit_map_
+            std::string key;
+            for (std::size_t end = pos + 1;
+                 end <= std::min(pos + MaxSyllableCnt, p); ++end) {
+                char kc = start[end - 1];
+                if (kc == '\'') break;
+                key.push_back(kc);
+                auto it = unit_map_.find(key);
+                if (it == unit_map_.end()) continue;
+                for (const auto& u : it->second) {
+                    const Trie::Node* next = trie_.DoMove(node, u);
+                    if (!next) continue;
+                    std::string new_acc =
+                        append_py(acc, UnitData::Decode(u));
+                    emit(s, end, next, new_acc);
+                    self(self, s, end, next, new_acc);
+                }
+            }
+
+            // Tail expansion: remaining prefix is an incomplete syllable
+            {
+                std::size_t tail_end = pos;
+                while (tail_end < p && start[tail_end] != '\'') ++tail_end;
+                if (tail_end == p) {
+                    std::size_t tail_len = p - pos;
+                    if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
+                        std::string tail_str(start.data() + pos, tail_len);
+                        bool is_complete = unit_map_.count(tail_str) > 0;
+                        if (!is_complete) {
+                            for (const auto& [ukey, units] : unit_map_) {
+                                if (ukey.size() <= tail_len) continue;
+                                if (ukey.compare(0, tail_len, tail_str) != 0)
+                                    continue;
+                                for (const auto& u : units) {
+                                    const Trie::Node* next =
+                                        trie_.DoMove(node, u);
+                                    if (!next) continue;
+                                    std::string new_acc = append_py(
+                                        acc, UnitData::Decode(u));
+                                    emit(s, p, next, new_acc);
+                                    self(self, s, p, next, new_acc);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Letter Unit edge
+            if (ch >= 'a' && ch <= 'z') {
+                const Trie::Node* next =
+                    trie_.DoMove(node, Unit::Letter(ch));
+                if (next) {
+                    std::string new_acc = acc;
+                    if (!new_acc.empty()) new_acc += '\'';
+                    new_acc += ch;
+                    emit(s, pos + 1, next, new_acc);
+                    self(self, s, pos + 1, next, new_acc);
+                }
+            }
+
             return;
         }
 
+        // === Digit columns ===
         const std::size_t dpos = pos - p;
-        // Boundary column — skip forward without consuming the trie node.
+
+        // Boundary — skip
         if (nums[dpos] == '\'') {
             self(self, s, pos + 1, node, acc);
             return;
         }
 
+        // Pinyin syllable matches via num_map_
         std::string key;
         for (std::size_t dend = dpos + 1;
              dend <= std::min(dpos + MaxSyllableCnt, d); ++dend) {
             char ch = nums[dend - 1];
-            if (ch == '\'') break;  // Don't extend a syllable past a boundary.
+            if (ch == '\'') break;
             key.push_back(ch);
             auto it = num_map_.find(key);
             if (it == num_map_.end()) continue;
@@ -169,21 +217,29 @@ void Sime::InitNumNet(const std::vector<Unit>& start,
             }
         }
 
-        // Tail expansion: remaining digits form a prefix of a longer
-        // syllable. Always run this even when the tail itself is a valid
-        // syllable — for "3" the user could mean "e" (already covered by
-        // the normal syllable loop above) but also "fa/fu/feng/...". The
-        // normal loop only finds syllables whose digit count fits inside
-        // the remaining tail; expansion finds longer syllables whose
-        // digit prefix matches.
-        //
-        // Only fire when the current run of digits reaches the end of
-        // nums — i.e. this is the trailing digit segment with no more
-        // user input after it. Without this guard, an input like
-        // "94'26" would fire tail expansion at column 0 with tail "94"
-        // and invent zhong / xiang / xin / zhi (longer syllables that
-        // ignore the user's already-typed "26"), out-scoring the real
-        // xi'an path because frequent unigrams beat 西安 in the LM.
+        // Letter Unit edges (T9 digit → letters)
+        {
+            static const char* digit_letters[] = {
+                nullptr, nullptr, "abc", "def", "ghi", "jkl",
+                "mno", "pqrs", "tuv", "wxyz"
+            };
+            int di = nums[dpos] - '0';
+            if (di >= 2 && di <= 9 && digit_letters[di]) {
+                for (const char* lp = digit_letters[di]; *lp; ++lp) {
+                    const Trie::Node* next =
+                        trie_.DoMove(node, Unit::Letter(*lp));
+                    if (!next) continue;
+                    std::string new_acc = acc;
+                    if (!new_acc.empty()) new_acc += '\'';
+                    new_acc += *lp;
+                    const std::size_t new_col = p + dpos + 1;
+                    emit(s, new_col, next, new_acc);
+                    self(self, s, new_col, next, new_acc);
+                }
+            }
+        }
+
+        // Tail expansion for digits
         if (tail_expansion) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
@@ -209,9 +265,10 @@ void Sime::InitNumNet(const std::vector<Unit>& start,
     };
 
     for (std::size_t s = 0; s < total; ++s) {
-        // Boundary column at the top level: only emit a free pass-through so
-        // that standalone single-syllable paths stay connected. Multi-syllable
-        // walks (xi'an) are handled inside the walker via the boundary skip.
+        if (s < p && start[s] == '\'') {
+            net[s].es.push_back({s, s + 1, ScoreNotToken});
+            continue;
+        }
         if (s >= p && nums[s - p] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
@@ -243,10 +300,22 @@ std::string Sime::ExtractNumText(const std::vector<Link>& path) const {
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
             link.id == NotToken) continue;
-        const char32_t* chars = trie_.TokenAt(link.id);
-        if (!chars) continue;
-        for (std::size_t i = 0; chars[i] != 0; ++i) {
-            u32.push_back(chars[i]);
+        if (link.group_len > 1 && link.group) {
+            for (std::uint16_t gi = 0; gi < link.group_len; ++gi) {
+                TokenID pid = static_cast<TokenID>(
+                    link.group[gi] & GroupTokenMask);
+                const char32_t* chars = trie_.TokenAt(pid);
+                if (!chars) continue;
+                for (std::size_t i = 0; chars[i] != 0; ++i) {
+                    u32.push_back(chars[i]);
+                }
+            }
+        } else {
+            const char32_t* chars = trie_.TokenAt(link.id);
+            if (!chars) continue;
+            for (std::size_t i = 0; chars[i] != 0; ++i) {
+                u32.push_back(chars[i]);
+            }
         }
     }
     return ustr::FromU32(u32);
@@ -265,43 +334,14 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     if (nums.empty() && start.empty()) return results;
     if (!nums.empty() && num_map_.empty()) return results;
 
-    // Parse prefix: complete units + optional incomplete tail expansions.
-    // prefix_byte_end[i] = byte position in `start` right after the i-th
-    // complete prefix syllable. Used to compute Layer 2 edge cnt for
-    // edges that end inside the prefix region.
-    std::vector<Unit> prefix_units;
-    std::vector<std::size_t> prefix_byte_end;
-    std::vector<Unit> prefix_tail;
-    if (!start.empty()) {
-        ParseWithBoundaries(start, prefix_units, prefix_byte_end, prefix_tail);
-    }
-    if (nums.empty() && prefix_units.empty() && prefix_tail.empty()) {
-        return results;
-    }
-
-    const std::size_t pc = prefix_units.size();
-    const bool has_ptail = !prefix_tail.empty();
-    const std::size_t p = pc + (has_ptail ? 1 : 0);
+    const std::size_t p = start.size();
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
 
-    // Buffer-byte position at the end of column k (for Layer 2 cnt).
-    // Mirrors how DecodeSentence uses unit_byte_end.
-    auto edge_byte_end = [&](std::size_t k) -> std::size_t {
-        if (k == 0) return 0;
-        if (k <= pc) return prefix_byte_end[k - 1];
-        // k >= p (k > pc): the entire prefix is consumed, plus (k - p)
-        // digit columns past the prefix end.
-        return start.size() + (k - p);
-    };
-
     std::vector<Node> net;
     NumUnitMap pm;
-    // Tail expansion is only meaningful when the final char is a real
-    // digit — never enable it when nums ends with '\''.
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
-    InitNumNet(prefix_units, prefix_tail, nums,
-               can_tail_expand, net, &pm);
+    InitNumNet(start, nums, can_tail_expand, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -346,11 +386,24 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     for (const auto& edge : net[0].es) {
         if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
 
-        const char32_t* chars = trie_.TokenAt(edge.id);
-        if (!chars) continue;
         std::u32string text_u32;
-        for (std::size_t i = 0; chars[i] != 0; ++i)
-            text_u32.push_back(chars[i]);
+        if (edge.group_len > 1 && edge.group) {
+            for (std::uint16_t gi = 0; gi < edge.group_len; ++gi) {
+                TokenID pid = static_cast<TokenID>(
+                    edge.group[gi] & GroupTokenMask);
+                const char32_t* chars = trie_.TokenAt(pid);
+                if (chars) {
+                    for (std::size_t i = 0; chars[i] != 0; ++i)
+                        text_u32.push_back(chars[i]);
+                }
+            }
+        } else {
+            const char32_t* chars = trie_.TokenAt(edge.id);
+            if (chars) {
+                for (std::size_t i = 0; chars[i] != 0; ++i)
+                    text_u32.push_back(chars[i]);
+            }
+        }
         if (text_u32.empty()) continue;
 
         std::string text_utf8 = ustr::FromU32(text_u32);
@@ -368,7 +421,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
 
         auto pit = pm.find(NumEdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
-        std::size_t cnt = edge_byte_end(edge.end);
+        std::size_t cnt = edge.end;
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            score, cnt});
     }
@@ -396,27 +449,12 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     if (nums.empty() && start.empty()) return results;
     if (!nums.empty() && num_map_.empty()) return results;
 
-    // Parse prefix: complete units + optional incomplete tail expansions.
-    std::vector<Unit> prefix_units;
-    std::vector<std::size_t> dummy_byte_end;
-    std::vector<Unit> prefix_tail;
-    if (!start.empty()) {
-        ParseWithBoundaries(start, prefix_units, dummy_byte_end, prefix_tail);
-    }
-    if (nums.empty() && prefix_units.empty() && prefix_tail.empty()) {
-        return results;
-    }
-
     const std::size_t max_top = num == 0 ? 1 : num;
-    const std::size_t pc = prefix_units.size();
-    const bool has_ptail = !prefix_tail.empty();
-    const std::size_t p = pc + (has_ptail ? 1 : 0);
-    const std::size_t total = p + nums.size();
+    const std::size_t total = start.size() + nums.size();
 
     std::vector<Node> net;
     NumUnitMap pm;
-    InitNumNet(prefix_units, prefix_tail, nums,
-               /*tail_expansion=*/false, net, &pm);
+    InitNumNet(start, nums, /*tail_expansion=*/false, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -452,27 +490,57 @@ bool Sime::LoadDict(const std::filesystem::path& path) {
 std::vector<DecodeResult> Sime::DecodeStr(
     std::string_view input,
     std::size_t num) const {
-    std::vector<Unit> units;
-    UnitParser parser;
-    std::size_t pos = 0;
-    while (pos < input.size()) {
-        while (pos < input.size() && UnitParser::IsDelimiter(input[pos])) {
-            ++pos;
-        }
-        if (pos >= input.size()) {
-            break;
-        }
-        std::size_t start = pos;
-        while (pos < input.size() && !UnitParser::IsDelimiter(input[pos])) {
-            ++pos;
-        }
-        std::string str(input.substr(start, pos - start));
-        std::vector<Unit> chunk;
-        if (parser.ParseStr(str, chunk)) {
-            units.insert(units.end(), chunk.begin(), chunk.end());
+    std::vector<DecodeResult> results;
+    if (!ready_ || input.empty()) return results;
+
+    // Lowercase input, keep only letters and apostrophe boundaries
+    std::string lower;
+    lower.reserve(input.size());
+    for (char c : input) {
+        if (c == '\'') {
+            lower.push_back(c);
+        } else {
+            char lc = static_cast<char>(
+                std::tolower(static_cast<unsigned char>(c)));
+            if (lc >= 'a' && lc <= 'z') {
+                lower.push_back(lc);
+            }
         }
     }
-    return Decode(units, num);
+    if (lower.empty()) return results;
+
+    std::vector<Node> net;
+    InitMixNet(lower, net);
+
+    const std::size_t max_top = num == 0 ? 1 : num;
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
+    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    net[0].states.Insert(init);
+    Process(net);
+
+    const auto tail_states = net.back().states.GetStates();
+    std::unordered_set<std::string> dedup;
+    for (std::size_t rank = 0;
+         rank < tail_states.size() && results.size() < max_top; ++rank) {
+        auto path = Backtrace(tail_states[rank], net.size() - 1);
+        if (path.empty()) continue;
+
+        std::u32string composed;
+        for (const auto& w : path) {
+            composed += ToText(w, {});
+        }
+        if (composed.empty()) continue;
+
+        std::string text_utf8 = ustr::FromU32(composed);
+        if (!dedup.insert(text_utf8).second) continue;
+
+        DecodeResult r;
+        r.text = std::move(text_utf8);
+        r.score = -tail_states[rank].score;
+        r.cnt = input.size();
+        results.push_back(std::move(r));
+    }
+    return results;
 }
 
 std::vector<DecodeResult> Sime::Decode(
@@ -555,9 +623,14 @@ void Sime::InitNet(const std::vector<Unit>& units,
             if (!trie_node) break;
             std::uint32_t count = 0;
             const std::uint32_t* tokens = trie_.GetToken(trie_node, count);
-            for (std::uint32_t idx = 0; idx < count; ++idx) {
-                TokenID wid = static_cast<TokenID>(tokens[idx]);
-                bucket.push_back({start, pos, wid});
+            std::uint32_t gi = 0;
+            while (gi < count) {
+                const std::uint32_t* grp = tokens + gi;
+                std::uint16_t glen = 1;
+                while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
+                if (gi < count) ++gi; // skip the GroupEnd-marked entry
+                TokenID wid = static_cast<TokenID>(grp[0] & GroupTokenMask);
+                bucket.push_back({start, pos, wid, grp, glen});
             }
         }
 
@@ -570,11 +643,16 @@ void Sime::InitNet(const std::vector<Unit>& units,
                 std::uint32_t count = 0;
                 const std::uint32_t* tokens =
                     trie_.GetToken(exp_node, count);
-                for (std::uint32_t idx = 0; idx < count; ++idx) {
-                    TokenID wid = static_cast<TokenID>(tokens[idx]);
-                    bucket.push_back({start, n + 1, wid});
+                std::uint32_t gi = 0;
+                while (gi < count) {
+                    const std::uint32_t* grp = tokens + gi;
+                    std::uint16_t glen = 1;
+                    while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
+                    if (gi < count) ++gi;
+                    TokenID wid = static_cast<TokenID>(grp[0] & GroupTokenMask);
+                    bucket.push_back({start, n + 1, wid, grp, glen});
                 }
-                }
+            }
         }
 
         // Unparseable columns (e.g. "pggguj") stay empty — the lattice
@@ -588,6 +666,139 @@ void Sime::InitNet(const std::vector<Unit>& units,
 
     net[effective_n].es.push_back(
         {effective_n, effective_n + 1, SentenceEnd});
+}
+
+void Sime::InitMixNet(std::string_view input,
+                      std::vector<Node>& net) const {
+    const std::size_t total = input.size();
+    net.clear();
+    net.resize(total + 2);
+
+    for (std::size_t s = 0; s < total; ++s) {
+        // Boundary column: pass-through only.
+        if (input[s] == '\'') {
+            net[s].es.push_back({s, s + 1, ScoreNotToken});
+            continue;
+        }
+
+        auto& bucket = net[s].es;
+
+        auto walk = [&](auto& self, std::size_t pos,
+                        const Trie::Node* node) -> void {
+            if (!node || pos >= total) return;
+
+            // Boundary column — skip forward without consuming trie.
+            if (input[pos] == '\'') {
+                self(self, pos + 1, node);
+                return;
+            }
+
+            // 1. Pinyin syllable matches via unit_map_
+            std::string key;
+            for (std::size_t end = pos + 1;
+                 end <= std::min(pos + MaxSyllableCnt, total); ++end) {
+                char ch = input[end - 1];
+                if (ch == '\'') break;  // Don't extend past boundary.
+                key.push_back(ch);
+                auto it = unit_map_.find(key);
+                if (it == unit_map_.end()) continue;
+                for (const auto& u : it->second) {
+                    const Trie::Node* next = trie_.DoMove(node, u);
+                    if (!next) continue;
+                    std::uint32_t count = 0;
+                    const std::uint32_t* tokens =
+                        trie_.GetToken(next, count);
+                    std::uint32_t gi = 0;
+                    while (gi < count) {
+                        const std::uint32_t* grp = tokens + gi;
+                        std::uint16_t glen = 1;
+                        while (gi < count &&
+                               (tokens[gi] & GroupEnd) == 0) {
+                            ++gi; ++glen;
+                        }
+                        if (gi < count) ++gi;
+                        TokenID wid = static_cast<TokenID>(
+                            grp[0] & GroupTokenMask);
+                        bucket.push_back({s, end, wid, grp, glen});
+                    }
+                    self(self, end, next);
+                }
+            }
+
+            // 2. Tail expansion: remaining input is a prefix of a longer
+            //    pinyin syllable that extends beyond the input end.
+            //    Only fires when the tail is NOT itself a complete syllable.
+            {
+                std::size_t tail_len = total - pos;
+                if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
+                    std::string tail_str(input.data() + pos, tail_len);
+                    std::string_view tail(tail_str);
+                    bool is_complete = unit_map_.count(tail_str) > 0;
+                    if (!is_complete)
+                    for (const auto& [ukey, units] : unit_map_) {
+                        if (ukey.size() <= tail_len) continue;
+                        if (ukey.compare(0, tail_len, tail) != 0) continue;
+                        for (const auto& u : units) {
+                            const Trie::Node* next =
+                                trie_.DoMove(node, u);
+                            if (!next) continue;
+                            std::uint32_t count = 0;
+                            const std::uint32_t* tokens =
+                                trie_.GetToken(next, count);
+                            std::uint32_t gi = 0;
+                            while (gi < count) {
+                                const std::uint32_t* grp = tokens + gi;
+                                std::uint16_t glen = 1;
+                                while (gi < count &&
+                                       (tokens[gi] & GroupEnd) == 0) {
+                                    ++gi; ++glen;
+                                }
+                                if (gi < count) ++gi;
+                                TokenID wid = static_cast<TokenID>(
+                                    grp[0] & GroupTokenMask);
+                                bucket.push_back(
+                                    {s, total, wid, grp, glen});
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Letter Unit edge (English word paths)
+            char c = input[pos];
+            if (c >= 'a' && c <= 'z') {
+                const Trie::Node* next =
+                    trie_.DoMove(node, Unit::Letter(c));
+                if (next) {
+                    std::uint32_t count = 0;
+                    const std::uint32_t* tokens =
+                        trie_.GetToken(next, count);
+                    std::uint32_t gi = 0;
+                    while (gi < count) {
+                        const std::uint32_t* grp = tokens + gi;
+                        std::uint16_t glen = 1;
+                        while (gi < count &&
+                               (tokens[gi] & GroupEnd) == 0) {
+                            ++gi; ++glen;
+                        }
+                        if (gi < count) ++gi;
+                        TokenID wid = static_cast<TokenID>(
+                            grp[0] & GroupTokenMask);
+                        bucket.push_back({s, pos + 1, wid, grp, glen});
+                    }
+                    self(self, pos + 1, next);
+                }
+            }
+        };
+
+        walk(walk, s, trie_.Root());
+    }
+
+    for (std::size_t i = 0; i < total; ++i) {
+        PruneNode(net[i].es);
+    }
+
+    net[total].es.push_back({total, total + 1, SentenceEnd});
 }
 
 void Sime::PruneNode(std::vector<Link>& edges) const {
@@ -764,9 +975,27 @@ void Sime::Process(std::vector<Node>& net) const {
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
             const auto& value = *it;
             for (const auto& word : column.es) {
-                Scorer::Pos next_pos{};
-                float_t step = scorer_.ScoreMove(value.pos, word.id, next_pos);
-                scorer_.Back(next_pos);
+                Scorer::Pos cur_pos = value.pos;
+                float_t step = 0.0;
+
+                if (word.group_len <= 1) {
+                    // Single token (Chinese or special)
+                    Scorer::Pos next_pos{};
+                    step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
+                    scorer_.Back(next_pos);
+                    cur_pos = next_pos;
+                } else {
+                    // Compound token — chain multiply
+                    for (std::uint16_t gi = 0; gi < word.group_len; ++gi) {
+                        TokenID pid = static_cast<TokenID>(
+                            word.group[gi] & GroupTokenMask);
+                        Scorer::Pos next_pos{};
+                        step += scorer_.ScoreMove(cur_pos, pid, next_pos);
+                        scorer_.Back(next_pos);
+                        cur_pos = next_pos;
+                    }
+                }
+
                 float_t next_cost = value.score + step;
 
                 if (kDebug) {
@@ -782,7 +1011,8 @@ void Sime::Process(std::vector<Node>& net) const {
                     }
                 }
 
-                State next(next_cost, word.end, next_pos, &value, word.id);
+                State next(next_cost, word.end, cur_pos, &value, word.id,
+                           word.group, word.group_len);
                 net[word.end].states.Insert(next);
             }
         }
@@ -797,7 +1027,9 @@ std::vector<Sime::Link> Sime::Backtrace(
     while (state != nullptr && state->backtrace_state != nullptr) {
         const State* prev = state->backtrace_state;
         path.push_back({prev->now, state->now,
-                        state->backtrace_token});
+                        state->backtrace_token,
+                        state->backtrace_group,
+                        state->backtrace_group_len});
         state = prev;
     }
     std::reverse(path.begin(), path.end());
@@ -809,13 +1041,29 @@ std::vector<Sime::Link> Sime::Backtrace(
 std::u32string Sime::ToText(const Link& n,
                                    const std::vector<Unit>& units) const {
     if (n.id != ScoreNotToken && n.id != NotToken) {
-        const char32_t* chars = trie_.TokenAt(n.id);
-        if (chars) {
+        if (n.group_len > 1 && n.group) {
+            // Compound: concatenate display text of each piece
             std::u32string buffer;
-            for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
-                buffer.push_back(chars[i]);
+            for (std::uint16_t gi = 0; gi < n.group_len; ++gi) {
+                TokenID pid = static_cast<TokenID>(
+                    n.group[gi] & GroupTokenMask);
+                const char32_t* chars = trie_.TokenAt(pid);
+                if (chars) {
+                    for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
+                        buffer.push_back(chars[i]);
+                    }
+                }
             }
             if (!buffer.empty()) return buffer;
+        } else {
+            const char32_t* chars = trie_.TokenAt(n.id);
+            if (chars) {
+                std::u32string buffer;
+                for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
+                    buffer.push_back(chars[i]);
+                }
+                if (!buffer.empty()) return buffer;
+            }
         }
     }
     return ustr::ToU32("[" + SliceToUnits(units, n.start, n.end) + "]");
@@ -839,136 +1087,33 @@ std::string Sime::SliceToUnits(
     return result;
 }
 
-// ===== Sentence: multi-endpoint decode =====
-
-bool Sime::ParseWithBoundaries(
-    std::string_view input,
-    std::vector<Unit>& units,
-    std::vector<std::size_t>& unit_byte_end,
-    std::vector<Unit>& tail_expansions) {
-    units.clear();
-    unit_byte_end.clear();
-    tail_expansions.clear();
-    UnitParser parser;
-    std::size_t pos = 0;
-    while (pos < input.size()) {
-        while (pos < input.size() && UnitParser::IsDelimiter(input[pos])) {
-            ++pos;
-        }
-        if (pos >= input.size()) break;
-        std::size_t chunk_start = pos;
-        while (pos < input.size() && !UnitParser::IsDelimiter(input[pos])) {
-            ++pos;
-        }
-        std::string chunk_str(input.substr(chunk_start, pos - chunk_start));
-        std::vector<Unit> chunk;
-        if (!parser.ParseStr(chunk_str, chunk)) {
-            // Full parse failed — try partial parse + incomplete tail
-            auto pr = parser.ParseTokenEnhanced(chunk_str, true);
-            if (pr.matched_len > 0) {
-                chunk = std::move(pr.units);
-            } else {
-                continue;
-            }
-        }
-
-        // Check if last unit is a bare initial (incomplete syllable)
-        if (!chunk.empty() && !chunk.back().Full()) {
-            // Last unit is incomplete — pop it and generate expansions
-            Unit bare = chunk.back();
-            chunk.pop_back();
-            // Add the complete units
-            std::size_t byte_offset = chunk_start;
-            for (const auto& u : chunk) {
-                const char* syl = UnitData::Decode(u);
-                if (syl) byte_offset += std::strlen(syl);
-                unit_byte_end.push_back(byte_offset);
-            }
-            units.insert(units.end(), chunk.begin(), chunk.end());
-            // Generate expansions from the bare initial
-            const char* initial = UnitData::Decode(bare);
-            if (initial) {
-                auto exps = UnitData::ExpandIncomplete(initial);
-                if (!exps.empty()) {
-                    tail_expansions = std::move(exps);
-                    unit_byte_end.push_back(chunk_start + chunk_str.size());
-                }
-            }
-        } else {
-            // All units are complete
-            std::size_t byte_offset = chunk_start;
-            for (const auto& u : chunk) {
-                const char* syl = UnitData::Decode(u);
-                if (syl) byte_offset += std::strlen(syl);
-                unit_byte_end.push_back(byte_offset);
-            }
-            units.insert(units.end(), chunk.begin(), chunk.end());
-        }
-    }
-    // Accept tail-only input (e.g. bare initial "s"): the lattice still
-    // has a valid tail-expansion column even when no complete syllable
-    // was parsed.
-    return !units.empty() || !tail_expansions.empty();
-}
-
 std::vector<DecodeResult> Sime::DecodeSentence(
     std::string_view input,
-    std::size_t num) const {
+    std::size_t extra) const {
     std::vector<DecodeResult> results;
-    if (!ready_) return results;
+    if (!ready_ || input.empty()) return results;
 
-    // 1. Parse input with byte boundary tracking
-    std::vector<Unit> units;
-    std::vector<std::size_t> unit_byte_end;
-    std::vector<Unit> tail_expansions;
-    if (!ParseWithBoundaries(input, units, unit_byte_end, tail_expansions)) {
-        return results;
-    }
-
-    const std::size_t total_bytes = input.size();
-    const std::size_t n = units.size();
-
-    // Build lattice once, shared by Layer 1 and Layer 2
-    std::vector<Node> net;
-    const bool has_exp = !tail_expansions.empty();
-    const std::size_t effective_n = has_exp ? n + 1 : n;
-    InitNet(units, net, tail_expansions);
-
-    // For an edge whose end lands in the tail-expansion column, figure out
-    // which expansion unit produced it by replaying the trie walk. Returns
-    // nullptr if the edge is not a tail edge or no expansion matches.
-    auto tail_syllable = [&](const Link& edge) -> const char* {
-        if (!has_exp || edge.end <= n) return nullptr;
-        const Trie::Node* node = trie_.Root();
-        for (std::size_t i = edge.start; i < n && node; ++i) {
-            node = trie_.DoMove(node, units[i]);
-        }
-        if (!node) return nullptr;
-        for (const auto& exp : tail_expansions) {
-            const Trie::Node* en = trie_.DoMove(node, exp);
-            if (!en) continue;
-            std::uint32_t count = 0;
-            const std::uint32_t* tokens = trie_.GetToken(en, count);
-            for (std::uint32_t k = 0; k < count; ++k) {
-                if (static_cast<TokenID>(tokens[k]) == edge.id) {
-                    return UnitData::Decode(exp);
-                }
+    // Lowercase the input, keep only letters and apostrophe boundaries
+    std::string lower;
+    lower.reserve(input.size());
+    for (char c : input) {
+        if (c == '\'') {
+            lower.push_back(c);
+        } else {
+            char lc = static_cast<char>(
+                std::tolower(static_cast<unsigned char>(c)));
+            if (lc >= 'a' && lc <= 'z') {
+                lower.push_back(lc);
             }
         }
-        return nullptr;
-    };
+    }
+    if (lower.empty()) return results;
 
-    // SliceToUnits + optional tail-expansion syllable append.
-    auto slice_with_tail = [&](const Link& edge) -> std::string {
-        std::string s = SliceToUnits(units, edge.start, edge.end);
-        const char* tail = tail_syllable(edge);
-        if (tail) {
-            if (!s.empty()) s.push_back('\'');
-            s.append(tail);
-        }
-        return s;
-    };
-    // BeamSize applies to all decode functions uniformly
+    const std::size_t total = lower.size();
+
+    std::vector<Node> net;
+    InitMixNet(lower, net);
+
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init);
@@ -976,23 +1121,19 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
     std::unordered_set<std::string> dedup;
 
-    // === Layer 1: Full sentence N-best (covers all input) ===
+    // === Layer 1: Full sentence N-best ===
     {
         const auto tail = net.back().states.GetStates();
-        const std::size_t full_limit = 1 + num;  // 1 best + num alternatives
-        const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
-        for (std::size_t rank = 0; rank < scan && results.size() < full_limit; ++rank) {
+        const std::size_t full_limit = 1 + extra;
+        const std::size_t scan =
+            std::min<std::size_t>(BeamSize, tail.size());
+        for (std::size_t rank = 0;
+             rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::u32string composed;
-            std::string py;
             for (const auto& w : path) {
-                composed += ToText(w, units);
-                std::string seg = slice_with_tail(w);
-                if (!seg.empty()) {
-                    if (!py.empty()) py += '\'';
-                    py += seg;
-                }
+                composed += ToText(w, {});
             }
             if (composed.empty()) continue;
             std::string text_utf8 = ustr::FromU32(composed);
@@ -1000,16 +1141,15 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
             DecodeResult r;
             r.text = std::move(text_utf8);
-            r.units = std::move(py);
             r.score = -tail[rank].score;
-            r.cnt = total_bytes;
+            r.cnt = input.size();
             results.push_back(std::move(r));
         }
     }
 
     const std::size_t layer1_size = results.size();
 
-    // === Layer 2: Individual words/chars from lattice edges at position 0 ===
+    // === Layer 2: word/char alternatives at position 0 ===
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     std::size_t word_count = 0;
@@ -1017,7 +1157,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     for (const auto& edge : net[0].es) {
         if (edge.id == SentenceEnd) continue;
 
-        std::u32string text_u32 = ToText(edge, units);
+        std::u32string text_u32 = ToText(edge, {});
         if (text_u32.empty()) continue;
         std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
@@ -1025,56 +1165,27 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         bool is_single_char = (text_u32.size() == 1);
         if (!is_single_char && ++word_count > MaxPerPrefix) continue;
 
-        std::size_t distance = effective_n - edge.end;
+        std::size_t distance = total - edge.end;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
-        std::size_t matched_bytes =
-            (edge.end <= unit_byte_end.size()) ? unit_byte_end[edge.end - 1]
-                                               : total_bytes;
         Scorer::Pos dummy{};
         float_t score =
-            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
+            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) -
+            dist_penalty;
 
         DecodeResult r;
         r.text = std::move(text_utf8);
-        r.units = slice_with_tail(edge);
         r.score = score;
-        r.cnt = matched_bytes;
+        r.cnt = edge.end;
         results.push_back(std::move(r));
     }
 
-    // Sort Layer 2 by score; Layer 1 stays in front.
-    std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
-              results.end(),
-              [](const DecodeResult& a, const DecodeResult& b) {
-                  return a.score > b.score;
-              });
-
-    // === Dict: inject user dict matches at the front ===
-    if (!dict_.Empty()) {
-        const std::size_t n = units.size();
-        for (std::size_t len = n; len >= 1; --len) {
-            auto matches = dict_.Lookup(units.data(), len);
-            if (matches.empty()) continue;
-
-            std::size_t matched_bytes =
-                (len <= unit_byte_end.size()) ? unit_byte_end[len - 1]
-                                              : total_bytes;
-
-            for (std::size_t idx : matches) {
-                std::string text = ustr::FromU32(dict_.TextAt(idx));
-                // Remove existing duplicate
-                std::erase_if(results, [&](const DecodeResult& e) {
-                    return e.text == text && e.cnt == matched_bytes;
-                });
-                DecodeResult r;
-                r.text = text;
-                r.score = 1e9;
-                r.cnt = matched_bytes;
-                results.insert(results.begin(), std::move(r));
-            }
-        }
-    }
+    std::sort(
+        results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
+        results.end(),
+        [](const DecodeResult& a, const DecodeResult& b) {
+            return a.score > b.score;
+        });
 
     return results;
 }

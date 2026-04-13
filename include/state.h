@@ -16,6 +16,8 @@ struct State {
     Scorer::Pos pos{};
     const State* backtrace_state = nullptr;
     TokenID backtrace_token = 0;
+    const std::uint32_t* backtrace_group = nullptr;
+    std::uint16_t backtrace_group_len = 1;
 
     State() = default;
 
@@ -23,7 +25,9 @@ struct State {
           std::size_t now,
           Scorer::Pos pos,
           const State* backtrace_state,
-          TokenID backtrace_token);
+          TokenID backtrace_token,
+          const std::uint32_t* backtrace_group = nullptr,
+          std::uint16_t backtrace_group_len = 1);
 
     bool operator<(const State& r) const {
         return score < r.score;
