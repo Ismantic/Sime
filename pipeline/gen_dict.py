@@ -120,13 +120,30 @@ def main():
     chars.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
     words.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
 
+    # TokenID is 18-bit; first 70 IDs are reserved (StartToken = 70).
+    max_vocab = (1 << 18) - 70  # 262074
+    total = len(chars) + len(words)
+    if total > max_vocab:
+        print(f"WARNING: vocab {total} exceeds 18-bit token limit {max_vocab}, "
+              f"truncating words by frequency", file=sys.stderr)
+        # 保留全部单字，按词频截断多字词
+        words_with_freq = []
+        for r in words:
+            w = r[:r.index(" ")] if " " in r else r
+            words_with_freq.append((freq.get(w, 0), r))
+        words_with_freq.sort(key=lambda x: x[0], reverse=True)
+        keep = max_vocab - len(chars)
+        words = [r for _, r in words_with_freq[:keep]]
+        words.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
+        total = len(chars) + len(words)
+        print(f"after truncation: {total} ({len(chars)} chars + {len(words)} words)",
+              file=sys.stderr)
+
     with open(args.output, "w") as fout:
         for line in chars:
             fout.write(line + "\n")
         for line in words:
             fout.write(line + "\n")
-
-    total = len(chars) + len(words)
     print(f"\nmin_count: {args.min_count}", file=sys.stderr)
     print(f"from rime-ice: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)

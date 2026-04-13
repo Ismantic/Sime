@@ -545,7 +545,6 @@ void Sime::InitNet(const std::vector<Unit>& units,
 
     for (std::size_t start = 0; start < effective_n; ++start) {
         auto& bucket = net[start].es;
-        bool inserted = false;
         const Trie::Node* trie_node = trie_.Root();
         std::size_t pos = start;
 
@@ -560,7 +559,6 @@ void Sime::InitNet(const std::vector<Unit>& units,
                 TokenID wid = static_cast<TokenID>(tokens[idx]);
                 bucket.push_back({start, pos, wid});
             }
-            if (count > 0) inserted = true;
         }
 
         // Fan out: try each expansion at the incomplete tail position
@@ -576,16 +574,11 @@ void Sime::InitNet(const std::vector<Unit>& units,
                     TokenID wid = static_cast<TokenID>(tokens[idx]);
                     bucket.push_back({start, n + 1, wid});
                 }
-                if (count > 0) inserted = true;
-            }
+                }
         }
 
-        // No fallback ScoreNotToken edge: if a column couldn't match
-        // any real trie token (e.g. unparseable input like "pggguj"
-        // where bare initials don't path through the trie), the
-        // lattice should fail cleanly rather than offer free-cost
-        // pass-throughs that let the LM hallucinate fake characters
-        // (普[g]股价 from "pggguj"). Same convention as InitNumNet.
+        // Unparseable columns (e.g. "pggguj") stay empty — the lattice
+        // breaks and no candidates are produced.
     }
 
     // Prune each position
@@ -1022,7 +1015,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::size_t word_count = 0;
 
     for (const auto& edge : net[0].es) {
-        if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
+        if (edge.id == SentenceEnd) continue;
 
         std::u32string text_u32 = ToText(edge, units);
         if (text_u32.empty()) continue;
