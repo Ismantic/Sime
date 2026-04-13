@@ -31,9 +31,7 @@ public:
     bool Ready() const { return ready_; }
     bool LoadDict(const std::filesystem::path& path);
 
-    // Pinyin decode
-    std::vector<DecodeResult> Decode(const std::vector<Unit>& units,
-                                     std::size_t num = 5) const;
+    // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
@@ -81,9 +79,6 @@ private:
     static constexpr float_t DistancePenalty = 1.8;
 
     // Lattice building
-    void InitNet(const std::vector<Unit>& units,
-                 std::vector<Node>& net,
-                 const std::vector<Unit>& tail_expansions = {}) const;
     void InitMixNet(std::string_view input,
                     std::vector<Node>& net) const;
     void PruneNode(std::vector<Link>& edges) const;
