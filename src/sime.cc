@@ -475,20 +475,55 @@ void Sime::InitNet(std::string_view input,
                     std::string new_acc =
                         append_py(acc, piece().Decode(u));
                     emit(s, end, next, new_acc);
-                    self(self, end, next, new_acc);
+                    if (end == total) {
+                        // Input exhausted after this piece.
+                        // Walk deeper to reach nodes with tokens.
+                        constexpr std::size_t MaxDepth = 8;
+                        auto deeper = [&](auto& dself,
+                                          const Dict::Node* dn,
+                                          const std::string& dacc,
+                                          std::size_t depth) {
+                            if (depth >= MaxDepth) return;
+                            std::uint32_t tc = 0;
+                            dict_.GetToken(dn, tc);
+                            if (tc > 0) return;
+                            for (const auto& [dk, dvec] : piece().GetPieceMap()) {
+                                for (const auto& du : dvec) {
+                                    const Dict::Node* dn2 =
+                                        dict_.DoMove(dn, du);
+                                    if (!dn2) continue;
+                                    std::string da2 =
+                                        append_py(dacc, piece().Decode(du));
+                                    emit(s, total, dn2, da2);
+                                    dself(dself, dn2, da2, depth + 1);
+                                }
+                            }
+                        };
+                        deeper(deeper, next, new_acc, 0);
+                    } else {
+                        self(self, end, next, new_acc);
+                    }
                 }
             }
 
             // 2. Tail expansion: remaining input is a prefix of a longer
             //    piece that extends beyond the input end.
-            //    Only fires when the tail is NOT itself a complete piece.
+            //    Skip when the tail is a complete pinyin syllable.
+            //    For non-pinyin pieces, walk deeper until a node with
+            //    tokens is found.
             {
                 std::size_t tail_len = total - pos;
                 if (tail_len > 0 && tail_len <= piece().MaxLen()) {
                     std::string tail_str(input.data() + pos, tail_len);
                     std::string_view tail(tail_str);
-                    bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
-                    if (!is_complete)
+                    bool is_pinyin = false;
+                    auto pit = piece().GetPieceMap().find(tail_str);
+                    if (pit != piece().GetPieceMap().end()) {
+                        for (const auto& u : pit->second) {
+                            if (piece().IsPinyin(u)) { is_pinyin = true; break; }
+                        }
+                    }
+                    if (!is_pinyin)
                     for (const auto& [ukey, units] : piece().GetPieceMap()) {
                         if (ukey.size() <= tail_len) continue;
                         if (ukey.compare(0, tail_len, tail) != 0) continue;
@@ -499,6 +534,30 @@ void Sime::InitNet(std::string_view input,
                             std::string new_acc =
                                 append_py(acc, piece().Decode(u));
                             emit(s, total, next, new_acc);
+                            // Walk deeper through remaining pieces
+                            // until nodes with tokens are reached.
+                            constexpr std::size_t MaxTailDepth = 8;
+                            auto deep = [&](auto& dself,
+                                            const Dict::Node* dn,
+                                            const std::string& dacc,
+                                            std::size_t depth) {
+                                if (depth >= MaxTailDepth) return;
+                                std::uint32_t tc = 0;
+                                dict_.GetToken(dn, tc);
+                                if (tc > 0) return;
+                                for (const auto& [dk, dvec] : piece().GetPieceMap()) {
+                                    for (const auto& du : dvec) {
+                                        const Dict::Node* dn2 =
+                                            dict_.DoMove(dn, du);
+                                        if (!dn2) continue;
+                                        std::string da2 =
+                                            append_py(dacc, piece().Decode(du));
+                                        emit(s, total, dn2, da2);
+                                        dself(dself, dn2, da2, depth + 1);
+                                    }
+                                }
+                            };
+                            deep(deep, next, new_acc, 0);
                         }
                     }
                 }

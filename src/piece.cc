@@ -144,12 +144,15 @@ bool PieceTable::IsPinyin(Unit u) const {
 
 bool PieceTable::IsKnownPinyin(const std::string& text) {
     // Binary search in the sorted PinyinDict.
+    // A complete pinyin syllable has a non-zero final (low 12 bits of value).
+    // Bare initials like "b", "p", "zh" have final = 0 and are not complete.
+    constexpr std::uint32_t FinalMask = 0xFFF;
     std::size_t left = 0;
     std::size_t right = PinyinDictSize;
     while (left < right) {
         std::size_t mid = left + (right - left) / 2;
         int cmp = std::strcmp(text.c_str(), PinyinDict[mid].text);
-        if (cmp == 0) return true;
+        if (cmp == 0) return (PinyinDict[mid].value & FinalMask) != 0;
         if (cmp > 0) {
             left = mid + 1;
         } else {
