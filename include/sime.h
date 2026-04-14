@@ -22,7 +22,7 @@ struct DecodeResult {
 class Sime {
 public:
     Sime() = default;
-    Sime(const std::filesystem::path& trie_path,
+    Sime(const std::filesystem::path& dict_path,
                 const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
@@ -87,6 +87,9 @@ private:
 
     // Text extraction
     std::u32string ToText(const Link& n) const;
+    std::string ExtractText(const std::vector<Link>& path) const;
+    static std::string ExtractUnits(const std::vector<Link>& path,
+                                         const UnitMap& pm);
 
     // Num-key lattice
     void InitNumNet(std::string_view start,
@@ -94,9 +97,6 @@ private:
                      bool tail_expansion,
                      std::vector<Node>& net,
                      UnitMap* unit_map = nullptr) const;
-    std::string ExtractText(const std::vector<Link>& path) const;
-    static std::string ExtractUnits(const std::vector<Link>& path,
-                                         const UnitMap& pm);
 
     // Resources
     const PieceTable& piece() const { return dict_.GetPieceTable(); }
