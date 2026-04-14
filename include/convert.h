@@ -1,5 +1,6 @@
 #pragma once
 
+#include "piece.h"
 #include "unit.h"
 
 #include <filesystem>
@@ -14,8 +15,8 @@ namespace sime {
 
 class TrieConverter {
 public:
-    bool Load(const std::filesystem::path& path);
     bool LoadTokens(const std::filesystem::path& path);
+    bool Load(const std::filesystem::path& path);
     bool Write(const std::filesystem::path& output);
     std::size_t Count() const;
     std::vector<std::string> Dump() const;
@@ -52,7 +53,9 @@ private:
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<Node*> order_;
     std::vector<std::string> tokens_;
+    std::unordered_map<std::string, std::uint32_t> token_ids_;
     std::unordered_map<const Node*, NodeSize> metrics_;
+    PieceTable piece_;
 };
 
 } // namespace sime

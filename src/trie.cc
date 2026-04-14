@@ -48,8 +48,15 @@ std::uint32_t Trie::TokenIndex() const {
     return reinterpret_cast<const std::uint32_t*>(blob_.data())[2];
 }
 
+std::uint32_t Trie::PieceIndex() const {
+    if (blob_.size() < 4 * sizeof(std::uint32_t)) {
+        return 0;
+    }
+    return reinterpret_cast<const std::uint32_t*>(blob_.data())[3];
+}
+
 std::uint32_t Trie::RootIndex() const {
-    return 3U * static_cast<std::uint32_t>(sizeof(std::uint32_t));
+    return 4U * static_cast<std::uint32_t>(sizeof(std::uint32_t));
 }
 
 const Trie::Node* Trie::NodeFrom(std::uint32_t i) const {
@@ -90,6 +97,16 @@ bool Trie::Load(const std::filesystem::path& path) {
     for (uint32_t i = 0; i < count; ++i) {
         token_strs_.push_back(p);
         while (*p++) {}
+    }
+
+    // Load piece table
+    std::uint32_t pi = PieceIndex();
+    if (pi > 0 && pi < blob_.size()) {
+        if (!piece_.Deserialize(blob_.data() + pi,
+                                blob_.size() - pi)) {
+            Clear();
+            return false;
+        }
     }
 
     return true;

@@ -1,6 +1,5 @@
 #include "convert.h"
 #include "common.h"
-#include "unit.h"
 #include "ustr.h"
 
 #include <cctype>
@@ -38,13 +37,39 @@ bool IsUnitChar(char ch) {
 
 } // namespace
 
-bool TrieConverter::Load(const std::filesystem::path& path) {
+bool TrieConverter::LoadTokens(const std::filesystem::path& path) {
     nodes_.clear();
     order_.clear();
     metrics_.clear();
     tokens_.clear();
+    token_ids_.clear();
     root_ = CreateNode();
-    UnitParser parser;
+
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    std::uint32_t next_id = StartToken;
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        std::uint32_t id = next_id++;
+        if (tokens_.size() <= id) {
+            tokens_.resize(id + 1);
+        }
+        tokens_[id] = line;
+        token_ids_[line] = id;
+    }
+    return true;
+}
+
+bool TrieConverter::Load(const std::filesystem::path& path) {
+    if (root_ == nullptr) {
+        return false;
+    }
 
     std::ifstream in(path);
     if (!in.is_open()) {
@@ -53,118 +78,37 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
 
     std::string line;
     std::string token;
-    std::uint32_t next_id = StartToken;
     std::vector<std::string> unit_strs;
     while (std::getline(in, line)) {
-        bool s = ParseLine(line, token, unit_strs);
-        if (token.empty()) {
+        if (!ParseLine(line, token, unit_strs)) {
             continue;
         }
-        std::uint32_t i = next_id++;
-        if (tokens_.size() <= i) {
-            tokens_.resize(i + 1);
-        }
-        auto& entry = tokens_[i];
-        if (entry.empty()) {
-            entry = token;
-        }
-        if (!s) {
+        auto it = token_ids_.find(token);
+        if (it == token_ids_.end()) {
             continue;
         }
-        std::vector<Unit> units;
-        std::vector<std::uint32_t> id_group = {i};
+        std::uint32_t id = it->second;
+        std::vector<std::uint32_t> id_group = {id};
         for (const auto& u : unit_strs) {
-            if (!parser.ParseUnits(u, units)) {
-                continue;
+            // Split on apostrophe, register each piece
+            std::vector<Unit> units;
+            std::size_t pos = 0;
+            bool valid = true;
+            while (pos <= u.size()) {
+                std::size_t next = u.find('\'', pos);
+                std::string_view seg = std::string_view(u).substr(
+                    pos, next == std::string::npos
+                             ? std::string::npos
+                             : next - pos);
+                if (!seg.empty()) {
+                    units.push_back(piece_.Register(seg));
+                }
+                if (next == std::string::npos) break;
+                pos = next + 1;
             }
+            if (units.empty()) continue;
             InsertUnits(id_group, units);
         }
-    }
-    return true;
-}
-
-bool TrieConverter::LoadTokens(const std::filesystem::path& path) {
-    if (root_ == nullptr) {
-        return false;
-    }
-
-    // Build reverse lookup: token string → token ID
-    std::unordered_map<std::string, std::uint32_t> token_ids;
-    for (std::uint32_t i = 0; i < tokens_.size(); ++i) {
-        if (!tokens_[i].empty()) {
-            token_ids[tokens_[i]] = i;
-        }
-    }
-
-    std::ifstream in(path);
-    if (!in.is_open()) {
-        return false;
-    }
-
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        // Split line into pieces by whitespace
-        std::vector<std::string> pieces;
-        const char* ptr = line.c_str();
-        while (*ptr) {
-            while (*ptr && IsWhitespace(*ptr)) {
-                ++ptr;
-            }
-            if (*ptr == '\0') {
-                break;
-            }
-            const char* start = ptr;
-            while (*ptr && !IsWhitespace(*ptr)) {
-                ++ptr;
-            }
-            pieces.emplace_back(start, ptr - start);
-        }
-        if (pieces.empty()) {
-            continue;
-        }
-
-        // Resolve each piece to its token ID
-        std::vector<std::uint32_t> id_group;
-        bool all_found = true;
-        for (const auto& piece : pieces) {
-            auto it = token_ids.find(piece);
-            if (it == token_ids.end()) {
-                all_found = false;
-                break;
-            }
-            id_group.push_back(it->second);
-        }
-        if (!all_found || id_group.empty()) {
-            continue;
-        }
-
-        // Build letter-level Unit path from concatenated lowercase word
-        std::string full_word;
-        for (const auto& piece : pieces) {
-            for (char c : piece) {
-                full_word += static_cast<char>(
-                    std::tolower(static_cast<unsigned char>(c)));
-            }
-        }
-
-        std::vector<Unit> units;
-        bool valid = true;
-        for (char c : full_word) {
-            if (c < 'a' || c > 'z') {
-                valid = false;
-                break;
-            }
-            units.push_back(Unit::Letter(c));
-        }
-        if (!valid || units.empty()) {
-            continue;
-        }
-
-        InsertUnits(id_group, units);
     }
     return true;
 }
@@ -268,7 +212,7 @@ std::vector<std::string> TrieConverter::Dump() const {
 
 std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
     metrics_.clear();
-    const std::uint32_t header = 3 * sizeof(std::uint32_t);
+    const std::uint32_t header = 4 * sizeof(std::uint32_t);
     std::uint32_t offset = header;
     for (Node* node : order_) {
         std::size_t total_tokens = 0;
@@ -351,19 +295,27 @@ std::size_t TrieConverter::WriteTokenTable(std::vector<char>& buffer) {
 }
 
 bool TrieConverter::Write(const std::filesystem::path& output) {
+    piece_.BuildMaps();
+
+    constexpr std::size_t HeaderSize = 4 * sizeof(std::uint32_t);
     std::vector<char> buffer;
     auto tree_size = SerializeTree(buffer);
     WriteTokenTable(buffer);
+    std::uint32_t piece_offset =
+        static_cast<std::uint32_t>(buffer.size());
+    piece_.Serialize(buffer);
+
     std::uint32_t token_count =
         static_cast<std::uint32_t>(tokens_.size());
     std::uint32_t node_count =
         static_cast<std::uint32_t>(order_.size());
     std::uint32_t token_offset =
-        static_cast<std::uint32_t>(tree_size + 3 * sizeof(std::uint32_t));
+        static_cast<std::uint32_t>(tree_size + HeaderSize);
     auto* header = reinterpret_cast<std::uint32_t*>(buffer.data());
     header[0] = node_count;
     header[1] = token_count;
     header[2] = token_offset;
+    header[3] = piece_offset;
 
     std::ofstream out(output, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {

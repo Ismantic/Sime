@@ -11,7 +11,6 @@ set(NEW_INC_DIR ${NEW_ROOT}/include)
 
 add_library(sime_core
     ${NEW_SRC_DIR}/ustr.cc
-    ${NEW_SRC_DIR}/unit.cc
     ${NEW_SRC_DIR}/count.cc
     ${NEW_SRC_DIR}/construct.cc
     ${NEW_SRC_DIR}/convert.cc
@@ -21,6 +20,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/sime.cc
     ${NEW_SRC_DIR}/nine.cc
+    ${NEW_SRC_DIR}/piece.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})

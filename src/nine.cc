@@ -3,70 +3,34 @@
 #include "state.h"
 
 #include <algorithm>
-#include <cctype>
-#include <cstring>
 
 namespace sime {
-
-char NineDecoder::LetterToNum(char c) {
-    switch (c) {
-    case 'a': case 'b': case 'c': return '2';
-    case 'd': case 'e': case 'f': return '3';
-    case 'g': case 'h': case 'i': return '4';
-    case 'j': case 'k': case 'l': return '5';
-    case 'm': case 'n': case 'o': return '6';
-    case 'p': case 'q': case 'r': case 's': return '7';
-    case 't': case 'u': case 'v': return '8';
-    case 'w': case 'x': case 'y': case 'z': return '9';
-    default: return '0';
-    }
-}
-
-std::string NineDecoder::UnitToNum(const char* unit) {
-    std::string result;
-    for (const char* p = unit; *p; ++p) {
-        char d = LetterToNum(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(*p))));
-        if (d != '0') {
-            result.push_back(d);
-        }
-    }
-    return result;
-}
 
 void NineDecoder::BuildNumMap() {
     num_map_.clear();
     token_to_unit_.clear();
     unit_to_token_.clear();
 
-    std::size_t count = 0;
-    const UnitEntry* entries = UnitData::GetDict(count);
-
     TokenID next_id = StartToken;
-    for (std::size_t i = 0; i < count; ++i) {
-        Unit unit(entries[i].value);
-        // Skip bare initials (incomplete syllables)
-        if (!unit.Full()) {
-            continue;
+    const auto& num_map = piece_.GetNumMap();
+    for (const auto& [nums, units] : num_map) {
+        for (const auto& unit : units) {
+            // Check if we already have this unit
+            auto ut_it = unit_to_token_.find(unit.value);
+            TokenID tid;
+            if (ut_it != unit_to_token_.end()) {
+                tid = ut_it->second;
+            } else {
+                tid = next_id++;
+                std::size_t idx = tid - StartToken;
+                if (idx >= token_to_unit_.size()) {
+                    token_to_unit_.resize(idx + 1);
+                }
+                token_to_unit_[idx] = unit;
+                unit_to_token_.emplace(unit.value, tid);
+            }
+            num_map_[nums].push_back({tid, unit});
         }
-
-        TokenID tid = next_id++;
-        std::string nums = UnitToNum(entries[i].text);
-        if (nums.empty()) {
-            continue;
-        }
-
-        num_map_[nums].push_back({tid, unit});
-
-        // Grow token_to_unit_ to accommodate this token
-        std::size_t idx = tid - StartToken;
-        if (idx >= token_to_unit_.size()) {
-            token_to_unit_.resize(idx + 1);
-        }
-        token_to_unit_[idx] = unit;
-
-        // Reverse map: first token wins (for prefix lookup)
-        unit_to_token_.emplace(unit.value, tid);
     }
 }
 
@@ -141,7 +105,7 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
     net[0].states.Insert(init);
 
-    // Forward pass (same pattern as Interpreter::Process)
+    // Forward pass
     for (std::size_t col = 0; col < net.size(); ++col) {
         auto& column = net[col];
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {

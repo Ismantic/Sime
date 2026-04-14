@@ -7,7 +7,7 @@ SIME = ../build
 UNITS = units.20260408.txt
 CORPUS = sentences.cut.txt
 OUT = output
-VOCAB = $(shell wc -l < sime.dict.txt 2>/dev/null || echo 0)
+VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
 
 all: $(OUT)/sime.trie $(OUT)/sime.cnt
 
@@ -23,12 +23,12 @@ dict: chars.cnt.txt $(UNITS)
 	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt
 
 # Step 3: n-gram count (parallel)
-count: sime.dict.txt $(CORPUS)
+count: sime.token.dict.txt $(CORPUS)
 	mkdir -p $(OUT)
-	./parallel_count.sh -n 3 -d sime.dict.txt -o $(OUT)/raw.3gram -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
+	./parallel_count.sh -n 3 -d sime.token.dict.txt -o $(OUT)/raw.3gram -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
 # Step 4: construct language model
-construct: $(OUT)/raw.3gram sime.dict.txt
+construct: $(OUT)/raw.3gram sime.token.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.3gram \
 		-n 3 \
 		-o $(OUT)/raw.slm \
@@ -37,15 +37,15 @@ construct: $(OUT)/raw.3gram sime.dict.txt
 		-r $$(($(VOCAB) + 3)),2000000,2000000
 
 # Step 5: convert pinyin dict to trie
-convert: sime.dict.txt en_dict.cut.txt
-	$(SIME)/sime-converter sime.dict.txt $(OUT)/sime.trie en_dict.cut.txt
+convert: sime.token.dict.txt sime.dict.txt en_dict.cut.txt
+	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.trie sime.dict.txt en_dict.cut.txt
 
 # Step 6: compact (quantize + compress)
 compact: $(OUT)/raw.slm
 	$(SIME)/sime-compact $(OUT)/raw.slm $(OUT)/sime.cnt
 
 clean:
-	rm -f count.bin chars.cnt.txt sime.dict.txt
+	rm -f count.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
 	rm -rf $(OUT)
 
 .PHONY: all chars dict count construct convert compact clean
