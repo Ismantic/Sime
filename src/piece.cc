@@ -46,10 +46,12 @@ Unit PieceTable::Register(std::string_view piece) {
 void PieceTable::BuildMaps() {
     piece_map_.clear();
     num_map_.clear();
+    max_len_ = 0;
     for (std::uint32_t id = 1; id < pieces_.size(); ++id) {
         Unit u(id);
         const auto& text = pieces_[id];
         piece_map_[text].push_back(u);
+        if (text.size() > max_len_) max_len_ = text.size();
         // TODO: 不确定小写key映射是否合适，先这样处理大小写匹配。
         std::string lower;
         bool has_upper = false;

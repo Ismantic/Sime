@@ -41,6 +41,7 @@ public:
     const PieceMap& GetNumMap() const { return num_map_; }
 
     std::size_t Size() const { return pieces_.size(); }
+    std::size_t MaxLen() const { return max_len_; }
 
 private:
     static char LetterToNum(char c);
@@ -54,6 +55,7 @@ private:
 
     PieceMap piece_map_;  // piece text (+ lowercase aliases) → Units
     PieceMap num_map_;    // digit string → Units
+    std::size_t max_len_ = 0;  // longest piece string length
 };
 
 } // namespace sime
