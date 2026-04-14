@@ -16,6 +16,12 @@ constexpr std::uint32_t BowBits = 14;
 constexpr std::uint32_t BonBits = 23;
 constexpr std::uint32_t BoeBits = 2;
 constexpr std::uint32_t DownBits = 23;
+constexpr std::uint32_t DownLowBits = 16;
+constexpr std::uint32_t DownHighBits = DownBits - DownLowBits;
+constexpr std::uint32_t DownLowMask = (1U << DownLowBits) - 1U;
+constexpr std::uint32_t DownHighMask = (1U << DownHighBits) - 1U;
+constexpr std::uint32_t LeafProLow = 32U - TokenBits;
+constexpr std::uint32_t LeafProHigh = ProBits - LeafProLow;
 
 struct RawNode {
     TokenID id = 0;

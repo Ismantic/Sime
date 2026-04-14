@@ -253,7 +253,9 @@ void Constructor::DiscountLevel(NodeLevel& level,
                 : down_level[down_idx].cnt;
             float_t discounted = disc.Discount(raw);
             float_t pro = discounted / std::max(denom, 1.0);
-            pro = std::clamp(pro, 1e-12, 1.0 - 1e-9);
+            constexpr float_t MinProb = 1e-12;
+            constexpr float_t MaxProb = 1.0 - 1e-9;
+            pro = std::clamp(pro, MinProb, MaxProb);
             float_t encoded = -std::log(pro);
             down_level[down_idx].pro = static_cast<float>(encoded);
         }
@@ -485,7 +487,8 @@ float_t Constructor::CalcNodeBow(int level,
         sum_backoff += GetPro(level, words + 2);
     }
     if (sum_down >= 1.0 || sum_backoff >= 1.0) {
-        float_t bow = std::max(sum_down, sum_backoff) + 0.0001;
+        constexpr float_t BowEpsilon = 0.0001;
+        float_t bow = std::max(sum_down, sum_backoff) + BowEpsilon;
         return (bow - sum_down) / (bow - sum_backoff);
     }
     return (1.0 - sum_down) / (1.0 - sum_backoff);

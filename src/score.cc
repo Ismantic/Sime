@@ -76,8 +76,8 @@ bool Scorer::Load(const std::filesystem::path& path) {
             entry.token = static_cast<TokenID>(w0 & TokenMask);
             entry.bow = (w0 >> TokenBits) & BowMask;
             entry.pro = w1 & ProMask;
-            entry.down = (w1 >> 16U) & 0xFFFFU;
-            entry.down |= ((w2 >> (BonBits + BoeBits)) & 0x7FU) << 16U;
+            entry.down = (w1 >> DownLowBits) & DownLowMask;
+            entry.down |= ((w2 >> (BonBits + BoeBits)) & DownHighMask) << DownLowBits;
             entry.bon = w2 & BonMask;
             entry.boe = (w2 >> BonBits) & BoeMask;
             nodes[static_cast<std::size_t>(idx)] = entry;
@@ -100,8 +100,7 @@ bool Scorer::Load(const std::filesystem::path& path) {
         }
         LeaveEntry entry;
         entry.token = static_cast<TokenID>(w0 & TokenMask);
-        constexpr std::uint32_t LeafProLow = 32U - TokenBits;
-        constexpr std::uint32_t LeafProHigh = ProBits - LeafProLow;
+        // LeafProLow / LeafProHigh defined in compact.h
         std::uint32_t pro_low = (w0 >> TokenBits) & ((1U << LeafProLow) - 1U);
         std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & ((1U << LeafProHigh) - 1U);
         entry.pro = (pro_high << LeafProLow) | pro_low;
@@ -192,7 +191,8 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
 
 float_t Scorer::UnknownPenalty() const {
     if (node_levels_.empty() || node_levels_[0].empty()) {
-        return -20.0;
+        constexpr float_t DefaultUnknownPenalty = -20.0;
+        return DefaultUnknownPenalty;
     }
     return pro_table_[node_levels_[0][0].pro];
 }

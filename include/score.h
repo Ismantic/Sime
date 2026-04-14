@@ -39,7 +39,7 @@ public:
     void Back(Pos& pos) const;
     float_t UnknownPenalty() const;
 
-    // Enumerate successor tokens from context, sorted by probability (best first).
+    // Enumerate successor tokens from context, sorted by cost (best first).
     std::vector<std::pair<TokenID, float_t>> NextTokens(
         Pos context, std::size_t num) const;
 

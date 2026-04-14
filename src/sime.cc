@@ -759,7 +759,6 @@ std::vector<DecodeResult> Sime::NextGroups(
 
     const auto& tg = dict_.TokenGroups();
 
-
     struct Candidate {
         std::string text;
         float_t score;

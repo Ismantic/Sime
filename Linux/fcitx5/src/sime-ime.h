@@ -59,7 +59,7 @@ public:
 
     struct Config : public Configuration {
         // Resources
-        Option<std::string> triePath{this, "DictPath", _("词表路径"),
+        Option<std::string> dictPath{this, "DictPath", _("词表路径"),
                                       "/usr/share/sime/sime.dict"};
         Option<std::string> lmPath{this, "ModelPath", _("模型路径"),
                                    "/usr/share/sime/sime.cnt"};

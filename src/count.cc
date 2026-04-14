@@ -20,34 +20,6 @@ namespace sime {
 
 namespace {
 
-using TokenMap = std::unordered_map<std::string, TokenID>;
-
-bool LoadTokenMap(const std::filesystem::path& path, TokenMap& token_map) {
-    std::ifstream in(path);
-    if (!in.is_open()) {
-        return false;
-    }
-    TokenID next_id = StartToken;
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty()) {
-            continue;
-        }
-        auto sep = line.find('\t');
-        if (sep == std::string::npos) {
-            sep = line.find(' ');
-        }
-        std::string token;
-        if (sep != std::string::npos) {
-            token = line.substr(0, sep);
-        } else {
-            token = line;
-        }
-        token_map[token] = next_id++;
-    }
-    return true;
-}
-
 template <std::size_t N> 
 constexpr std::size_t GroupSize() {
     return N * sizeof(TokenID) + sizeof(Cnt);
@@ -87,7 +59,7 @@ void FlushCounts(std::map<Item<N>, Cnt>& counts,
 
 template <std::size_t N>
 void ProcessTextFile(const std::filesystem::path& path,
-                     const TokenMap& token_map,
+                     const TokenMap& tokens,
                      std::size_t count_max,
                      std::fstream& swap,
                      std::vector<RunRange<N>>& runs) {
@@ -147,8 +119,8 @@ void ProcessTextFile(const std::filesystem::path& path,
         std::istringstream iss(line);
         std::string token;
         while (iss >> token) {
-            auto it = token_map.find(token);
-            if (it != token_map.end()) {
+            auto it = tokens.ids.find(token);
+            if (it != tokens.ids.end()) {
                 feed_ngram(it->second);
             } else {
                 feed_ngram(UnknownToken);
@@ -158,7 +130,8 @@ void ProcessTextFile(const std::filesystem::path& path,
         feed_ngram(SentenceEnd);
         filled = 0;
 
-        if (++line_count % 200000 == 0) {
+        constexpr std::size_t ProgressInterval = 200000;
+        if (++line_count % ProgressInterval == 0) {
             std::cerr << "  " << line_count << " lines, "
                       << counts.size() << " ngrams, "
                       << runs.size() << " flushes\n";
@@ -288,15 +261,15 @@ void RunImpl(const CountOptions& options) {
     std::vector<RunRange<N>> runs;
     runs.reserve(16);
 
-    TokenMap token_map;
-    if (!LoadTokenMap(options.dict, token_map)) {
+    TokenMap tokens;
+    if (!LoadTokenMap(options.dict, tokens)) {
         throw std::runtime_error("Failed to load token dict: " + options.dict.string());
     }
-    std::cerr << "loaded " << token_map.size() << " tokens from dict\n";
+    std::cerr << "loaded " << tokens.ids.size() << " tokens from dict\n";
 
     for (const auto& input : options.inputs) {
         std::cerr << "processing " << input.string() << " ...\n";
-        ProcessTextFile<N>(input, token_map, options.count_max, swap, runs);
+        ProcessTextFile<N>(input, tokens, options.count_max, swap, runs);
     }
 
     swap.close();
