@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""生成 Sime 拼音词典
+"""生成 Sime token 词典和拼音词典
 
-读入 chars.cnt.txt（语料词频）和 chinese_units.txt（拼音表），
-只保留语料中出现次数 >= min_count 的词条，输出 sime.dict.txt。
-不在拼音表中的纯中文词用 pypinyin 补标。
+步骤 1: 从 chars.cnt.txt 筛选 freq >= min_count 的词 → sime.token.dict.txt
+步骤 2: 结合 units.txt 给有拼音的 token 标注拼音 → sime.dict.txt
 
-格式：word pinyin（与 sime-converter 输入格式一致）
-
-用法：python3 gen_dict.py [--min-count 16] [--cnt chars.cnt.txt] [--units chinese_units.txt] [--output sime.dict.txt]
+用法：python3 gen_dict.py [--min-count 16] [--cnt chars.cnt.txt] [--units chinese_units.txt] [--output sime.dict.txt] [--token-output sime.token.dict.txt]
 """
 
 import argparse
@@ -51,7 +48,9 @@ def main():
     parser.add_argument("--units", default="chinese_units.txt",
                         help="pinyin dictionary file (word pinyin)")
     parser.add_argument("--output", default="sime.dict.txt",
-                        help="output file")
+                        help="pinyin dict output file")
+    parser.add_argument("--token-output", default="sime.token.dict.txt",
+                        help="token dict output file (all tokens, no pinyin)")
     args = parser.parse_args()
 
     # 读语料词频
@@ -139,16 +138,33 @@ def main():
         print(f"after truncation: {total} ({len(chars)} chars + {len(words)} words)",
               file=sys.stderr)
 
+    # Step 1: 输出 token dict（全部 token，无拼音）
+    with open(args.token_output, "w") as fout:
+        for line in chars:
+            w = line[:line.index(" ")] if " " in line else line
+            fout.write(w + "\n")
+        for line in words:
+            w = line[:line.index(" ")] if " " in line else line
+            fout.write(w + "\n")
+    print(f"\nmin_count: {args.min_count}", file=sys.stderr)
+    print(f"total tokens: {total} ({len(chars)} chars + {len(words)} words)", file=sys.stderr)
+    print(f"written to {args.token_output}", file=sys.stderr)
+
+    # Step 2: 输出 pinyin dict（只有带拼音的条目）
+    pinyin_count = 0
     with open(args.output, "w") as fout:
         for line in chars:
-            fout.write(line + "\n")
+            if " " in line:
+                fout.write(line + "\n")
+                pinyin_count += 1
         for line in words:
-            fout.write(line + "\n")
-    print(f"\nmin_count: {args.min_count}", file=sys.stderr)
+            if " " in line:
+                fout.write(line + "\n")
+                pinyin_count += 1
     print(f"from rime-ice: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)
     print(f"no pinyin (punct/digit/etc): {no_pinyin}", file=sys.stderr)
-    print(f"total: {total} ({len(chars)} chars + {len(words)} words)", file=sys.stderr)
+    print(f"pinyin entries: {pinyin_count}", file=sys.stderr)
     print(f"written to {args.output}", file=sys.stderr)
 
 

@@ -21,9 +21,9 @@ count.bin: count.cc
 merge.bin: merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
-# Step 2: generate pinyin dictionary
+# Step 2: generate token dict + pinyin dictionary
 dict: chars.cnt.txt $(UNITS)
-	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt
+	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt --token-output sime.token.dict.txt
 
 # Step 3: n-gram count (parallel)
 count: sime.token.dict.txt $(CORPUS)
