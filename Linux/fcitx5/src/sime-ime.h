@@ -52,10 +52,15 @@ public:
     void selectCandidate(InputContext *ic, const std::string& text,
                          const std::string& pinyin, std::size_t matchedLen);
 
+    // Called by SimeNextCandidateWord
+    void showPredictions(InputContext *ic);
+    FactoryFor<SimeState> *stateFactory() { return &factory_; }
+    int contextSize() const { return sime_ ? sime_->ContextSize() : 2; }
+
     struct Config : public Configuration {
         // Resources
         Option<std::string> triePath{this, "DictPath", _("词表路径"),
-                                      "/usr/share/sime/sime.trie"};
+                                      "/usr/share/sime/sime.dict"};
         Option<std::string> lmPath{this, "ModelPath", _("模型路径"),
                                    "/usr/share/sime/sime.cnt"};
         Option<std::string> userDictPath{this, "UserDictPath", _("自定义词表路径"),

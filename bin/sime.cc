@@ -20,6 +20,7 @@ struct Options {
     bool sentence = false;
     bool num = false;
     bool nine = false;
+    bool next = false;
 };
 
 void PrintUsage() {
@@ -34,7 +35,8 @@ void PrintUsage() {
               << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
-              << "  --nine <path>       NineDecoder standalone (digits -> pinyin)\n";
+              << "  --nine <path>       NineDecoder standalone (digits -> pinyin)\n"
+              << "  --next           Prediction mode (input token IDs, get nextions)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -52,6 +54,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.sentence = true;
         } else if (arg == "--num") {
             opts.num = true;
+        } else if (arg == "--next") {
+            opts.next = true;
         } else if (arg == "--nine" && i + 1 < argc) {
             opts.nine = true;
             opts.nine_model = argv[++i];
@@ -155,6 +159,56 @@ int main(int argc, char** argv) {
     }
     std::cout << "Dict: " << opts.dict << "\n"
               << "Model: " << opts.cnt << "\n";
+
+    if (opts.next) {
+        std::cout << "Mode: next (prediction)\n"
+                  << "Input pinyin to decode, top result added to context.\n"
+                  << ":reset to clear context, :quit to exit.\n";
+
+        std::string line;
+        std::vector<std::string> context_strs;
+        while (true) {
+            std::cout << "> " << std::flush;
+            if (!std::getline(std::cin, line)) break;
+            if (line == ":quit" || line == ":q") break;
+            if (line == ":reset") {
+                context_strs.clear();
+                std::cout << "  (context cleared)\n";
+                continue;
+            }
+            if (line.empty()) continue;
+
+            // Decode the input
+            auto decoded = engine.DecodeSentence(line, 0);
+            if (decoded.empty()) {
+                std::cout << "  (no decode result)\n";
+                continue;
+            }
+            std::cout << "  decoded: " << decoded[0].text
+                      << " [" << decoded[0].units << "]\n";
+
+            // Add decoded text to context
+            context_strs.push_back(decoded[0].text);
+
+            // Build string_view context
+            std::vector<std::string_view> ctx;
+            ctx.reserve(context_strs.size());
+            for (const auto& s : context_strs) ctx.emplace_back(s);
+
+            auto nextions = engine.NextGroups(ctx, opts.n);
+            if (nextions.empty()) {
+                std::cout << "  (no nextions)\n";
+            } else {
+                for (std::size_t idx = 0; idx < nextions.size(); ++idx) {
+                    const auto& s = nextions[idx];
+                    std::cout << "  [" << idx << "] " << s.text
+                              << " (score " << std::fixed
+                              << std::setprecision(3) << s.score << ")\n";
+                }
+            }
+        }
+        return 0;
+    }
 
     if (opts.num && opts.sentence) {
         std::cout << "Mode: num+sentence (digits 2-9, progressive)\n";

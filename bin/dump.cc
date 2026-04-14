@@ -33,6 +33,7 @@ std::string TokenToText(const sime::Dict& dict, sime::TokenID id) {
 
 int main(int argc, char* argv[]) {
     std::filesystem::path dict_path, model_path, out_prefix;
+    std::string groups_query;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--dict") == 0 && i + 1 < argc) {
@@ -41,18 +42,38 @@ int main(int argc, char* argv[]) {
             model_path = argv[++i];
         } else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
             out_prefix = argv[++i];
+        } else if (std::strcmp(argv[i], "--groups") == 0 && i + 1 < argc) {
+            groups_query = argv[++i];
         }
     }
 
-    if (dict_path.empty() || out_prefix.empty()) {
-        std::cerr << "Usage: sime-dump --dict <dict.bin> [--cnt <model.bin>] --out <prefix>\n";
+    if (dict_path.empty() || (out_prefix.empty() && groups_query.empty())) {
+        std::cerr << "Usage: sime-dump --dict <dict.bin> [--cnt <model.bin>] --out <prefix>\n"
+                  << "       sime-dump --dict <dict.bin> --groups <pieces>\n";
         return 1;
     }
 
     sime::Dict dict;
     if (!dict.Load(dict_path)) {
-        std::cerr << "Failed to load trie: " << dict_path << "\n";
+        std::cerr << "Failed to load dict: " << dict_path << "\n";
         return 1;
+    }
+
+    // --groups mode: query GetGroups and print results
+    if (!groups_query.empty()) {
+        auto groups = dict.GetGroups(groups_query, 50);
+        std::cerr << "GetGroups(\"" << groups_query << "\"): "
+                  << groups.size() << " groups\n";
+        for (std::size_t i = 0; i < groups.size(); ++i) {
+            std::string text;
+            for (auto id : groups[i]) {
+                text += TokenToText(dict, static_cast<sime::TokenID>(id));
+            }
+            std::cout << "  [" << i << "] " << text << " (ids:";
+            for (auto id : groups[i]) std::cout << " " << id;
+            std::cout << ")\n";
+        }
+        return 0;
     }
 
     // Dump token table (StartToken onwards, one per line, like sime.token.dict.txt)

@@ -26,11 +26,18 @@ public:
                 const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
+    int ContextSize() const { return scorer_.Num() - 1; }
     // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
                                              std::size_t extra = 0) const;
+
+    // Prediction: given confirmed words as context, suggest next words.
+    // Each element is a word text (e.g. "你", "好", "iPhone").
+    std::vector<DecodeResult> NextGroups(
+        const std::vector<std::string_view>& context,
+        std::size_t num = 10) const;
 
     // Num-key decode (T9/nine-key).
     // `start` is the confirmed prefix (letters, possibly with `'`

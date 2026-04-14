@@ -98,6 +98,27 @@ private:
     std::size_t matchedLen_;
 };
 
+// ===== Prediction candidate word =====
+
+class SimeNextCandidateWord : public CandidateWord {
+public:
+    SimeNextCandidateWord(Sime *engine, std::string text)
+        : CandidateWord(Text(text)), engine_(engine),
+          text_(std::move(text)) {}
+
+    void select(InputContext *ic) const override {
+        auto *st = ic->propertyFor(engine_->stateFactory());
+        int maxCtx = engine_->contextSize();
+        st->pushContext(text_, maxCtx);
+        ic->commitString(text_);
+        engine_->showPredictions(ic);
+    }
+
+private:
+    Sime *engine_;
+    std::string text_;
+};
+
 // ===== Engine =====
 
 Sime::Sime(Instance *instance)
@@ -138,6 +159,7 @@ void Sime::activate(const InputMethodEntry &, InputContextEvent &event) {
 void Sime::deactivate(const InputMethodEntry &, InputContextEvent &event) {
     auto *st = state(event.inputContext());
     resetState(event.inputContext());
+    st->clearContext();
     st->resetPuncState();
 }
 
@@ -163,13 +185,64 @@ void Sime::selectCandidate(InputContext *ic, const std::string& text,
 
     // If all input consumed, commit everything
     if (st->fullySelected()) {
+        // Push each selection into context
+        for (const auto& sel : st->selections) {
+            st->pushContext(sel.text, contextSize());
+        }
         ic->commitString(st->committedText());
-        resetState(ic);
+        st->reset();
+        showPredictions(ic);
     } else {
         // Move cursor to end of remaining
         st->cursor = st->buffer.size();
         updateUI(ic);
     }
+}
+
+void Sime::showPredictions(InputContext *ic) {
+    auto *st = state(ic);
+    auto &panel = ic->inputPanel();
+    panel.reset();
+
+    if (!sime_ || st->context.empty()) {
+        st->predicting = false;
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        return;
+    }
+
+    std::vector<std::string_view> ctx;
+    ctx.reserve(st->context.size());
+    for (const auto& s : st->context) ctx.emplace_back(s);
+
+    auto results = sime_->NextGroups(ctx,
+        static_cast<std::size_t>(*config_.pageSize));
+
+    if (results.empty()) {
+        st->predicting = false;
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        return;
+    }
+
+    st->predicting = true;
+
+    auto cl = std::make_unique<CommonCandidateList>();
+    cl->setPageSize(*config_.pageSize);
+    cl->setLayoutHint(CandidateLayoutHint::Horizontal);
+    cl->setSelectionKey(*config_.selectionKeys);
+    cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
+
+    for (const auto& r : results) {
+        cl->append<SimeNextCandidateWord>(this, r.text);
+    }
+    cl->setCursorIndex(0);
+    panel.setCandidateList(std::move(cl));
+
+    panel.setClientPreedit(Text{});
+    panel.setPreedit(Text{});
+    ic->updatePreedit();
+    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
 void Sime::updateUI(InputContext *ic) {
@@ -319,6 +392,55 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     auto &panel = ic->inputPanel();
     auto *cl = panel.candidateList().get();
 
+    // Prediction mode: handle selection or exit
+    if (st->predicting && cl) {
+        // Selection keys: select prediction candidate
+        auto idx = key.keyListIndex(*config_.selectionKeys);
+        if (idx >= 0 && idx < cl->size()) {
+            cl->candidate(idx).select(ic);
+            event.filterAndAccept();
+            return;
+        }
+        // Space: select current prediction
+        if (key.checkKeyList(*config_.currentCandidate) && cl->size() > 0) {
+            int cidx = cl->cursorIndex();
+            if (cidx < 0 || cidx >= cl->size()) cidx = 0;
+            cl->candidate(cidx).select(ic);
+            event.filterAndAccept();
+            return;
+        }
+        // Page navigation in prediction mode
+        auto *pageable = cl->toPageable();
+        if (pageable) {
+            if (key.checkKeyList(*config_.nextPage) && pageable->hasNext()) {
+                pageable->next();
+                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+                event.filterAndAccept();
+                return;
+            }
+            if (key.checkKeyList(*config_.prevPage) && pageable->hasPrev()) {
+                pageable->prev();
+                ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+                event.filterAndAccept();
+                return;
+            }
+        }
+        // Escape: dismiss predictions
+        if (key.check(FcitxKey_Escape)) {
+            st->predicting = false;
+            panel.reset();
+            ic->updatePreedit();
+            ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+            event.filterAndAccept();
+            return;
+        }
+        // Any other key: exit prediction, fall through to normal handling
+        st->predicting = false;
+        panel.reset();
+        ic->updatePreedit();
+        ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+    }
+
     // Selection keys (1-9 by default): select candidate
     if (!st->empty() && cl) {
         auto idx = key.keyListIndex(*config_.selectionKeys);
@@ -344,6 +466,7 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     // Like fcitx5-pinyin: commit selected hanzi + remaining raw pinyin
     if (!st->empty() && key.checkKeyList(*config_.commitRawInput)) {
         ic->commitString(st->committedText() + st->remaining());
+        st->clearContext();
         resetState(ic);
         event.filterAndAccept();
         return;
@@ -494,6 +617,11 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
             cl->candidate(0).select(ic);
         }
         commitPunctuation(ic, st, punc);
+        // Sentence-ending punctuation clears context
+        if (key.sym() == FcitxKey_period || key.sym() == FcitxKey_question ||
+            key.sym() == FcitxKey_exclam) {
+            st->clearContext();
+        }
         event.filterAndAccept();
         return;
     }

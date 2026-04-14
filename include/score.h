@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <utility>
 #include <vector>
 
 namespace sime {
@@ -37,6 +38,10 @@ public:
     float_t ScoreMove(Pos s, TokenID w, Pos& r) const;
     void Back(Pos& pos) const;
     float_t UnknownPenalty() const;
+
+    // Enumerate successor tokens from context, sorted by probability (best first).
+    std::vector<std::pair<TokenID, float_t>> NextTokens(
+        Pos context, std::size_t num) const;
 
     // Accessors for dump tool
     int Num() const { return num_; }

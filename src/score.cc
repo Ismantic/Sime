@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <utility>
 
 namespace sime {
 namespace {
@@ -194,6 +195,48 @@ float_t Scorer::UnknownPenalty() const {
         return -20.0;
     }
     return pro_table_[node_levels_[0][0].pro];
+}
+
+std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
+    Pos context, std::size_t num) const {
+    std::vector<std::pair<TokenID, float_t>> result;
+    if (num_ < 1) return result;
+
+    auto level = context.level;
+    auto index = context.index;
+
+    // Collect children of the context node
+    if (level < static_cast<std::uint32_t>(num_)) {
+        const auto& nodes = node_levels_[level];
+        std::size_t node_index = (level == 0) ? 0 : index;
+        if (node_index + 1 >= nodes.size()) return result;
+
+        auto begin = nodes[node_index].down;
+        auto end = nodes[node_index + 1].down;
+
+        if (level == static_cast<std::uint32_t>(num_ - 1)) {
+            // Children are leaves
+            for (auto i = begin; i < end && i < leave_level_.size(); ++i) {
+                result.emplace_back(leave_level_[i].token,
+                                    pro_table_[leave_level_[i].pro]);
+            }
+        } else {
+            // Children are nodes at level+1
+            const auto& children = node_levels_[level + 1];
+            for (auto i = begin; i < end && i < children.size(); ++i) {
+                result.emplace_back(children[i].token,
+                                    pro_table_[children[i].pro]);
+            }
+        }
+    }
+    // Leaves have no children — result stays empty
+
+    // Sort by cost ascending (lower cost = higher probability)
+    std::sort(result.begin(), result.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+
+    if (result.size() > num) result.resize(num);
+    return result;
 }
 
 std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
