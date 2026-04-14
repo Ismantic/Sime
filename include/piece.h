@@ -52,7 +52,7 @@ private:
     std::unordered_map<std::string, std::uint32_t> piece_to_id_;
     std::unordered_set<std::uint32_t> pinyin_ids_;
 
-    PieceMap piece_map_;  // pinyin text → Units
+    PieceMap piece_map_;  // piece text (+ lowercase aliases) → Units
     PieceMap num_map_;    // digit string → Units
 };
 

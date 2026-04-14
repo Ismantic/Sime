@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 #include <unordered_set>
 
 namespace sime {
@@ -445,7 +444,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
         std::u32string composed;
         for (const auto& w : path) {
-            composed += ToText(w, {});
+            composed += ToText(w);
         }
         if (composed.empty()) continue;
 
@@ -616,126 +615,8 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
 }
 
 void Sime::Process(std::vector<Node>& net) const {
-    // Debug tokens: 以=436 已=1888 刚=759 港方=136945 防疫=203512
-    constexpr bool kDebug = false;
-    constexpr TokenID kDebugTokens[] = {436, 1888, 759, 136945, 203512};
-    constexpr const char* kDebugNames[] = {"以", "已", "刚", "港方", "防疫"};
-    constexpr std::size_t kDebugCount = 5;
-
-    auto debugName = [&](TokenID id) -> const char* {
-        if (!kDebug) return nullptr;
-        for (std::size_t i = 0; i < kDebugCount; ++i) {
-            if (kDebugTokens[i] == id) return kDebugNames[i];
-        }
-        return nullptr;
-    };
-
-    // Helper: check if token 436 (以) is in backtrace chain of a state
-    auto hasTokenInChain = [](const State& st, TokenID target) -> bool {
-        const State* s = &st;
-        while (s && s->backtrace_state) {
-            if (s->backtrace_token == target) return true;
-            s = s->backtrace_state;
-        }
-        return false;
-    };
-
     for (std::size_t col = 0; col < net.size(); ++col) {
         auto& column = net[col];
-
-        if (kDebug) {
-            // Log edges at this column for debug tokens
-            for (const auto& word : column.es) {
-                auto name = debugName(word.id);
-                if (name) {
-                    std::cerr << "[DBG] col=" << col << " edge: "
-                              << name << "(id=" << word.id
-                              << ") span=[" << word.start << "," << word.end << ")\n";
-                }
-            }
-            // Log states at this column
-            auto states = column.states.GetStates();
-            if (!states.empty()) {
-                std::cerr << "[DBG] col=" << col << " has " << states.size() << " states\n";
-                std::size_t show_limit = std::min<std::size_t>(states.size(), 5);
-                for (std::size_t i = 0; i < show_limit; ++i) {
-                    auto bname = debugName(states[i].backtrace_token);
-                    std::cerr << "  [" << i << "] score=" << states[i].score
-                              << " pos=(" << states[i].pos.level
-                              << "," << states[i].pos.index << ")"
-                              << " via=" << (bname ? bname : std::to_string(states[i].backtrace_token).c_str())
-                              << "\n";
-                }
-
-                // Per-column: count states with 以(436) in backtrace chain
-                std::size_t yi_count = 0;
-                float_t yi_best = 1e30;
-                float_t worst_score = 0;
-                for (const auto& st : states) {
-                    if (st.score > worst_score) worst_score = st.score;
-                    if (hasTokenInChain(st, 436)) {
-                        ++yi_count;
-                        if (st.score < yi_best) yi_best = st.score;
-                    }
-                }
-                if (yi_count > 0) {
-                    std::cerr << "  [以-TRACK] col=" << col << " 以-paths alive: "
-                              << yi_count << " best_score=" << yi_best
-                              << " worst_in_col=" << worst_score
-                              << " total_states=" << states.size() << "\n";
-                    // Show all 以-paths at col 8 and 9 (where it's about to die)
-                    if (col >= 8) {
-                        for (std::size_t si = 0; si < states.size(); ++si) {
-                            if (hasTokenInChain(states[si], 436)) {
-                                std::cerr << "    [以-detail] rank=" << si
-                                          << " score=" << states[si].score
-                                          << " pos=(" << states[si].pos.level
-                                          << "," << states[si].pos.index << ")"
-                                          << " via=" << states[si].backtrace_token
-                                          << " tokens:";
-                                std::vector<TokenID> toks;
-                                const State* ss = &states[si];
-                                while (ss && ss->backtrace_state) {
-                                    toks.push_back(ss->backtrace_token);
-                                    ss = ss->backtrace_state;
-                                }
-                                for (auto rit = toks.rbegin(); rit != toks.rend(); ++rit) {
-                                    auto nm = debugName(*rit);
-                                    if (nm) std::cerr << " " << nm;
-                                    else std::cerr << " " << *rit;
-                                }
-                                std::cerr << "\n";
-                            }
-                        }
-                    }
-                } else if (col >= 3) {
-                    std::cerr << "  [以-TRACK] col=" << col << " *** 以-paths: NONE (pruned!) ***"
-                              << " worst_in_col=" << worst_score
-                              << " total_states=" << states.size() << "\n";
-                }
-
-                // At last column, backtrace all states to show full paths
-                if (col == net.size() - 1) {
-                    for (std::size_t i = 0; i < states.size(); ++i) {
-                        std::cerr << "  path[" << i << "] score=" << states[i].score << " tokens:";
-                        // Collect backtrace tokens
-                        std::vector<TokenID> tokens;
-                        const State* s = &states[i];
-                        while (s && s->backtrace_state) {
-                            tokens.push_back(s->backtrace_token);
-                            s = s->backtrace_state;
-                        }
-                        for (auto it2 = tokens.rbegin(); it2 != tokens.rend(); ++it2) {
-                            auto n = debugName(*it2);
-                            if (n) std::cerr << " " << n;
-                            else std::cerr << " " << *it2;
-                        }
-                        std::cerr << "\n";
-                    }
-                }
-            }
-        }
-
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
             const auto& value = *it;
             for (const auto& word : column.es) {
@@ -743,13 +624,11 @@ void Sime::Process(std::vector<Node>& net) const {
                 float_t step = 0.0;
 
                 if (word.group_len <= 1) {
-                    // Single token (Chinese or special)
                     Scorer::Pos next_pos{};
                     step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
                     scorer_.Back(next_pos);
                     cur_pos = next_pos;
                 } else {
-                    // Compound token — chain multiply
                     for (std::uint16_t gi = 0; gi < word.group_len; ++gi) {
                         TokenID pid = static_cast<TokenID>(
                             word.group[gi] & GroupTokenMask);
@@ -761,20 +640,6 @@ void Sime::Process(std::vector<Node>& net) const {
                 }
 
                 float_t next_cost = value.score + step;
-
-                if (kDebug) {
-                    auto name = debugName(word.id);
-                    auto prev_name = debugName(value.backtrace_token);
-                    if (name) {
-                        std::cerr << "[DBG] col=" << col << " transition: "
-                                  << (prev_name ? prev_name : "?")
-                                  << " -> " << name
-                                  << " step=" << step
-                                  << " total=" << next_cost
-                                  << " -> col " << word.end << "\n";
-                    }
-                }
-
                 State next(next_cost, word.end, cur_pos, &value, word.id,
                            word.group, word.group_len);
                 net[word.end].states.Insert(next);
@@ -802,53 +667,31 @@ std::vector<Sime::Link> Sime::Backtrace(
     }
     return path;
 }
-std::u32string Sime::ToText(const Link& n,
-                                   const std::vector<Unit>& units) const {
-    if (n.id != ScoreNotToken && n.id != NotToken) {
-        if (n.group_len > 1 && n.group) {
-            // Compound: concatenate display text of each piece
-            std::u32string buffer;
-            for (std::uint16_t gi = 0; gi < n.group_len; ++gi) {
-                TokenID pid = static_cast<TokenID>(
-                    n.group[gi] & GroupTokenMask);
-                const char32_t* chars = trie_.TokenAt(pid);
-                if (chars) {
-                    for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
-                        buffer.push_back(chars[i]);
-                    }
-                }
-            }
-            if (!buffer.empty()) return buffer;
-        } else {
-            const char32_t* chars = trie_.TokenAt(n.id);
+std::u32string Sime::ToText(const Link& n) const {
+    if (n.id == ScoreNotToken || n.id == NotToken) {
+        return {};
+    }
+    std::u32string buffer;
+    if (n.group_len > 1 && n.group) {
+        for (std::uint16_t gi = 0; gi < n.group_len; ++gi) {
+            TokenID pid = static_cast<TokenID>(
+                n.group[gi] & GroupTokenMask);
+            const char32_t* chars = trie_.TokenAt(pid);
             if (chars) {
-                std::u32string buffer;
                 for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
                     buffer.push_back(chars[i]);
                 }
-                if (!buffer.empty()) return buffer;
+            }
+        }
+    } else {
+        const char32_t* chars = trie_.TokenAt(n.id);
+        if (chars) {
+            for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
+                buffer.push_back(chars[i]);
             }
         }
     }
-    return ustr::ToU32("[" + SliceToUnits(units, n.start, n.end) + "]");
-}
-
-std::string Sime::SliceToUnits(
-    const std::vector<Unit>& units,
-    std::size_t start,
-    std::size_t end) const {
-    std::string result;
-    for (std::size_t i = start; i < end && i < units.size(); ++i) {
-        const char* syl = piece().Decode(units[i]);
-        if (!syl) {
-            continue;
-        }
-        if (!result.empty()) {
-            result.push_back('\'');
-        }
-        result.append(syl);
-    }
-    return result;
+    return buffer;
 }
 
 std::vector<DecodeResult> Sime::DecodeSentence(
@@ -898,7 +741,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             if (path.empty()) continue;
             std::u32string composed;
             for (const auto& w : path) {
-                composed += ToText(w, {});
+                composed += ToText(w);
             }
             if (composed.empty()) continue;
             std::string text_utf8 = ustr::FromU32(composed);
@@ -923,7 +766,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     for (const auto& edge : net[0].es) {
         if (edge.id == SentenceEnd) continue;
 
-        std::u32string text_u32 = ToText(edge, {});
+        std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
         std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
