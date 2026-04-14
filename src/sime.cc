@@ -8,9 +8,9 @@
 
 namespace sime {
 
-Sime::Sime(const std::filesystem::path& trie_path,
+Sime::Sime(const std::filesystem::path& dict_path,
                          const std::filesystem::path& model_path) {
-    if (!dict_.Load(trie_path)) {
+    if (!dict_.Load(dict_path)) {
         return;
     }
     if (!scorer_.Load(model_path)) {
@@ -358,13 +358,9 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     return results;
 }
 
-std::vector<DecodeResult> Sime::DecodeStr(
-    std::string_view input,
-    std::size_t num) const {
-    std::vector<DecodeResult> results;
-    if (!ready_ || input.empty()) return results;
+namespace {
 
-    // Lowercase input, keep only letters and apostrophe boundaries
+std::string NormalizeInput(std::string_view input) {
     std::string lower;
     lower.reserve(input.size());
     for (char c : input) {
@@ -378,6 +374,18 @@ std::vector<DecodeResult> Sime::DecodeStr(
             }
         }
     }
+    return lower;
+}
+
+} // namespace
+
+std::vector<DecodeResult> Sime::DecodeStr(
+    std::string_view input,
+    std::size_t num) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || input.empty()) return results;
+
+    std::string lower = NormalizeInput(input);
     if (lower.empty()) return results;
 
     std::vector<Node> net;
@@ -644,20 +652,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
 
-    // Lowercase the input, keep only letters and apostrophe boundaries
-    std::string lower;
-    lower.reserve(input.size());
-    for (char c : input) {
-        if (c == '\'') {
-            lower.push_back(c);
-        } else {
-            char lc = static_cast<char>(
-                std::tolower(static_cast<unsigned char>(c)));
-            if (lc >= 'a' && lc <= 'z') {
-                lower.push_back(lc);
-            }
-        }
-    }
+    std::string lower = NormalizeInput(input);
     if (lower.empty()) return results;
 
     const std::size_t total = lower.size();
@@ -714,13 +709,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
-
-        DecodeResult r;
-        r.text = std::move(text_utf8);
-        r.units = std::move(edge_py);
-        r.score = score;
-        r.cnt = edge.end;
-        results.push_back(std::move(r));
+        results.push_back({std::move(text_utf8), std::move(edge_py),
+                           score, edge.end});
     }
 
     std::sort(
