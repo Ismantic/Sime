@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
                 std::string pinyin;
                 for (const auto& u : r.units) {
                     if (!pinyin.empty()) pinyin += '\'';
-                    const char* text = sime::UnitData::Decode(u);
+                    const char* text = nine_decoder.GetPieceTable().Decode(u);
                     if (text) pinyin += text;
                 }
                 std::cout << "  [" << idx << "] " << pinyin

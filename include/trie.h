@@ -1,6 +1,7 @@
 #pragma once 
 
 #include "common.h"
+#include "piece.h"
 #include "unit.h"
 
 #include <cstddef>
@@ -40,13 +41,17 @@ public:
 
     const char32_t* TokenAt(uint32_t i) const;
 
+    const PieceTable& GetPieceTable() const { return piece_; }
+
 private:
     const Node* NodeFrom(std::uint32_t i) const;
     std::uint32_t RootIndex() const;
     std::uint32_t TokenIndex() const;
+    std::uint32_t PieceIndex() const;
 
     std::vector<char> blob_;
     std::vector<const char32_t*> token_strs_;
+    PieceTable piece_;
 };
 
 } // namespace sime

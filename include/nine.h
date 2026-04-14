@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "piece.h"
 #include "score.h"
 #include "unit.h"
 
@@ -17,6 +18,8 @@ class NineDecoder {
 public:
     bool Load(const std::filesystem::path& pinyin_model_path);
     bool Ready() const { return ready_; }
+
+    const PieceTable& GetPieceTable() const { return piece_; }
 
     struct Result {
         std::vector<Unit> units;
@@ -35,12 +38,11 @@ private:
     };
 
     void BuildNumMap();
-    static char LetterToNum(char c);
-    static std::string UnitToNum(const char* unit);
 
     std::unordered_map<std::string, std::vector<SyllableEntry>> num_map_;
     std::vector<Unit> token_to_unit_;
     std::unordered_map<std::uint32_t, TokenID> unit_to_token_;
+    PieceTable piece_;
     Scorer scorer_;
     bool ready_ = false;
 };

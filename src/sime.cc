@@ -19,49 +19,6 @@ Sime::Sime(const std::filesystem::path& trie_path,
         return;
     }
     ready_ = true;
-    BuildNumMap();
-}
-
-char Sime::LetterToNum(char c) {
-    switch (c) {
-    case 'a': case 'b': case 'c': return '2';
-    case 'd': case 'e': case 'f': return '3';
-    case 'g': case 'h': case 'i': return '4';
-    case 'j': case 'k': case 'l': return '5';
-    case 'm': case 'n': case 'o': return '6';
-    case 'p': case 'q': case 'r': case 's': return '7';
-    case 't': case 'u': case 'v': return '8';
-    case 'w': case 'x': case 'y': case 'z': return '9';
-    default: return '0';
-    }
-}
-
-std::string Sime::UnitToNum(const char* unit) {
-    std::string result;
-    for (const char* p = unit; *p; ++p) {
-        char d = LetterToNum(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(*p))));
-        if (d != '0') {
-            result.push_back(d);
-        }
-    }
-    return result;
-}
-
-void Sime::BuildNumMap() {
-    num_map_.clear();
-    unit_map_.clear();
-    std::size_t count = 0;
-    const UnitEntry* entries = UnitData::GetDict(count);
-    for (std::size_t i = 0; i < count; ++i) {
-        Unit unit(entries[i].value);
-        if (!unit.Full()) continue;
-        std::string nums = UnitToNum(entries[i].text);
-        if (!nums.empty()) {
-            num_map_[nums].push_back(unit);
-        }
-        unit_map_[entries[i].text].push_back(unit);
-    }
 }
 
 
@@ -79,7 +36,7 @@ void Sime::InitNumNet(std::string_view start,
                               NumUnitMap* pm) const {
     // Lattice layout:
     //   columns [0, p)     — prefix letter columns (InitMixNet-style)
-    //   columns [p, p+d)   — digit columns (num_map_ + Letter edges)
+    //   columns [p, p+d)   — digit columns (num_map + letter edges)
     //   column  p+d        — SentenceEnd
     //   column  p+d+1      — terminal
     const std::size_t p = start.size();
@@ -125,20 +82,20 @@ void Sime::InitNumNet(std::string_view start,
                 return;
             }
 
-            // Pinyin syllable matches via unit_map_
+            // Pinyin syllable matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + MaxSyllableCnt, p); ++end) {
                 char kc = start[end - 1];
                 if (kc == '\'') break;
                 key.push_back(kc);
-                auto it = unit_map_.find(key);
-                if (it == unit_map_.end()) continue;
+                auto it = piece().GetPieceMap().find(key);
+                if (it == piece().GetPieceMap().end()) continue;
                 for (const auto& u : it->second) {
                     const Trie::Node* next = trie_.DoMove(node, u);
                     if (!next) continue;
                     std::string new_acc =
-                        append_py(acc, UnitData::Decode(u));
+                        append_py(acc, piece().Decode(u));
                     emit(s, end, next, new_acc);
                     self(self, s, end, next, new_acc);
                 }
@@ -152,9 +109,9 @@ void Sime::InitNumNet(std::string_view start,
                     std::size_t tail_len = p - pos;
                     if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
                         std::string tail_str(start.data() + pos, tail_len);
-                        bool is_complete = unit_map_.count(tail_str) > 0;
+                        bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
                         if (!is_complete) {
-                            for (const auto& [ukey, units] : unit_map_) {
+                            for (const auto& [ukey, units] : piece().GetPieceMap()) {
                                 if (ukey.size() <= tail_len) continue;
                                 if (ukey.compare(0, tail_len, tail_str) != 0)
                                     continue;
@@ -163,26 +120,13 @@ void Sime::InitNumNet(std::string_view start,
                                         trie_.DoMove(node, u);
                                     if (!next) continue;
                                     std::string new_acc = append_py(
-                                        acc, UnitData::Decode(u));
+                                        acc, piece().Decode(u));
                                     emit(s, p, next, new_acc);
                                     self(self, s, p, next, new_acc);
                                 }
                             }
                         }
                     }
-                }
-            }
-
-            // Letter Unit edge
-            if (ch >= 'a' && ch <= 'z') {
-                const Trie::Node* next =
-                    trie_.DoMove(node, Unit::Letter(ch));
-                if (next) {
-                    std::string new_acc = acc;
-                    if (!new_acc.empty()) new_acc += '\'';
-                    new_acc += ch;
-                    emit(s, pos + 1, next, new_acc);
-                    self(self, s, pos + 1, next, new_acc);
                 }
             }
 
@@ -198,44 +142,22 @@ void Sime::InitNumNet(std::string_view start,
             return;
         }
 
-        // Pinyin syllable matches via num_map_
+        // Pinyin syllable matches via piece().GetNumMap()
         std::string key;
         for (std::size_t dend = dpos + 1;
              dend <= std::min(dpos + MaxSyllableCnt, d); ++dend) {
             char ch = nums[dend - 1];
             if (ch == '\'') break;
             key.push_back(ch);
-            auto it = num_map_.find(key);
-            if (it == num_map_.end()) continue;
+            auto it = piece().GetNumMap().find(key);
+            if (it == piece().GetNumMap().end()) continue;
             for (const auto& u : it->second) {
                 const Trie::Node* next = trie_.DoMove(node, u);
                 if (!next) continue;
-                std::string new_acc = append_py(acc, UnitData::Decode(u));
+                std::string new_acc = append_py(acc, piece().Decode(u));
                 const std::size_t new_col = p + dend;
                 emit(s, new_col, next, new_acc);
                 self(self, s, new_col, next, new_acc);
-            }
-        }
-
-        // Letter Unit edges (T9 digit → letters)
-        {
-            static const char* digit_letters[] = {
-                nullptr, nullptr, "abc", "def", "ghi", "jkl",
-                "mno", "pqrs", "tuv", "wxyz"
-            };
-            int di = nums[dpos] - '0';
-            if (di >= 2 && di <= 9 && digit_letters[di]) {
-                for (const char* lp = digit_letters[di]; *lp; ++lp) {
-                    const Trie::Node* next =
-                        trie_.DoMove(node, Unit::Letter(*lp));
-                    if (!next) continue;
-                    std::string new_acc = acc;
-                    if (!new_acc.empty()) new_acc += '\'';
-                    new_acc += *lp;
-                    const std::size_t new_col = p + dpos + 1;
-                    emit(s, new_col, next, new_acc);
-                    self(self, s, new_col, next, new_acc);
-                }
             }
         }
 
@@ -248,14 +170,14 @@ void Sime::InitNumNet(std::string_view start,
             if (dpos + tail_len == d) {
                 std::string tail(nums.substr(dpos, tail_len));
                 if (!tail.empty() && tail.size() <= MaxSyllableCnt) {
-                    for (const auto& [dkey, units] : num_map_) {
+                    for (const auto& [dkey, units] : piece().GetNumMap()) {
                         if (dkey.size() <= tail.size()) continue;
                         if (dkey.compare(0, tail.size(), tail) != 0) continue;
                         for (const auto& u : units) {
                             const Trie::Node* next = trie_.DoMove(node, u);
                             if (!next) continue;
                             std::string new_acc =
-                                append_py(acc, UnitData::Decode(u));
+                                append_py(acc, piece().Decode(u));
                             emit(s, total, next, new_acc);
                         }
                     }
@@ -332,7 +254,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         if (c < '2' || c > '9') return results;
     }
     if (nums.empty() && start.empty()) return results;
-    if (!nums.empty() && num_map_.empty()) return results;
+    if (!nums.empty() && piece().GetNumMap().empty()) return results;
 
     const std::size_t p = start.size();
     const std::size_t d = nums.size();
@@ -447,7 +369,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
         if (c < '2' || c > '9') return results;
     }
     if (nums.empty() && start.empty()) return results;
-    if (!nums.empty() && num_map_.empty()) return results;
+    if (!nums.empty() && piece().GetNumMap().empty()) return results;
 
     const std::size_t max_top = num == 0 ? 1 : num;
     const std::size_t total = start.size() + nums.size();
@@ -563,15 +485,15 @@ void Sime::InitMixNet(std::string_view input,
                 return;
             }
 
-            // 1. Pinyin syllable matches via unit_map_
+            // 1. Pinyin syllable matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + MaxSyllableCnt, total); ++end) {
                 char ch = input[end - 1];
                 if (ch == '\'') break;  // Don't extend past boundary.
                 key.push_back(ch);
-                auto it = unit_map_.find(key);
-                if (it == unit_map_.end()) continue;
+                auto it = piece().GetPieceMap().find(key);
+                if (it == piece().GetPieceMap().end()) continue;
                 for (const auto& u : it->second) {
                     const Trie::Node* next = trie_.DoMove(node, u);
                     if (!next) continue;
@@ -603,9 +525,9 @@ void Sime::InitMixNet(std::string_view input,
                 if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
                     std::string tail_str(input.data() + pos, tail_len);
                     std::string_view tail(tail_str);
-                    bool is_complete = unit_map_.count(tail_str) > 0;
+                    bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
                     if (!is_complete)
-                    for (const auto& [ukey, units] : unit_map_) {
+                    for (const auto& [ukey, units] : piece().GetPieceMap()) {
                         if (ukey.size() <= tail_len) continue;
                         if (ukey.compare(0, tail_len, tail) != 0) continue;
                         for (const auto& u : units) {
@@ -634,31 +556,6 @@ void Sime::InitMixNet(std::string_view input,
                 }
             }
 
-            // 3. Letter Unit edge (English word paths)
-            char c = input[pos];
-            if (c >= 'a' && c <= 'z') {
-                const Trie::Node* next =
-                    trie_.DoMove(node, Unit::Letter(c));
-                if (next) {
-                    std::uint32_t count = 0;
-                    const std::uint32_t* tokens =
-                        trie_.GetToken(next, count);
-                    std::uint32_t gi = 0;
-                    while (gi < count) {
-                        const std::uint32_t* grp = tokens + gi;
-                        std::uint16_t glen = 1;
-                        while (gi < count &&
-                               (tokens[gi] & GroupEnd) == 0) {
-                            ++gi; ++glen;
-                        }
-                        if (gi < count) ++gi;
-                        TokenID wid = static_cast<TokenID>(
-                            grp[0] & GroupTokenMask);
-                        bucket.push_back({s, pos + 1, wid, grp, glen});
-                    }
-                    self(self, pos + 1, next);
-                }
-            }
         };
 
         walk(walk, s, trie_.Root());
@@ -942,10 +839,10 @@ std::u32string Sime::ToText(const Link& n,
 std::string Sime::SliceToUnits(
     const std::vector<Unit>& units,
     std::size_t start,
-    std::size_t end) {
+    std::size_t end) const {
     std::string result;
     for (std::size_t i = start; i < end && i < units.size(); ++i) {
-        const char* syl = UnitData::Decode(units[i]);
+        const char* syl = piece().Decode(units[i]);
         if (!syl) {
             continue;
         }

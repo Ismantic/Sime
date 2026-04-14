@@ -3,19 +3,19 @@
 #include <iostream>
 
 int main(int argc, char* argv[]) {
-    if (argc < 3 || argc > 4) {
-        std::cerr << "Usage: sime-converter <pinyin_dict.txt> <trie.bin> [en_dict.cut.txt]\n";
+    if (argc < 4) {
+        std::cerr << "Usage: sime-converter <token_dict.txt> <trie.bin> <dict.txt>...\n";
         return 1;
     }
 
     sime::TrieConverter converter;
-    if (!converter.Load(argv[1])) {
-        std::cerr << "sime-converter failed: load dict\n";
+    if (!converter.LoadTokens(argv[1])) {
+        std::cerr << "sime-converter failed: load tokens\n";
         return 1;
     }
-    if (argc == 4) {
-        if (!converter.LoadTokens(argv[3])) {
-            std::cerr << "sime-converter failed: load tokens\n";
+    for (int i = 3; i < argc; ++i) {
+        if (!converter.Load(argv[i])) {
+            std::cerr << "sime-converter failed: load dict " << argv[i] << "\n";
             return 1;
         }
     }

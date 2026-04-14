@@ -88,19 +88,12 @@ private:
     // Text extraction
     std::u32string ToText(const Link& n,
                           const std::vector<Unit>& units) const;
-    static std::string SliceToUnits(const std::vector<Unit>& units,
-                                    std::size_t start, std::size_t end);
-
-    // Num-key mapping
-    void BuildNumMap();
-    static char LetterToNum(char c);
-    static std::string UnitToNum(const char* unit);
+    std::string SliceToUnits(const std::vector<Unit>& units,
+                             std::size_t start, std::size_t end) const;
 
     // Num-key lattice
     using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
     static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
-    // Builds a unified lattice: prefix letter columns (InitMixNet-style)
-    // followed by digit columns. Both support pinyin + Letter edges.
     void InitNumNet(std::string_view start,
                      std::string_view nums,
                      bool tail_expansion,
@@ -111,10 +104,9 @@ private:
                                          const NumUnitMap& pm);
 
     // Resources
+    const PieceTable& piece() const { return trie_.GetPieceTable(); }
     Trie trie_;
     Scorer scorer_;
-    std::unordered_map<std::string, std::vector<Unit>> num_map_;
-    std::unordered_map<std::string, std::vector<Unit>> unit_map_;
     bool ready_ = false;
 };
 
