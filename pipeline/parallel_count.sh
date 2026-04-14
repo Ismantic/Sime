@@ -65,7 +65,12 @@ fi
 
 # Merge
 echo "=== Merging ===" >&2
-python3 "$(dirname "$0")/merge_ngram.py" -n "$NGRAM" -o "$OUTPUT" "${outputs[@]}"
+MERGE_BIN="$(dirname "$0")/merge.bin"
+if [[ -x "$MERGE_BIN" ]]; then
+    "$MERGE_BIN" -n "$NGRAM" -o "$OUTPUT" "${outputs[@]}"
+else
+    python3 "$(dirname "$0")/merge_ngram.py" -n "$NGRAM" -o "$OUTPUT" "${outputs[@]}"
+fi
 
 # Clean up intermediate files
 rm -f "$OUTDIR"/chunk.* "$OUTDIR"/ngram.* "$OUTDIR"/swap.*

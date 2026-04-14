@@ -1,7 +1,7 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 4
+NPROC = 16
 SIME = ../build
 
 UNITS = units.20260408.txt
@@ -16,6 +16,9 @@ chars.cnt: count.bin $(CORPUS)
 	./count.bin $(CORPUS) chars.cnt.txt
 
 count.bin: count.cc
+	g++ -O3 -std=c++17 $< -o $@
+
+merge.bin: merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
 # Step 2: generate pinyin dictionary
@@ -45,7 +48,7 @@ compact: $(OUT)/raw.slm
 	$(SIME)/sime-compact $(OUT)/raw.slm $(OUT)/sime.cnt
 
 clean:
-	rm -f count.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
+	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
 	rm -rf $(OUT)
 
 .PHONY: all chars dict count construct convert compact clean
