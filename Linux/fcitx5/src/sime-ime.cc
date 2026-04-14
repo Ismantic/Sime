@@ -137,10 +137,10 @@ void Sime::reloadConfig() {
 
 void Sime::initSime() {
     sime_ = std::make_unique<sime::Sime>(
-        *config_.triePath, *config_.lmPath);
+        *config_.dictPath, *config_.lmPath);
     if (!sime_->Ready()) {
         FCITX_ERROR() << "Sime: failed to load resources"
-                      << " trie=" << *config_.triePath
+                      << " dict=" << *config_.dictPath
                       << " lm=" << *config_.lmPath;
         sime_.reset();
     } else {
@@ -439,6 +439,7 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         panel.reset();
         ic->updatePreedit();
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+        cl = nullptr;
     }
 
     // Selection keys (1-9 by default): select candidate

@@ -78,7 +78,8 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
     // Build edges from num substrings
     for (std::size_t start = 0; start < n; ++start) {
         std::string key;
-        for (std::size_t end = start + 1; end <= std::min(start + 6, n); ++end) {
+        constexpr std::size_t MaxSyllableLen = 6;
+        for (std::size_t end = start + 1; end <= std::min(start + MaxSyllableLen, n); ++end) {
             key.push_back(nums[end - 1]);
             auto it = num_map_.find(key);
             if (it != num_map_.end()) {
@@ -96,7 +97,8 @@ std::vector<NineDecoder::Result> NineDecoder::Decode(
     net[n].links.push_back({n + 1, SentenceEnd});
 
     // Set beam width
-    const std::size_t beam = std::max<std::size_t>(num * 2, 16);
+    constexpr std::size_t MinNineBeam = 16;
+    const std::size_t beam = std::max<std::size_t>(num * 2, MinNineBeam);
     for (auto& col : net) {
         col.states.SetMaxTop(beam);
     }

@@ -45,24 +45,12 @@ bool DictConverter::LoadTokens(const std::filesystem::path& path) {
     token_ids_.clear();
     root_ = CreateNode();
 
-    std::ifstream in(path);
-    if (!in.is_open()) {
+    TokenMap map;
+    if (!LoadTokenMap(path, map)) {
         return false;
     }
-
-    std::string line;
-    std::uint32_t next_id = StartToken;
-    while (std::getline(in, line)) {
-        if (line.empty()) {
-            continue;
-        }
-        std::uint32_t id = next_id++;
-        if (tokens_.size() <= id) {
-            tokens_.resize(id + 1);
-        }
-        tokens_[id] = line;
-        token_ids_[line] = id;
-    }
+    tokens_ = std::move(map.tokens);
+    token_ids_ = std::move(map.ids);
     return true;
 }
 
