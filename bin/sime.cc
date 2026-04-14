@@ -14,7 +14,6 @@ namespace {
 struct Options {
     std::filesystem::path trie;
     std::filesystem::path cnt;
-    std::filesystem::path userdict;
     std::filesystem::path nine_model;
     std::size_t n = 5;
     std::size_t extra = 0;  // extra Layer 1 sentences for DecodeNumSentence
@@ -30,7 +29,6 @@ void PrintUsage() {
               << "\nOptions:\n"
               << "  --trie, -d <path>   Sime trie\n"
               << "  --cnt,  -c <path>   Sime LM model\n"
-              << "  --user, -u <path>   User dictionary\n"
               << "  -n <N>              Max results to display (default 5)\n"
               << "  -e <N>              Extra Layer 1 sentences for --num -s\n"
               << "                      (top sentence always returned; default 0)\n"
@@ -46,8 +44,6 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.trie = argv[++i];
         } else if ((arg == "--cnt" || arg == "-c") && i + 1 < argc) {
             opts.cnt = argv[++i];
-        } else if ((arg == "--user" || arg == "-u") && i + 1 < argc) {
-            opts.userdict = argv[++i];
         } else if (arg == "-n" && i + 1 < argc) {
             opts.n = static_cast<std::size_t>(std::stoul(argv[++i]));
         } else if (arg == "-e" && i + 1 < argc) {
@@ -159,14 +155,6 @@ int main(int argc, char** argv) {
     }
     std::cout << "Trie: " << opts.trie << "\n"
               << "Model: " << opts.cnt << "\n";
-
-    if (!opts.userdict.empty()) {
-        if (engine.LoadDict(opts.userdict)) {
-            std::cout << "User: " << opts.userdict << "\n";
-        } else {
-            std::cerr << "Warning: failed to load dict: " << opts.userdict << "\n";
-        }
-    }
 
     if (opts.num && opts.sentence) {
         std::cout << "Mode: num+sentence (digits 2-9, progressive)\n";

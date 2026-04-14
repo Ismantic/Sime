@@ -124,22 +124,6 @@ void Sime::initSime() {
         sime_.reset();
     } else {
         FCITX_INFO() << "Sime: resources loaded";
-        std::string udPath = *config_.userDictPath;
-        if (udPath.empty()) {
-            const char* xdg = std::getenv("XDG_DATA_HOME");
-            if (xdg && xdg[0]) {
-                udPath = std::string(xdg) + "/fcitx5/sime/user.dict";
-            } else {
-                const char* home = std::getenv("HOME");
-                if (home) {
-                    udPath = std::string(home) +
-                             "/.local/share/fcitx5/sime/user.dict";
-                }
-            }
-        }
-        if (!udPath.empty() && sime_->LoadDict(udPath)) {
-            FCITX_INFO() << "Sime: user dict loaded from " << udPath;
-        }
     }
 }
 

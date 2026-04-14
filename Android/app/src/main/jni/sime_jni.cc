@@ -64,21 +64,6 @@ Java_com_semantic_sime_SimeEngine_nativeLoadResources(
     return JNI_TRUE;
 }
 
-// 2. Load user dictionary.
-JNIEXPORT jboolean JNICALL
-Java_com_semantic_sime_SimeEngine_nativeLoadUserDict(
-    JNIEnv* env, jclass /*clazz*/,
-    jstring userDictPath) {
-
-    if (!g_sime) return JNI_FALSE;
-    auto path = jstringToString(env, userDictPath);
-    if (!g_sime->LoadDict(path)) {
-        LOGE("Failed to load dict: %s", path.c_str());
-        return JNI_FALSE;
-    }
-    LOGI("Dict loaded: %s", path.c_str());
-    return JNI_TRUE;
-}
 
 // 3. DecodeSentence: returns triplets [text, units, cnt, ...]
 JNIEXPORT jobjectArray JNICALL
