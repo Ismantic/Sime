@@ -4,8 +4,6 @@
 #include "score.h"
 #include "state.h"
 #include "trie.h"
-#include "unit.h"
-
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -91,10 +89,7 @@ private:
                                        std::size_t end);
 
     // Text extraction
-    std::u32string ToText(const Link& n,
-                          const std::vector<Unit>& units) const;
-    std::string SliceToUnits(const std::vector<Unit>& units,
-                             std::size_t start, std::size_t end) const;
+    std::u32string ToText(const Link& n) const;
 
     // Num-key lattice
     void InitNumNet(std::string_view start,

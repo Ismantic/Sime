@@ -93,7 +93,6 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
             // Split on apostrophe, register each piece
             std::vector<Unit> units;
             std::size_t pos = 0;
-            bool valid = true;
             while (pos <= u.size()) {
                 std::size_t next = u.find('\'', pos);
                 std::string_view seg = std::string_view(u).substr(
