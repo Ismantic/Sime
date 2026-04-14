@@ -204,7 +204,7 @@ void Sime::showPredictions(InputContext *ic) {
     auto &panel = ic->inputPanel();
     panel.reset();
 
-    if (!sime_ || st->context.empty()) {
+    if (!sime_ || st->context.empty() || !*config_.prediction) {
         st->predicting = false;
         ic->updatePreedit();
         ic->updateUserInterface(UserInterfaceComponent::InputPanel);
