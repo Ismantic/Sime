@@ -482,11 +482,6 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     return results;
 }
 
-bool Sime::LoadDict(const std::filesystem::path& path) {
-    if (!ready_) return false;
-    return dict_.Load(path);
-}
-
 std::vector<DecodeResult> Sime::DecodeStr(
     std::string_view input,
     std::size_t num) const {

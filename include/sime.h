@@ -4,7 +4,6 @@
 #include "score.h"
 #include "state.h"
 #include "trie.h"
-#include "dict.h"
 #include "unit.h"
 
 #include <filesystem>
@@ -29,8 +28,6 @@ public:
                 const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
-    bool LoadDict(const std::filesystem::path& path);
-
     // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
@@ -116,7 +113,6 @@ private:
     // Resources
     Trie trie_;
     Scorer scorer_;
-    Dict dict_;
     std::unordered_map<std::string, std::vector<Unit>> num_map_;
     std::unordered_map<std::string, std::vector<Unit>> unit_map_;
     bool ready_ = false;

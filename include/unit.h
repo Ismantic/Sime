@@ -2,9 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace sime {
@@ -62,35 +60,13 @@ public:
                               const char** i = nullptr,
                               const char** a = nullptr);
 
-    static const char* const* GetIs(std::size_t& count);
-    static const char* const* GetAs(std::size_t& count);
     static const UnitEntry* GetDict(std::size_t& count);
 
-    // Return all valid Units whose pinyin starts with the given prefix.
-    // e.g. "l" → [la, lai, lan, ..., le, ...], "zh" → [zha, zhai, ...]
-    // Also handles fuzzy: "z" matches z- AND zh-, "c"→c-/ch-, "s"→s-/sh-
-    static std::vector<Unit> ExpandIncomplete(const std::string& prefix);
-};
-
-struct ParseResult {
-    bool complete = false;
-    std::vector<Unit> units;
-    std::size_t matched_len = 0;
 };
 
 class UnitParser {
 public:
-    bool ParseStr(std::string_view token, std::vector<Unit>& units) const;
     bool ParseUnits(std::string_view input, std::vector<Unit>& units) const;
-
-    ParseResult ParseTokenEnhanced(std::string_view token,
-                                   bool allow_partial = true) const;
-
-    static bool IsDelimiter(char ch);
-
-private:
-    static const std::unordered_map<std::string, Unit>& UnitLookup();
-    static std::size_t MaxUnitSize();
 };
 
 } // namespace sime

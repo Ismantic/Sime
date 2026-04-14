@@ -51,7 +51,6 @@ public class SimeEngine {
 
     // ===== Native methods =====
     private static native boolean nativeLoadResources(String triePath, String modelPath);
-    private static native boolean nativeLoadUserDict(String userDictPath);
     private static native String[] nativeDecodeSentence(String input, int extra);
     private static native String[] nativeDecodeNumSentence(String prefixLetters, String digits, int extra);
     private static native boolean nativeIsReady();
