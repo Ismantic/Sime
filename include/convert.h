@@ -13,7 +13,7 @@
 
 namespace sime {
 
-class TrieConverter {
+class DictConverter {
 public:
     bool LoadTokens(const std::filesystem::path& path);
     bool Load(const std::filesystem::path& path);

@@ -11,7 +11,7 @@
 
 namespace sime {
 
-class Trie {
+class Dict {
 public:
     struct Move {
         Unit unit{};
@@ -26,8 +26,8 @@ public:
         const std::uint32_t* GetToken() const;
     };
 
-    Trie() = default;
-    ~Trie();
+    Dict() = default;
+    ~Dict();
 
     bool Load(const std::filesystem::path& path);
     void Clear();

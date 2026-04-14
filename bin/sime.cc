@@ -12,7 +12,7 @@
 namespace {
 
 struct Options {
-    std::filesystem::path trie;
+    std::filesystem::path dict;
     std::filesystem::path cnt;
     std::filesystem::path nine_model;
     std::size_t n = 5;
@@ -24,10 +24,10 @@ struct Options {
 
 void PrintUsage() {
     std::cerr << "Usage:\n"
-              << "  sime --trie <trie> --cnt <model> [options]\n"
+              << "  sime --dict <dict> --cnt <model> [options]\n"
               << "  sime --nine <nine_model> [options]\n"
               << "\nOptions:\n"
-              << "  --trie, -d <path>   Sime trie\n"
+              << "  --dict, -d <path>   Sime dict\n"
               << "  --cnt,  -c <path>   Sime LM model\n"
               << "  -n <N>              Max results to display (default 5)\n"
               << "  -e <N>              Extra Layer 1 sentences for --num -s\n"
@@ -40,8 +40,8 @@ void PrintUsage() {
 bool ParseArgs(int argc, char** argv, Options& opts) {
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if ((arg == "--trie" || arg == "-d") && i + 1 < argc) {
-            opts.trie = argv[++i];
+        if ((arg == "--dict" || arg == "-d") && i + 1 < argc) {
+            opts.dict = argv[++i];
         } else if ((arg == "--cnt" || arg == "-c") && i + 1 < argc) {
             opts.cnt = argv[++i];
         } else if (arg == "-n" && i + 1 < argc) {
@@ -64,7 +64,7 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    if (!opts.nine && (opts.trie.empty() || opts.cnt.empty())) {
+    if (!opts.nine && (opts.dict.empty() || opts.cnt.empty())) {
         PrintUsage();
         return false;
     }
@@ -148,12 +148,12 @@ int main(int argc, char** argv) {
     }
 
     // Sime mode
-    sime::Sime engine(opts.trie, opts.cnt);
+    sime::Sime engine(opts.dict, opts.cnt);
     if (!engine.Ready()) {
-        std::cerr << "Load failed: " << opts.trie << ", " << opts.cnt << "\n";
+        std::cerr << "Load failed: " << opts.dict << ", " << opts.cnt << "\n";
         return 1;
     }
-    std::cout << "Trie: " << opts.trie << "\n"
+    std::cout << "Dict: " << opts.dict << "\n"
               << "Model: " << opts.cnt << "\n";
 
     if (opts.num && opts.sentence) {

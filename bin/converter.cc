@@ -4,11 +4,11 @@
 
 int main(int argc, char* argv[]) {
     if (argc < 4) {
-        std::cerr << "Usage: sime-converter <token_dict.txt> <trie.bin> <dict.txt>...\n";
+        std::cerr << "Usage: sime-converter <token_dict.txt> <dict.bin> <dict.txt>...\n";
         return 1;
     }
 
-    sime::TrieConverter converter;
+    sime::DictConverter converter;
     if (!converter.LoadTokens(argv[1])) {
         std::cerr << "sime-converter failed: load tokens\n";
         return 1;
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
         }
     }
     if (!converter.Write(argv[2])) {
-        std::cerr << "sime-converter failed: write trie\n";
+        std::cerr << "sime-converter failed: write dict\n";
         return 1;
     }
     return 0;

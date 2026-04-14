@@ -10,11 +10,11 @@ namespace sime {
 
 Sime::Sime(const std::filesystem::path& trie_path,
                          const std::filesystem::path& model_path) {
-    if (!trie_.Load(trie_path)) {
+    if (!dict_.Load(trie_path)) {
         return;
     }
     if (!scorer_.Load(model_path)) {
-        trie_.Clear();
+        dict_.Clear();
         return;
     }
     ready_ = true;
@@ -46,9 +46,9 @@ void Sime::InitNumNet(std::string_view start,
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    const Trie::Node* node, const std::string& acc) {
+                    const Dict::Node* node, const std::string& acc) {
         std::uint32_t count = 0;
-        const std::uint32_t* tokens = trie_.GetToken(node, count);
+        const std::uint32_t* tokens = dict_.GetToken(node, count);
         std::uint32_t gi = 0;
         while (gi < count) {
             const std::uint32_t* grp = tokens + gi;
@@ -68,7 +68,7 @@ void Sime::InitNumNet(std::string_view start,
     };
 
     auto walk = [&](auto& self, std::size_t s, std::size_t pos,
-                    const Trie::Node* node, const std::string& acc) -> void {
+                    const Dict::Node* node, const std::string& acc) -> void {
         if (!node || pos >= total) return;
 
         // === Prefix letter columns ===
@@ -81,17 +81,17 @@ void Sime::InitNumNet(std::string_view start,
                 return;
             }
 
-            // Pinyin syllable matches via piece().GetPieceMap()
+            // Piece matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
-                 end <= std::min(pos + MaxSyllableCnt, p); ++end) {
+                 end <= std::min(pos + piece().MaxLen(), p); ++end) {
                 char kc = start[end - 1];
                 if (kc == '\'') break;
                 key.push_back(kc);
                 auto it = piece().GetPieceMap().find(key);
                 if (it == piece().GetPieceMap().end()) continue;
                 for (const auto& u : it->second) {
-                    const Trie::Node* next = trie_.DoMove(node, u);
+                    const Dict::Node* next = dict_.DoMove(node, u);
                     if (!next) continue;
                     std::string new_acc =
                         append_py(acc, piece().Decode(u));
@@ -106,7 +106,7 @@ void Sime::InitNumNet(std::string_view start,
                 while (tail_end < p && start[tail_end] != '\'') ++tail_end;
                 if (tail_end == p) {
                     std::size_t tail_len = p - pos;
-                    if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
+                    if (tail_len > 0 && tail_len <= piece().MaxLen()) {
                         std::string tail_str(start.data() + pos, tail_len);
                         bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
                         if (!is_complete) {
@@ -115,8 +115,8 @@ void Sime::InitNumNet(std::string_view start,
                                 if (ukey.compare(0, tail_len, tail_str) != 0)
                                     continue;
                                 for (const auto& u : units) {
-                                    const Trie::Node* next =
-                                        trie_.DoMove(node, u);
+                                    const Dict::Node* next =
+                                        dict_.DoMove(node, u);
                                     if (!next) continue;
                                     std::string new_acc = append_py(
                                         acc, piece().Decode(u));
@@ -144,14 +144,14 @@ void Sime::InitNumNet(std::string_view start,
         // Pinyin syllable matches via piece().GetNumMap()
         std::string key;
         for (std::size_t dend = dpos + 1;
-             dend <= std::min(dpos + MaxSyllableCnt, d); ++dend) {
+             dend <= std::min(dpos + piece().MaxLen(), d); ++dend) {
             char ch = nums[dend - 1];
             if (ch == '\'') break;
             key.push_back(ch);
             auto it = piece().GetNumMap().find(key);
             if (it == piece().GetNumMap().end()) continue;
             for (const auto& u : it->second) {
-                const Trie::Node* next = trie_.DoMove(node, u);
+                const Dict::Node* next = dict_.DoMove(node, u);
                 if (!next) continue;
                 std::string new_acc = append_py(acc, piece().Decode(u));
                 const std::size_t new_col = p + dend;
@@ -168,12 +168,12 @@ void Sime::InitNumNet(std::string_view start,
             }
             if (dpos + tail_len == d) {
                 std::string tail(nums.substr(dpos, tail_len));
-                if (!tail.empty() && tail.size() <= MaxSyllableCnt) {
+                if (!tail.empty() && tail.size() <= piece().MaxLen()) {
                     for (const auto& [dkey, units] : piece().GetNumMap()) {
                         if (dkey.size() <= tail.size()) continue;
                         if (dkey.compare(0, tail.size(), tail) != 0) continue;
                         for (const auto& u : units) {
-                            const Trie::Node* next = trie_.DoMove(node, u);
+                            const Dict::Node* next = dict_.DoMove(node, u);
                             if (!next) continue;
                             std::string new_acc =
                                 append_py(acc, piece().Decode(u));
@@ -194,7 +194,7 @@ void Sime::InitNumNet(std::string_view start,
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
-        walk(walk, s, s, trie_.Root(), "");
+        walk(walk, s, s, dict_.Root(), "");
     }
     for (std::size_t i = 0; i < total; ++i) {
         PruneNode(net[i].es);
@@ -219,25 +219,7 @@ std::string Sime::ExtractUnits(const std::vector<Link>& path,
 std::string Sime::ExtractText(const std::vector<Link>& path) const {
     std::u32string u32;
     for (const auto& link : path) {
-        if (link.id == SentenceEnd || link.id == ScoreNotToken ||
-            link.id == NotToken) continue;
-        if (link.group_len > 1 && link.group) {
-            for (std::uint16_t gi = 0; gi < link.group_len; ++gi) {
-                TokenID pid = static_cast<TokenID>(
-                    link.group[gi] & GroupTokenMask);
-                const char32_t* chars = trie_.TokenAt(pid);
-                if (!chars) continue;
-                for (std::size_t i = 0; chars[i] != 0; ++i) {
-                    u32.push_back(chars[i]);
-                }
-            }
-        } else {
-            const char32_t* chars = trie_.TokenAt(link.id);
-            if (!chars) continue;
-            for (std::size_t i = 0; chars[i] != 0; ++i) {
-                u32.push_back(chars[i]);
-            }
-        }
+        u32 += ToText(link);
     }
     return ustr::FromU32(u32);
 }
@@ -302,36 +284,14 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     // are included. Scoring is unigram (Scorer::Pos{}, no LM context).
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
-    std::size_t word_count = 0;
-
     for (const auto& edge : net[0].es) {
         if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
 
-        std::u32string text_u32;
-        if (edge.group_len > 1 && edge.group) {
-            for (std::uint16_t gi = 0; gi < edge.group_len; ++gi) {
-                TokenID pid = static_cast<TokenID>(
-                    edge.group[gi] & GroupTokenMask);
-                const char32_t* chars = trie_.TokenAt(pid);
-                if (chars) {
-                    for (std::size_t i = 0; chars[i] != 0; ++i)
-                        text_u32.push_back(chars[i]);
-                }
-            }
-        } else {
-            const char32_t* chars = trie_.TokenAt(edge.id);
-            if (chars) {
-                for (std::size_t i = 0; chars[i] != 0; ++i)
-                    text_u32.push_back(chars[i]);
-            }
-        }
+        std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
 
         std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
-
-        bool is_single_char = (text_u32.size() == 1);
-        if (!is_single_char && ++word_count > MaxPerPrefix) continue;
 
         std::size_t distance = total - edge.end;
         float_t dist_penalty =
@@ -383,21 +343,16 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     Process(net);
 
     auto tail_states = net.back().states.GetStates();
+    std::unordered_set<std::string> dedup;
     for (std::size_t rank = 0;
          rank < tail_states.size() && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], total + 1);
         std::string text = ExtractText(path);
-        if (text.empty()) continue;
-        bool dup = false;
-        for (const auto& existing : results) {
-            if (existing.text == text) { dup = true; break; }
-        }
-        if (!dup) {
-            std::string py = ExtractUnits(path, pm);
-            results.push_back({std::move(text), std::move(py),
-                               -tail_states[rank].score,
-                               start.size() + nums.size()});
-        }
+        if (text.empty() || !dedup.insert(text).second) continue;
+        std::string py = ExtractUnits(path, pm);
+        results.push_back({std::move(text), std::move(py),
+                           -tail_states[rank].score,
+                           start.size() + nums.size()});
     }
 
     return results;
@@ -441,22 +396,11 @@ std::vector<DecodeResult> Sime::DecodeStr(
          rank < tail_states.size() && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], net.size() - 1);
         if (path.empty()) continue;
-
-        std::u32string composed;
-        for (const auto& w : path) {
-            composed += ToText(w);
-        }
-        if (composed.empty()) continue;
-
-        std::string text_utf8 = ustr::FromU32(composed);
-        if (!dedup.insert(text_utf8).second) continue;
-
-        DecodeResult r;
-        r.text = std::move(text_utf8);
-        r.units = ExtractUnits(path, pm);
-        r.score = -tail_states[rank].score;
-        r.cnt = input.size();
-        results.push_back(std::move(r));
+        std::string text = ExtractText(path);
+        if (text.empty() || !dedup.insert(text).second) continue;
+        std::string py = ExtractUnits(path, pm);
+        results.push_back({std::move(text), std::move(py),
+                           -tail_states[rank].score, input.size()});
     }
     return results;
 }
@@ -469,9 +413,9 @@ void Sime::InitNet(std::string_view input,
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    const Trie::Node* node, const std::string& acc) {
+                    const Dict::Node* node, const std::string& acc) {
         std::uint32_t count = 0;
-        const std::uint32_t* tokens = trie_.GetToken(node, count);
+        const std::uint32_t* tokens = dict_.GetToken(node, count);
         std::uint32_t gi = 0;
         while (gi < count) {
             const std::uint32_t* grp = tokens + gi;
@@ -498,7 +442,7 @@ void Sime::InitNet(std::string_view input,
         }
 
         auto walk = [&](auto& self, std::size_t pos,
-                        const Trie::Node* node,
+                        const Dict::Node* node,
                         const std::string& acc) -> void {
             if (!node || pos >= total) return;
 
@@ -511,14 +455,14 @@ void Sime::InitNet(std::string_view input,
             // 1. Piece matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
-                 end <= std::min(pos + MaxSyllableCnt, total); ++end) {
+                 end <= std::min(pos + piece().MaxLen(), total); ++end) {
                 char ch = input[end - 1];
                 if (ch == '\'') break;  // Don't extend past boundary.
                 key.push_back(ch);
                 auto it = piece().GetPieceMap().find(key);
                 if (it == piece().GetPieceMap().end()) continue;
                 for (const auto& u : it->second) {
-                    const Trie::Node* next = trie_.DoMove(node, u);
+                    const Dict::Node* next = dict_.DoMove(node, u);
                     if (!next) continue;
                     std::string new_acc =
                         append_py(acc, piece().Decode(u));
@@ -532,7 +476,7 @@ void Sime::InitNet(std::string_view input,
             //    Only fires when the tail is NOT itself a complete piece.
             {
                 std::size_t tail_len = total - pos;
-                if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
+                if (tail_len > 0 && tail_len <= piece().MaxLen()) {
                     std::string tail_str(input.data() + pos, tail_len);
                     std::string_view tail(tail_str);
                     bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
@@ -541,8 +485,8 @@ void Sime::InitNet(std::string_view input,
                         if (ukey.size() <= tail_len) continue;
                         if (ukey.compare(0, tail_len, tail) != 0) continue;
                         for (const auto& u : units) {
-                            const Trie::Node* next =
-                                trie_.DoMove(node, u);
+                            const Dict::Node* next =
+                                dict_.DoMove(node, u);
                             if (!next) continue;
                             std::string new_acc =
                                 append_py(acc, piece().Decode(u));
@@ -554,7 +498,7 @@ void Sime::InitNet(std::string_view input,
 
         };
 
-        walk(walk, s, trie_.Root(), "");
+        walk(walk, s, dict_.Root(), "");
     }
 
     for (std::size_t i = 0; i < total; ++i) {
@@ -676,7 +620,7 @@ std::u32string Sime::ToText(const Link& n) const {
         for (std::uint16_t gi = 0; gi < n.group_len; ++gi) {
             TokenID pid = static_cast<TokenID>(
                 n.group[gi] & GroupTokenMask);
-            const char32_t* chars = trie_.TokenAt(pid);
+            const char32_t* chars = dict_.TokenAt(pid);
             if (chars) {
                 for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
                     buffer.push_back(chars[i]);
@@ -684,7 +628,7 @@ std::u32string Sime::ToText(const Link& n) const {
             }
         }
     } else {
-        const char32_t* chars = trie_.TokenAt(n.id);
+        const char32_t* chars = dict_.TokenAt(n.id);
         if (chars) {
             for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
                 buffer.push_back(chars[i]);
@@ -739,20 +683,11 @@ std::vector<DecodeResult> Sime::DecodeSentence(
              rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
-            std::u32string composed;
-            for (const auto& w : path) {
-                composed += ToText(w);
-            }
-            if (composed.empty()) continue;
-            std::string text_utf8 = ustr::FromU32(composed);
-            if (!dedup.insert(text_utf8).second) continue;
-
-            DecodeResult r;
-            r.text = std::move(text_utf8);
-            r.units = ExtractUnits(path, pm);
-            r.score = -tail[rank].score;
-            r.cnt = input.size();
-            results.push_back(std::move(r));
+            std::string text = ExtractText(path);
+            if (text.empty() || !dedup.insert(text).second) continue;
+            std::string py = ExtractUnits(path, pm);
+            results.push_back({std::move(text), std::move(py),
+                               -tail[rank].score, input.size()});
         }
     }
 
@@ -761,8 +696,6 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     // === Layer 2: word/char alternatives at position 0 ===
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
-    std::size_t word_count = 0;
-
     for (const auto& edge : net[0].es) {
         if (edge.id == SentenceEnd) continue;
 
@@ -770,9 +703,6 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         if (text_u32.empty()) continue;
         std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
-
-        bool is_single_char = (text_u32.size() == 1);
-        if (!is_single_char && ++word_count > MaxPerPrefix) continue;
 
         std::size_t distance = total - edge.end;
         float_t dist_penalty =

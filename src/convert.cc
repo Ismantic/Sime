@@ -37,7 +37,7 @@ bool IsUnitChar(char ch) {
 
 } // namespace
 
-bool TrieConverter::LoadTokens(const std::filesystem::path& path) {
+bool DictConverter::LoadTokens(const std::filesystem::path& path) {
     nodes_.clear();
     order_.clear();
     metrics_.clear();
@@ -66,7 +66,7 @@ bool TrieConverter::LoadTokens(const std::filesystem::path& path) {
     return true;
 }
 
-bool TrieConverter::Load(const std::filesystem::path& path) {
+bool DictConverter::Load(const std::filesystem::path& path) {
     if (root_ == nullptr) {
         return false;
     }
@@ -83,12 +83,32 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
         if (!ParseLine(line, token, unit_strs)) {
             continue;
         }
+        std::vector<std::uint32_t> id_group;
         auto it = token_ids_.find(token);
-        if (it == token_ids_.end()) {
-            continue;
+        if (it != token_ids_.end()) {
+            id_group.push_back(it->second);
+        } else {
+            // Token not in vocab — decompose by pieces into token IDs.
+            // e.g. "iPhone" with pieces "i'Ph'one" → {id_i, id_Ph, id_one}
+            // Use the first unit_str to determine the decomposition.
+            if (unit_strs.empty()) continue;
+            const auto& u = unit_strs[0];
+            std::size_t pos = 0;
+            bool valid = true;
+            while (pos <= u.size()) {
+                std::size_t next = u.find('\'', pos);
+                std::string seg(u, pos, next == std::string::npos
+                                        ? std::string::npos : next - pos);
+                if (!seg.empty()) {
+                    auto cit = token_ids_.find(seg);
+                    if (cit == token_ids_.end()) { valid = false; break; }
+                    id_group.push_back(cit->second);
+                }
+                if (next == std::string::npos) break;
+                pos = next + 1;
+            }
+            if (!valid || id_group.empty()) continue;
         }
-        std::uint32_t id = it->second;
-        std::vector<std::uint32_t> id_group = {id};
         for (const auto& u : unit_strs) {
             // Split on apostrophe, register each piece
             std::vector<Unit> units;
@@ -112,7 +132,7 @@ bool TrieConverter::Load(const std::filesystem::path& path) {
     return true;
 }
 
-bool TrieConverter::ParseLine(const std::string& line,
+bool DictConverter::ParseLine(const std::string& line,
                               std::string& token,
                               std::vector<std::string>& units) const {
     units.clear();
@@ -161,7 +181,7 @@ bool TrieConverter::ParseLine(const std::string& line,
     return !units.empty();
 }
 
-void TrieConverter::InsertUnits(const std::vector<std::uint32_t>& ids,
+void DictConverter::InsertUnits(const std::vector<std::uint32_t>& ids,
                                 const std::vector<Unit>& units) {
     if (units.empty() || ids.empty() || root_ == nullptr) {
         return;
@@ -173,7 +193,7 @@ void TrieConverter::InsertUnits(const std::vector<std::uint32_t>& ids,
     InsertText(node, ids);
 }
 
-TrieConverter::Node* TrieConverter::CreateNode() {
+DictConverter::Node* DictConverter::CreateNode() {
     auto node = std::make_unique<Node>();
     Node* raw = node.get();
     nodes_.push_back(std::move(node));
@@ -181,7 +201,7 @@ TrieConverter::Node* TrieConverter::CreateNode() {
     return raw;
 }
 
-TrieConverter::Node* TrieConverter::InsertMove(Node* node, Unit u) {
+DictConverter::Node* DictConverter::InsertMove(Node* node, Unit u) {
     auto it = node->moves.find(u.value);
     if (it != node->moves.end()) {
         return it->second;
@@ -191,16 +211,16 @@ TrieConverter::Node* TrieConverter::InsertMove(Node* node, Unit u) {
     return c;
 }
 
-void TrieConverter::InsertText(Node* node,
+void DictConverter::InsertText(Node* node,
                                const std::vector<std::uint32_t>& ids) {
     node->ids.insert(ids);
 }
 
-std::size_t TrieConverter::Count() const {
+std::size_t DictConverter::Count() const {
     return tokens_.size();
 }
 
-std::vector<std::string> TrieConverter::Dump() const {
+std::vector<std::string> DictConverter::Dump() const {
     std::vector<std::string> result;
     result.reserve(tokens_.size());
     for (const auto& entry : tokens_) {
@@ -209,7 +229,7 @@ std::vector<std::string> TrieConverter::Dump() const {
     return result;
 }
 
-std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
+std::size_t DictConverter::SerializeTree(std::vector<char>& buffer) {
     metrics_.clear();
     const std::uint32_t header = 4 * sizeof(std::uint32_t);
     std::uint32_t offset = header;
@@ -234,7 +254,7 @@ std::size_t TrieConverter::SerializeTree(std::vector<char>& buffer) {
     return offset - header;
 }
 
-void TrieConverter::SerializeNode(const Node* node,
+void DictConverter::SerializeNode(const Node* node,
                                   const NodeSize& metrics,
                                   std::vector<char>& buffer) {
     auto* base =
@@ -275,7 +295,7 @@ void TrieConverter::SerializeNode(const Node* node,
     }
 }
 
-std::size_t TrieConverter::WriteTokenTable(std::vector<char>& buffer) {
+std::size_t DictConverter::WriteTokenTable(std::vector<char>& buffer) {
     std::vector<char32_t> table;
     for (const auto& entry : tokens_) {
         if (entry.empty()) {
@@ -293,7 +313,7 @@ std::size_t TrieConverter::WriteTokenTable(std::vector<char>& buffer) {
     return bytes;
 }
 
-bool TrieConverter::Write(const std::filesystem::path& output) {
+bool DictConverter::Write(const std::filesystem::path& output) {
     piece_.BuildMaps();
 
     constexpr std::size_t HeaderSize = 4 * sizeof(std::uint32_t);

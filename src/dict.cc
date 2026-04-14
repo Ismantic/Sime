@@ -1,4 +1,4 @@
-#include "trie.h"
+#include "dict.h"
 #include "ustr.h"
 
 #include <algorithm>
@@ -8,70 +8,70 @@
 
 namespace sime {
 
-const Trie::Move* Trie::Node::GetMove() const {
+const Dict::Move* Dict::Node::GetMove() const {
     const char* p = reinterpret_cast<const char*>(this + 1);
-    return reinterpret_cast<const Trie::Move*>(p);
+    return reinterpret_cast<const Dict::Move*>(p);
 }
 
-const std::uint32_t* Trie::Node::GetToken() const {
+const std::uint32_t* Dict::Node::GetToken() const {
     const char* p = 
         reinterpret_cast<const char*>(this + 1) + 
-        sizeof(Trie::Move) * move_count;
+        sizeof(Dict::Move) * move_count;
     return reinterpret_cast<const std::uint32_t*>(p);
 }
 
-Trie::~Trie() { Clear(); }
+Dict::~Dict() { Clear(); }
 
-void Trie::Clear() {
+void Dict::Clear() {
     blob_.clear();
     token_strs_.clear();
 }
 
-uint32_t Trie::NodeCount() const {
+uint32_t Dict::NodeCount() const {
     if (blob_.size() < sizeof(std::uint32_t)) {
         return 0;
     }
     return *reinterpret_cast<const std::uint32_t*>(blob_.data());
 }
 
-uint32_t Trie::TokenCount() const {
+uint32_t Dict::TokenCount() const {
     if (blob_.size() < 2 * sizeof(std::uint32_t)) {
         return 0;
     }
     return reinterpret_cast<const std::uint32_t*>(blob_.data())[1];
 }
 
-std::uint32_t Trie::TokenIndex() const {
+std::uint32_t Dict::TokenIndex() const {
     if (blob_.size() < 3 * sizeof(std::uint32_t)) {
         return 0;
     }
     return reinterpret_cast<const std::uint32_t*>(blob_.data())[2];
 }
 
-std::uint32_t Trie::PieceIndex() const {
+std::uint32_t Dict::PieceIndex() const {
     if (blob_.size() < 4 * sizeof(std::uint32_t)) {
         return 0;
     }
     return reinterpret_cast<const std::uint32_t*>(blob_.data())[3];
 }
 
-std::uint32_t Trie::RootIndex() const {
+std::uint32_t Dict::RootIndex() const {
     return 4U * static_cast<std::uint32_t>(sizeof(std::uint32_t));
 }
 
-const Trie::Node* Trie::NodeFrom(std::uint32_t i) const {
+const Dict::Node* Dict::NodeFrom(std::uint32_t i) const {
     if (blob_.empty() || i < RootIndex() || i >= blob_.size()) {
         return nullptr;
     }
     const char* p = blob_.data() + i;
-    return reinterpret_cast<const Trie::Node*>(p);
+    return reinterpret_cast<const Dict::Node*>(p);
 }
 
-const Trie::Node* Trie::Root() const {
+const Dict::Node* Dict::Root() const {
     return NodeFrom(RootIndex());
 }
 
-bool Trie::Load(const std::filesystem::path& path) {
+bool Dict::Load(const std::filesystem::path& path) {
     Clear();
 
     std::ifstream in(path, std::ios::binary);
@@ -112,7 +112,7 @@ bool Trie::Load(const std::filesystem::path& path) {
     return true;
 }
 
-const Trie::Node* Trie::DoMove(const Trie::Node* node, Unit u) const {
+const Dict::Node* Dict::DoMove(const Dict::Node* node, Unit u) const {
     if (node == nullptr || node->move_count == 0) {
         return nullptr;
     }
@@ -122,7 +122,7 @@ const Trie::Node* Trie::DoMove(const Trie::Node* node, Unit u) const {
         begin,
         end,
         u.value,
-        [](const Trie::Move& move, std::uint32_t value) {
+        [](const Dict::Move& move, std::uint32_t value) {
             return move.unit.value < value;
         });
     if (it == end || it->unit.value != u.value) {
@@ -131,7 +131,7 @@ const Trie::Node* Trie::DoMove(const Trie::Node* node, Unit u) const {
     return NodeFrom(it->next);
 }
 
-const std::uint32_t* Trie::GetToken(const Trie::Node* node, uint32_t& count) const {
+const std::uint32_t* Dict::GetToken(const Dict::Node* node, uint32_t& count) const {
     if (node == nullptr) {
         count = 0;
         return nullptr;
@@ -140,7 +140,7 @@ const std::uint32_t* Trie::GetToken(const Trie::Node* node, uint32_t& count) con
     return node->GetToken();
 }
 
-const char32_t* Trie::TokenAt(uint32_t i) const {
+const char32_t* Dict::TokenAt(uint32_t i) const {
     if (i >= token_strs_.size()) {
         return nullptr;
     }

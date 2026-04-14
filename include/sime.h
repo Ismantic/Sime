@@ -3,7 +3,7 @@
 #include "common.h"
 #include "score.h"
 #include "state.h"
-#include "trie.h"
+#include "dict.h"
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -43,8 +43,7 @@ public:
     // 1 + `extra` sentences (top sentence is always included; `extra`
     // additional alternatives are appended).
     // Layer 2: word/char alternatives anchored at the first digit
-    // column. Always returned in full (subject to MaxPerPrefix for
-    // multi-character entries). Both layers are scored against the
+    // column. Both layers are scored against the
     // LM context produced by the prefix `start`.
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
@@ -69,8 +68,6 @@ private:
     // Search parameters
     static constexpr std::size_t NodeSize = 40;
     static constexpr std::size_t BeamSize = 60;
-    static constexpr std::size_t MaxSyllableCnt = 6;
-    static constexpr std::size_t MaxPerPrefix = 15;
     static constexpr float_t DistancePenalty = 1.8;
 
     // Shared types
@@ -102,8 +99,8 @@ private:
                                          const UnitMap& pm);
 
     // Resources
-    const PieceTable& piece() const { return trie_.GetPieceTable(); }
-    Trie trie_;
+    const PieceTable& piece() const { return dict_.GetPieceTable(); }
+    Dict dict_;
     Scorer scorer_;
     bool ready_ = false;
 };
