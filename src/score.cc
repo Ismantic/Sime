@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <unordered_set>
 #include <utility>
 
 namespace sime {
@@ -202,38 +203,58 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
     std::vector<std::pair<TokenID, float_t>> result;
     if (num_ < 1) return result;
 
-    auto level = context.level;
-    auto index = context.index;
-
-    // Collect children of the context node
-    if (level < static_cast<std::uint32_t>(num_)) {
+    auto collect = [&](std::uint32_t level, std::uint32_t index,
+                       std::vector<std::pair<TokenID, float_t>>& out) {
+        if (level >= static_cast<std::uint32_t>(num_)) return;
         const auto& nodes = node_levels_[level];
         std::size_t node_index = (level == 0) ? 0 : index;
-        if (node_index + 1 >= nodes.size()) return result;
+        if (node_index + 1 >= nodes.size()) return;
 
         auto begin = nodes[node_index].down;
         auto end = nodes[node_index + 1].down;
 
         if (level == static_cast<std::uint32_t>(num_ - 1)) {
-            // Children are leaves
             for (auto i = begin; i < end && i < leave_level_.size(); ++i) {
-                result.emplace_back(leave_level_[i].token,
-                                    pro_table_[leave_level_[i].pro]);
+                out.emplace_back(leave_level_[i].token,
+                                 pro_table_[leave_level_[i].pro]);
             }
         } else {
-            // Children are nodes at level+1
             const auto& children = node_levels_[level + 1];
             for (auto i = begin; i < end && i < children.size(); ++i) {
-                result.emplace_back(children[i].token,
-                                    pro_table_[children[i].pro]);
+                out.emplace_back(children[i].token,
+                                 pro_table_[children[i].pro]);
+            }
+        }
+    };
+
+    // Collect from current context level (high-order)
+    collect(context.level, context.index, result);
+    std::sort(result.begin(), result.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+
+    // If not enough, use backoff pointer to reach lower-order context
+    // (Back() won't work here — it only backs off when node has NO children)
+    if (result.size() < num && context.level > 1
+        && context.level < static_cast<std::uint32_t>(num_)) {
+        const auto& node = node_levels_[context.level][context.index];
+        Pos backed{node.boe, node.bon};
+        if (backed.level >= 1) {
+            // Collect backoff results, dedup against high-order
+            std::unordered_set<TokenID> seen;
+            for (const auto& [tid, _] : result) seen.insert(tid);
+
+            std::vector<std::pair<TokenID, float_t>> backoff;
+            collect(backed.level, backed.index, backoff);
+            std::sort(backoff.begin(), backoff.end(),
+                      [](const auto& a, const auto& b) { return a.second < b.second; });
+            for (const auto& entry : backoff) {
+                if (result.size() >= num) break;
+                if (seen.insert(entry.first).second) {
+                    result.push_back(entry);
+                }
             }
         }
     }
-    // Leaves have no children — result stays empty
-
-    // Sort by cost ascending (lower cost = higher probability)
-    std::sort(result.begin(), result.end(),
-              [](const auto& a, const auto& b) { return a.second < b.second; });
 
     if (result.size() > num) result.resize(num);
     return result;
