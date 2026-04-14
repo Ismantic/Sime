@@ -723,4 +723,90 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     return results;
 }
 
+std::vector<DecodeResult> Sime::NextGroups(
+    const std::vector<std::string_view>& context,
+    std::size_t num) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || num == 0) return results;
+
+    // Build scorer context: look up each word's token(s)
+    // Collect all token IDs first, then feed with Back() on all but the last.
+    std::vector<TokenID> ctx_ids;
+    for (auto word : context) {
+        std::u32string u32 = ustr::ToU32(word);
+        TokenID tid = dict_.TokenFromText(u32);
+        if (tid != NotToken) {
+            ctx_ids.push_back(tid);
+        } else {
+            for (auto ch : u32) {
+                tid = dict_.TokenFromText(std::u32string(1, ch));
+                if (tid != NotToken) ctx_ids.push_back(tid);
+            }
+        }
+    }
+
+    Scorer::Pos pos{};
+    for (std::size_t i = 0; i < ctx_ids.size(); ++i) {
+        Scorer::Pos next{};
+        scorer_.ScoreMove(pos, ctx_ids[i], next);
+        // Don't Back() the last token — keep the most specific context
+        if (i + 1 < ctx_ids.size()) scorer_.Back(next);
+        pos = next;
+    }
+
+    // Get successor tokens from LM
+    auto next_tokens = scorer_.NextTokens(pos, num * 4);
+
+    const auto& tg = dict_.TokenGroups();
+
+
+    struct Candidate {
+        std::string text;
+        float_t score;
+    };
+    std::vector<Candidate> candidates;
+
+    for (const auto& [tid, pro] : next_tokens) {
+        if (tid < StartToken) continue;
+
+        // Only emit words that exist as Groups in the dict
+        auto it = tg.find(tid);
+        if (it == tg.end()) continue;
+
+        for (const auto& group : it->second) {
+            Scorer::Pos g_pos = pos;
+            float_t g_score = 0.0;
+            std::u32string u32;
+            for (auto gid : group) {
+                Scorer::Pos g_next{};
+                g_score += scorer_.ScoreMove(g_pos, gid, g_next);
+                scorer_.Back(g_next);
+                g_pos = g_next;
+                const char32_t* gc = dict_.TokenAt(gid);
+                if (gc) {
+                    for (std::size_t i = 0; gc[i] != 0; ++i)
+                        u32.push_back(gc[i]);
+                }
+            }
+            if (!u32.empty()) {
+                candidates.push_back({ustr::FromU32(u32), g_score});
+            }
+        }
+    }
+
+    // Sort by cost ascending (lower cost = higher probability)
+    std::sort(candidates.begin(), candidates.end(),
+              [](const auto& a, const auto& b) { return a.score < b.score; });
+
+    // Dedup and collect
+    std::unordered_set<std::string> seen;
+    for (auto& c : candidates) {
+        if (results.size() >= num) break;
+        if (!seen.insert(c.text).second) continue;
+        results.push_back({std::move(c.text), {}, -c.score, 0});
+    }
+
+    return results;
+}
+
 } // namespace sime

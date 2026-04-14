@@ -25,6 +25,8 @@ Dict::~Dict() { Clear(); }
 void Dict::Clear() {
     blob_.clear();
     token_strs_.clear();
+    token_groups_.clear();
+    token_ids_.clear();
 }
 
 uint32_t Dict::NodeCount() const {
@@ -96,7 +98,12 @@ bool Dict::Load(const std::filesystem::path& path) {
     auto p = reinterpret_cast<const char32_t*>(base);
     for (uint32_t i = 0; i < count; ++i) {
         token_strs_.push_back(p);
+        const char32_t* start = p;
         while (*p++) {}
+        std::u32string key(start, static_cast<std::size_t>(p - 1 - start));
+        if (!key.empty()) {
+            token_ids_[key] = i;
+        }
     }
 
     // Load piece table
@@ -109,6 +116,7 @@ bool Dict::Load(const std::filesystem::path& path) {
         }
     }
 
+    BuildTokenGroups();
     return true;
 }
 
@@ -145,6 +153,110 @@ const char32_t* Dict::TokenAt(uint32_t i) const {
         return nullptr;
     }
     return token_strs_[i];
+}
+
+TokenID Dict::TokenFromText(const std::u32string& text) const {
+    auto it = token_ids_.find(text);
+    if (it != token_ids_.end()) return it->second;
+    return NotToken;
+}
+
+std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
+    std::string_view pieces, std::size_t num) const {
+    std::vector<std::vector<std::uint32_t>> result;
+    if (num == 0) return result;
+
+    // Walk piece path to anchor node
+    const Node* node = Root();
+    if (!node) return result;
+
+    std::size_t pos = 0;
+    while (pos < pieces.size() && node) {
+        // Skip apostrophe separators
+        if (pieces[pos] == '\'') {
+            ++pos;
+            continue;
+        }
+        std::size_t next = pieces.find('\'', pos);
+        std::string_view seg = pieces.substr(
+            pos, next == std::string_view::npos ? std::string_view::npos
+                                                : next - pos);
+        if (seg.empty()) break;
+        Unit u = piece_.Encode(seg);
+        if (u.value == 0) return result;  // unknown piece
+        node = DoMove(node, u);
+        pos = (next == std::string_view::npos) ? pieces.size() : next + 1;
+    }
+    if (!node) return result;
+
+    // BFS subtree, collect Groups
+    std::vector<const Node*> queue;
+    queue.push_back(node);
+    std::size_t head = 0;
+    while (head < queue.size() && result.size() < num) {
+        const Node* cur = queue[head++];
+
+        // Collect groups at this node (skip anchor itself)
+        if (cur != node && cur->count > 0) {
+            const std::uint32_t* tokens = cur->GetToken();
+            std::uint32_t gi = 0;
+            while (gi < cur->count && result.size() < num) {
+                std::vector<std::uint32_t> group;
+                do {
+                    group.push_back(tokens[gi] & GroupTokenMask);
+                    bool is_end = (tokens[gi] & GroupEnd) != 0;
+                    ++gi;
+                    if (is_end) break;
+                } while (gi < cur->count);
+                result.push_back(std::move(group));
+            }
+        }
+
+        // Enqueue children
+        const auto* moves = cur->GetMove();
+        for (std::uint16_t i = 0; i < cur->move_count; ++i) {
+            const Node* child = DoMove(cur, Unit(moves[i].unit.value));
+            if (child) queue.push_back(child);
+        }
+    }
+    return result;
+}
+
+void Dict::BuildTokenGroups() {
+    token_groups_.clear();
+    const Node* root = Root();
+    if (!root) return;
+
+    // DFS the entire trie, collect all Groups
+    std::vector<const Node*> stack;
+    stack.push_back(root);
+    while (!stack.empty()) {
+        const Node* cur = stack.back();
+        stack.pop_back();
+        if (!cur) continue;
+
+        if (cur->count > 0) {
+            const std::uint32_t* tokens = cur->GetToken();
+            std::uint32_t gi = 0;
+            while (gi < cur->count) {
+                std::vector<TokenID> group;
+                do {
+                    group.push_back(
+                        static_cast<TokenID>(tokens[gi] & GroupTokenMask));
+                    bool is_end = (tokens[gi] & GroupEnd) != 0;
+                    ++gi;
+                    if (is_end) break;
+                } while (gi < cur->count);
+                token_groups_[group[0]].push_back(group);
+            }
+        }
+
+        const auto* moves = cur->GetMove();
+        for (std::uint16_t i = 0; i < cur->move_count; ++i) {
+            const Node* child = DoMove(cur, Unit(moves[i].unit.value));
+            if (child) stack.push_back(child);
+        }
+    }
 }
 
 } // namespace sime

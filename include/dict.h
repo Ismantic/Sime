@@ -7,6 +7,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace sime {
@@ -40,10 +43,20 @@ public:
     uint32_t TokenCount() const;
 
     const char32_t* TokenAt(uint32_t i) const;
+    TokenID TokenFromText(const std::u32string& text) const;
 
     const PieceTable& GetPieceTable() const { return piece_; }
 
+    // Walk piece path, BFS subtree, collect Groups (token ID sequences).
+    std::vector<std::vector<std::uint32_t>> GetGroups(
+        std::string_view pieces, std::size_t num) const;
+
+    // Reverse index: first TokenID → complete Group sequences containing it.
+    const std::unordered_map<TokenID, std::vector<std::vector<TokenID>>>&
+    TokenGroups() const { return token_groups_; }
+
 private:
+    void BuildTokenGroups();
     const Node* NodeFrom(std::uint32_t i) const;
     std::uint32_t RootIndex() const;
     std::uint32_t TokenIndex() const;
@@ -52,6 +65,8 @@ private:
     std::vector<char> blob_;
     std::vector<const char32_t*> token_strs_;
     PieceTable piece_;
+    std::unordered_map<TokenID, std::vector<std::vector<TokenID>>> token_groups_;
+    std::unordered_map<std::u32string, TokenID> token_ids_;
 };
 
 } // namespace sime

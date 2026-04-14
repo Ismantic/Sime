@@ -68,6 +68,22 @@ public:
 
     bool empty() const { return buffer.empty(); }
 
+    // Prediction context (recent committed words, persists across composing sessions)
+    std::vector<std::string> context;
+    bool predicting = false;
+
+    void pushContext(const std::string& text, int maxSize) {
+        context.push_back(text);
+        while (static_cast<int>(context.size()) > maxSize) {
+            context.erase(context.begin());
+        }
+    }
+
+    void clearContext() {
+        context.clear();
+        predicting = false;
+    }
+
     // Punctuation pairing state (persists across composing sessions)
     bool doubleQuoteOpen = false;
     bool singleQuoteOpen = false;
