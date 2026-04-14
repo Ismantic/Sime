@@ -75,9 +75,14 @@ private:
     static constexpr std::size_t MaxPerPrefix = 15;
     static constexpr float_t DistancePenalty = 1.8;
 
+    // Shared types
+    using UnitMap = std::unordered_map<std::uint64_t, std::string>;
+    static std::uint64_t EdgeKey(std::size_t start, std::size_t end, TokenID id);
+
     // Lattice building
-    void InitMixNet(std::string_view input,
-                    std::vector<Node>& net) const;
+    void InitNet(std::string_view input,
+                    std::vector<Node>& net,
+                    UnitMap* unit_map = nullptr) const;
     void PruneNode(std::vector<Link>& edges) const;
 
     // Beam search
@@ -92,16 +97,14 @@ private:
                              std::size_t start, std::size_t end) const;
 
     // Num-key lattice
-    using NumUnitMap = std::unordered_map<std::uint64_t, std::string>;
-    static std::uint64_t NumEdgeKey(std::size_t start, std::size_t end, TokenID id);
     void InitNumNet(std::string_view start,
                      std::string_view nums,
                      bool tail_expansion,
                      std::vector<Node>& net,
-                     NumUnitMap* unit_map = nullptr) const;
-    std::string ExtractNumText(const std::vector<Link>& path) const;
-    static std::string ExtractNumUnits(const std::vector<Link>& path,
-                                         const NumUnitMap& pm);
+                     UnitMap* unit_map = nullptr) const;
+    std::string ExtractText(const std::vector<Link>& path) const;
+    static std::string ExtractUnits(const std::vector<Link>& path,
+                                         const UnitMap& pm);
 
     // Resources
     const PieceTable& piece() const { return trie_.GetPieceTable(); }

@@ -22,7 +22,7 @@ Sime::Sime(const std::filesystem::path& trie_path,
 }
 
 
-std::uint64_t Sime::NumEdgeKey(std::size_t start, std::size_t end,
+std::uint64_t Sime::EdgeKey(std::size_t start, std::size_t end,
                                        TokenID id) {
     return (static_cast<std::uint64_t>(start) << 48) |
            (static_cast<std::uint64_t>(end) << 32) |
@@ -33,9 +33,9 @@ void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
                               bool tail_expansion,
                               std::vector<Node>& net,
-                              NumUnitMap* pm) const {
+                              UnitMap* pm) const {
     // Lattice layout:
-    //   columns [0, p)     — prefix letter columns (InitMixNet-style)
+    //   columns [0, p)     — prefix letter columns (InitNet-style)
     //   columns [p, p+d)   — digit columns (num_map + letter edges)
     //   column  p+d        — SentenceEnd
     //   column  p+d+1      — terminal
@@ -58,7 +58,7 @@ void Sime::InitNumNet(std::string_view start,
             if (gi < count) ++gi;
             auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
             net[s].es.push_back({s, new_col, tid, grp, glen});
-            if (pm) pm->emplace(NumEdgeKey(s, new_col, tid), acc);
+            if (pm) pm->emplace(EdgeKey(s, new_col, tid), acc);
         }
     };
 
@@ -203,13 +203,13 @@ void Sime::InitNumNet(std::string_view start,
     net[total].es.push_back({total, total + 1, SentenceEnd});
 }
 
-std::string Sime::ExtractNumUnits(const std::vector<Link>& path,
-                                            const NumUnitMap& pm) {
+std::string Sime::ExtractUnits(const std::vector<Link>& path,
+                                            const UnitMap& pm) {
     std::string py;
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
             link.id == NotToken) continue;
-        auto it = pm.find(NumEdgeKey(link.start, link.end, link.id));
+        auto it = pm.find(EdgeKey(link.start, link.end, link.id));
         if (it == pm.end()) continue;
         if (!py.empty()) py += '\'';
         py += it->second;
@@ -217,7 +217,7 @@ std::string Sime::ExtractNumUnits(const std::vector<Link>& path,
     return py;
 }
 
-std::string Sime::ExtractNumText(const std::vector<Link>& path) const {
+std::string Sime::ExtractText(const std::vector<Link>& path) const {
     std::u32string u32;
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
@@ -261,7 +261,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const std::size_t total = p + d;
 
     std::vector<Node> net;
-    NumUnitMap pm;
+    UnitMap pm;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
     InitNumNet(start, nums, can_tail_expand, net, &pm);
 
@@ -285,9 +285,9 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         for (std::size_t rank = 0;
              rank < scan && results.size() < full_limit; ++rank) {
             auto path = Backtrace(tail[rank], total + 1);
-            std::string text = ExtractNumText(path);
+            std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
-            std::string py = ExtractNumUnits(path, pm);
+            std::string py = ExtractUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
                                -tail[rank].score, full_cnt});
         }
@@ -341,7 +341,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         float_t score =
             -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
 
-        auto pit = pm.find(NumEdgeKey(edge.start, edge.end, edge.id));
+        auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
         std::size_t cnt = edge.end;
         results.push_back({std::move(text_utf8), std::move(edge_py),
@@ -375,7 +375,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     const std::size_t total = start.size() + nums.size();
 
     std::vector<Node> net;
-    NumUnitMap pm;
+    UnitMap pm;
     InitNumNet(start, nums, /*tail_expansion=*/false, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -387,14 +387,14 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     for (std::size_t rank = 0;
          rank < tail_states.size() && results.size() < max_top; ++rank) {
         auto path = Backtrace(tail_states[rank], total + 1);
-        std::string text = ExtractNumText(path);
+        std::string text = ExtractText(path);
         if (text.empty()) continue;
         bool dup = false;
         for (const auto& existing : results) {
             if (existing.text == text) { dup = true; break; }
         }
         if (!dup) {
-            std::string py = ExtractNumUnits(path, pm);
+            std::string py = ExtractUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
                                -tail_states[rank].score,
                                start.size() + nums.size()});
@@ -427,7 +427,8 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    InitMixNet(lower, net);
+    UnitMap pm;
+    InitNet(lower, net, &pm);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -453,6 +454,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
         DecodeResult r;
         r.text = std::move(text_utf8);
+        r.units = ExtractUnits(path, pm);
         r.score = -tail_states[rank].score;
         r.cnt = input.size();
         results.push_back(std::move(r));
@@ -460,11 +462,34 @@ std::vector<DecodeResult> Sime::DecodeStr(
     return results;
 }
 
-void Sime::InitMixNet(std::string_view input,
-                      std::vector<Node>& net) const {
+void Sime::InitNet(std::string_view input,
+                      std::vector<Node>& net,
+                      UnitMap* pm) const {
     const std::size_t total = input.size();
     net.clear();
     net.resize(total + 2);
+
+    auto emit = [&](std::size_t s, std::size_t new_col,
+                    const Trie::Node* node, const std::string& acc) {
+        std::uint32_t count = 0;
+        const std::uint32_t* tokens = trie_.GetToken(node, count);
+        std::uint32_t gi = 0;
+        while (gi < count) {
+            const std::uint32_t* grp = tokens + gi;
+            std::uint16_t glen = 1;
+            while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
+            if (gi < count) ++gi;
+            auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
+            net[s].es.push_back({s, new_col, tid, grp, glen});
+            if (pm) pm->emplace(EdgeKey(s, new_col, tid), acc);
+        }
+    };
+
+    auto append_py = [](const std::string& acc, const char* seg) {
+        std::string s = seg ? seg : "";
+        if (acc.empty()) return s;
+        return acc + "'" + s;
+    };
 
     for (std::size_t s = 0; s < total; ++s) {
         // Boundary column: pass-through only.
@@ -473,19 +498,18 @@ void Sime::InitMixNet(std::string_view input,
             continue;
         }
 
-        auto& bucket = net[s].es;
-
         auto walk = [&](auto& self, std::size_t pos,
-                        const Trie::Node* node) -> void {
+                        const Trie::Node* node,
+                        const std::string& acc) -> void {
             if (!node || pos >= total) return;
 
             // Boundary column — skip forward without consuming trie.
             if (input[pos] == '\'') {
-                self(self, pos + 1, node);
+                self(self, pos + 1, node, acc);
                 return;
             }
 
-            // 1. Pinyin syllable matches via piece().GetPieceMap()
+            // 1. Piece matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + MaxSyllableCnt, total); ++end) {
@@ -497,29 +521,16 @@ void Sime::InitMixNet(std::string_view input,
                 for (const auto& u : it->second) {
                     const Trie::Node* next = trie_.DoMove(node, u);
                     if (!next) continue;
-                    std::uint32_t count = 0;
-                    const std::uint32_t* tokens =
-                        trie_.GetToken(next, count);
-                    std::uint32_t gi = 0;
-                    while (gi < count) {
-                        const std::uint32_t* grp = tokens + gi;
-                        std::uint16_t glen = 1;
-                        while (gi < count &&
-                               (tokens[gi] & GroupEnd) == 0) {
-                            ++gi; ++glen;
-                        }
-                        if (gi < count) ++gi;
-                        TokenID wid = static_cast<TokenID>(
-                            grp[0] & GroupTokenMask);
-                        bucket.push_back({s, end, wid, grp, glen});
-                    }
-                    self(self, end, next);
+                    std::string new_acc =
+                        append_py(acc, piece().Decode(u));
+                    emit(s, end, next, new_acc);
+                    self(self, end, next, new_acc);
                 }
             }
 
             // 2. Tail expansion: remaining input is a prefix of a longer
-            //    pinyin syllable that extends beyond the input end.
-            //    Only fires when the tail is NOT itself a complete syllable.
+            //    piece that extends beyond the input end.
+            //    Only fires when the tail is NOT itself a complete piece.
             {
                 std::size_t tail_len = total - pos;
                 if (tail_len > 0 && tail_len <= MaxSyllableCnt) {
@@ -534,23 +545,9 @@ void Sime::InitMixNet(std::string_view input,
                             const Trie::Node* next =
                                 trie_.DoMove(node, u);
                             if (!next) continue;
-                            std::uint32_t count = 0;
-                            const std::uint32_t* tokens =
-                                trie_.GetToken(next, count);
-                            std::uint32_t gi = 0;
-                            while (gi < count) {
-                                const std::uint32_t* grp = tokens + gi;
-                                std::uint16_t glen = 1;
-                                while (gi < count &&
-                                       (tokens[gi] & GroupEnd) == 0) {
-                                    ++gi; ++glen;
-                                }
-                                if (gi < count) ++gi;
-                                TokenID wid = static_cast<TokenID>(
-                                    grp[0] & GroupTokenMask);
-                                bucket.push_back(
-                                    {s, total, wid, grp, glen});
-                            }
+                            std::string new_acc =
+                                append_py(acc, piece().Decode(u));
+                            emit(s, total, next, new_acc);
                         }
                     }
                 }
@@ -558,7 +555,7 @@ void Sime::InitMixNet(std::string_view input,
 
         };
 
-        walk(walk, s, trie_.Root());
+        walk(walk, s, trie_.Root(), "");
     }
 
     for (std::size_t i = 0; i < total; ++i) {
@@ -879,7 +876,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t total = lower.size();
 
     std::vector<Node> net;
-    InitMixNet(lower, net);
+    UnitMap pm;
+    InitNet(lower, net, &pm);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -908,6 +906,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
             DecodeResult r;
             r.text = std::move(text_utf8);
+            r.units = ExtractUnits(path, pm);
             r.score = -tail[rank].score;
             r.cnt = input.size();
             results.push_back(std::move(r));
@@ -940,8 +939,12 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) -
             dist_penalty;
 
+        auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
+        std::string edge_py = (pit != pm.end()) ? pit->second : "";
+
         DecodeResult r;
         r.text = std::move(text_utf8);
+        r.units = std::move(edge_py);
         r.score = score;
         r.cnt = edge.end;
         results.push_back(std::move(r));

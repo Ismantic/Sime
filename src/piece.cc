@@ -47,10 +47,21 @@ void PieceTable::BuildMaps() {
     piece_map_.clear();
     num_map_.clear();
     for (std::uint32_t id = 1; id < pieces_.size(); ++id) {
-        if (pinyin_ids_.count(id) == 0) continue;
         Unit u(id);
         const auto& text = pieces_[id];
         piece_map_[text].push_back(u);
+        // TODO: 不确定小写key映射是否合适，先这样处理大小写匹配。
+        std::string lower;
+        bool has_upper = false;
+        for (char ch : text) {
+            char lc = static_cast<char>(
+                std::tolower(static_cast<unsigned char>(ch)));
+            lower.push_back(lc);
+            if (lc != ch) has_upper = true;
+        }
+        if (has_upper) {
+            piece_map_[lower].push_back(u);
+        }
         std::string nums = PieceToNum(text);
         if (!nums.empty()) {
             num_map_[nums].push_back(u);
