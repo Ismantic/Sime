@@ -82,19 +82,22 @@ static void commitPunctuation(InputContext *ic, SimeState *st,
 class SimeCandidateWord : public CandidateWord {
 public:
     SimeCandidateWord(Sime *engine, std::string text,
-                      std::string pinyin, std::size_t matchedLen)
+                      std::string pinyin,
+                      std::vector<sime::TokenID> tokens,
+                      std::size_t matchedLen)
         : CandidateWord(Text(text)), engine_(engine),
           text_(std::move(text)), pinyin_(std::move(pinyin)),
-          matchedLen_(matchedLen) {}
+          tokens_(std::move(tokens)), matchedLen_(matchedLen) {}
 
     void select(InputContext *ic) const override {
-        engine_->selectCandidate(ic, text_, pinyin_, matchedLen_);
+        engine_->selectCandidate(ic, text_, pinyin_, tokens_, matchedLen_);
     }
 
 private:
     Sime *engine_;
     std::string text_;
     std::string pinyin_;
+    std::vector<sime::TokenID> tokens_;
     std::size_t matchedLen_;
 };
 
@@ -102,14 +105,15 @@ private:
 
 class SimeNextCandidateWord : public CandidateWord {
 public:
-    SimeNextCandidateWord(Sime *engine, std::string text)
+    SimeNextCandidateWord(Sime *engine, std::string text,
+                          std::vector<sime::TokenID> tokens)
         : CandidateWord(Text(text)), engine_(engine),
-          text_(std::move(text)) {}
+          text_(std::move(text)), tokens_(std::move(tokens)) {}
 
     void select(InputContext *ic) const override {
         auto *st = ic->propertyFor(engine_->stateFactory());
         int maxCtx = engine_->contextSize();
-        st->pushContext(text_, maxCtx);
+        st->pushContext(text_, tokens_, maxCtx);
         ic->commitString(text_);
         engine_->showPredictions(ic);
     }
@@ -117,6 +121,7 @@ public:
 private:
     Sime *engine_;
     std::string text_;
+    std::vector<sime::TokenID> tokens_;
 };
 
 // ===== Engine =====
@@ -177,17 +182,18 @@ void Sime::resetState(InputContext *ic) {
 // Called when user selects a candidate
 void Sime::selectCandidate(InputContext *ic, const std::string& text,
                                   const std::string& pinyin,
+                                  const std::vector<sime::TokenID>& tokens,
                                   std::size_t matchedLen) {
     auto *st = state(ic);
 
     // Record selection
-    st->select(text, pinyin, matchedLen);
+    st->select(text, pinyin, tokens, matchedLen);
 
     // If all input consumed, commit everything
     if (st->fullySelected()) {
         // Push each selection into context
         for (const auto& sel : st->selections) {
-            st->pushContext(sel.text, contextSize());
+            st->pushContext(sel.text, sel.tokens, contextSize());
         }
         ic->commitString(st->committedText());
         st->reset();
@@ -211,11 +217,7 @@ void Sime::showPredictions(InputContext *ic) {
         return;
     }
 
-    std::vector<std::string_view> ctx;
-    ctx.reserve(st->context.size());
-    for (const auto& s : st->context) ctx.emplace_back(s);
-
-    auto results = sime_->NextGroups(ctx,
+    auto results = sime_->NextGroups(st->context_ids,
         static_cast<std::size_t>(*config_.pageSize));
 
     if (results.empty()) {
@@ -234,7 +236,7 @@ void Sime::showPredictions(InputContext *ic) {
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
     for (const auto& r : results) {
-        cl->append<SimeNextCandidateWord>(this, r.text);
+        cl->append<SimeNextCandidateWord>(this, r.text, r.tokens);
     }
     cl->setCursorIndex(0);
     panel.setCandidateList(std::move(cl));
@@ -365,7 +367,7 @@ void Sime::updateUI(InputContext *ic) {
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
     for (const auto &r : results) {
-        cl->append<SimeCandidateWord>(this, r.text, r.units, r.cnt);
+        cl->append<SimeCandidateWord>(this, r.text, r.units, r.tokens, r.cnt);
     }
 
     if (!results.empty()) {

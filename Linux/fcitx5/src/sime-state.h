@@ -2,6 +2,7 @@
 #define FCITX5_SIME_STATE_H
 
 #include <fcitx/inputcontextproperty.h>
+#include "common.h"
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@ public:
     struct Selection {
         std::string text;       // selected hanzi
         std::string pinyin;     // corresponding pinyin
+        std::vector<sime::TokenID> tokens;  // token IDs for LM context
         std::size_t consumed;   // bytes consumed from buffer
     };
     std::vector<Selection> selections;
@@ -51,8 +53,9 @@ public:
 
     // Select a candidate
     void select(const std::string& text, const std::string& pinyin,
+                const std::vector<sime::TokenID>& tokens,
                 std::size_t consumed) {
-        selections.push_back({text, pinyin, consumed});
+        selections.push_back({text, pinyin, tokens, consumed});
     }
 
     // Check if fully selected (all input consumed)
@@ -70,10 +73,14 @@ public:
 
     // Prediction context (recent committed words, persists across composing sessions)
     std::vector<std::string> context;
+    std::vector<sime::TokenID> context_ids;
     bool predicting = false;
 
-    void pushContext(const std::string& text, int maxSize) {
+    void pushContext(const std::string& text,
+                     const std::vector<sime::TokenID>& tokens,
+                     int maxSize) {
         context.push_back(text);
+        for (auto tid : tokens) context_ids.push_back(tid);
         while (static_cast<int>(context.size()) > maxSize) {
             context.erase(context.begin());
         }
@@ -81,6 +88,7 @@ public:
 
     void clearContext() {
         context.clear();
+        context_ids.clear();
         predicting = false;
     }
 

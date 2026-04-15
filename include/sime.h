@@ -13,8 +13,9 @@
 namespace sime {
 
 struct DecodeResult {
-    std::string text;        // UTF-8 hanzi
+    std::string text;        // UTF-8 display text (▁ prefix stripped)
     std::string units;       // segmented pinyin (e.g. "ni'hao")
+    std::vector<TokenID> tokens;  // token IDs for LM context
     float_t score = 0.0;    // larger is better (negative log probability negated)
     std::size_t cnt = 0;     // bytes of input consumed
 };
@@ -33,10 +34,9 @@ public:
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
                                              std::size_t extra = 0) const;
 
-    // Prediction: given confirmed words as context, suggest next words.
-    // Each element is a word text (e.g. "你", "好", "iPhone").
+    // Prediction: given confirmed token IDs as context, suggest next words.
     std::vector<DecodeResult> NextGroups(
-        const std::vector<std::string_view>& context,
+        const std::vector<TokenID>& context,
         std::size_t num = 10) const;
 
     // Num-key decode (T9/nine-key).
@@ -97,6 +97,8 @@ private:
     std::string ExtractText(const std::vector<Link>& path) const;
     static std::string ExtractUnits(const std::vector<Link>& path,
                                          const UnitMap& pm);
+    std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
+    static std::string StripLeadingMark(const std::string& text);
 
     // Num-key lattice
     void InitNumNet(std::string_view start,
