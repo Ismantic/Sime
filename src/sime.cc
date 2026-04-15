@@ -221,7 +221,35 @@ std::string Sime::ExtractText(const std::vector<Link>& path) const {
     for (const auto& link : path) {
         u32 += ToText(link);
     }
-    return ustr::FromU32(u32);
+    return StripLeadingMark(ustr::FromU32(u32));
+}
+
+std::vector<TokenID> Sime::ExtractTokens(
+    const std::vector<Link>& path) const {
+    std::vector<TokenID> ids;
+    for (const auto& link : path) {
+        if (link.id == ScoreNotToken || link.id == NotToken) continue;
+        if (link.group_len > 1 && link.group) {
+            for (std::uint16_t gi = 0; gi < link.group_len; ++gi) {
+                ids.push_back(static_cast<TokenID>(
+                    link.group[gi] & GroupTokenMask));
+            }
+        } else {
+            ids.push_back(link.id);
+        }
+    }
+    return ids;
+}
+
+std::string Sime::StripLeadingMark(const std::string& text) {
+    // Strip leading ▁ (U+2581, UTF-8: E2 96 81)
+    if (text.size() >= 3 &&
+        static_cast<unsigned char>(text[0]) == 0xE2 &&
+        static_cast<unsigned char>(text[1]) == 0x96 &&
+        static_cast<unsigned char>(text[2]) == 0x81) {
+        return text.substr(3);
+    }
+    return text;
 }
 
 std::vector<DecodeResult> Sime::DecodeNumSentence(
@@ -270,6 +298,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
+                               ExtractTokens(path),
                                -tail[rank].score, full_cnt});
         }
     }
@@ -277,11 +306,6 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: unigram alternatives anchored at column 0 ===
-    // Each edge in net[0].es is one trie token starting from column 0.
-    // The first pc columns of the lattice are fixed to start's syllables,
-    // so any emitted token's pinyin is some prefix of (start + nums).
-    // Multi-syllable trie tokens (e.g. 你好) are legitimate unigrams and
-    // are included. Scoring is unigram (Scorer::Pos{}, no LM context).
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     for (const auto& edge : net[0].es) {
@@ -290,7 +314,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
 
-        std::string text_utf8 = ustr::FromU32(text_u32);
+        std::string text_utf8 = StripLeadingMark(ustr::FromU32(text_u32));
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -304,6 +328,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
         std::size_t cnt = edge.end;
         results.push_back({std::move(text_utf8), std::move(edge_py),
+                           ExtractTokens({edge}),
                            score, cnt});
     }
 
@@ -351,6 +376,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
         if (text.empty() || !dedup.insert(text).second) continue;
         std::string py = ExtractUnits(path, pm);
         results.push_back({std::move(text), std::move(py),
+                           ExtractTokens(path),
                            -tail_states[rank].score,
                            start.size() + nums.size()});
     }
@@ -408,6 +434,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
         if (text.empty() || !dedup.insert(text).second) continue;
         std::string py = ExtractUnits(path, pm);
         results.push_back({std::move(text), std::move(py),
+                           ExtractTokens(path),
                            -tail_states[rank].score, input.size()});
     }
     return results;
@@ -741,6 +768,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractUnits(path, pm);
             results.push_back({std::move(text), std::move(py),
+                               ExtractTokens(path),
                                -tail[rank].score, input.size()});
         }
     }
@@ -755,7 +783,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
-        std::string text_utf8 = ustr::FromU32(text_u32);
+        std::string text_utf8 = StripLeadingMark(ustr::FromU32(text_u32));
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -769,6 +797,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
         std::string edge_py = (pit != pm.end()) ? pit->second : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
+                           ExtractTokens({edge}),
                            score, edge.end});
     }
 
@@ -783,33 +812,17 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 }
 
 std::vector<DecodeResult> Sime::NextGroups(
-    const std::vector<std::string_view>& context,
+    const std::vector<TokenID>& context,
     std::size_t num) const {
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0) return results;
 
-    // Build scorer context: look up each word's token(s)
-    // Collect all token IDs first, then feed with Back() on all but the last.
-    std::vector<TokenID> ctx_ids;
-    for (auto word : context) {
-        std::u32string u32 = ustr::ToU32(word);
-        TokenID tid = dict_.TokenFromText(u32);
-        if (tid != NotToken) {
-            ctx_ids.push_back(tid);
-        } else {
-            for (auto ch : u32) {
-                tid = dict_.TokenFromText(std::u32string(1, ch));
-                if (tid != NotToken) ctx_ids.push_back(tid);
-            }
-        }
-    }
-
     Scorer::Pos pos{};
-    for (std::size_t i = 0; i < ctx_ids.size(); ++i) {
+    for (std::size_t i = 0; i < context.size(); ++i) {
         Scorer::Pos next{};
-        scorer_.ScoreMove(pos, ctx_ids[i], next);
+        scorer_.ScoreMove(pos, context[i], next);
         // Don't Back() the last token — keep the most specific context
-        if (i + 1 < ctx_ids.size()) scorer_.Back(next);
+        if (i + 1 < context.size()) scorer_.Back(next);
         pos = next;
     }
 
@@ -820,6 +833,7 @@ std::vector<DecodeResult> Sime::NextGroups(
 
     struct Candidate {
         std::string text;
+        std::vector<TokenID> tokens;
         float_t score;
     };
     std::vector<Candidate> candidates;
@@ -835,11 +849,13 @@ std::vector<DecodeResult> Sime::NextGroups(
             Scorer::Pos g_pos = pos;
             float_t g_score = 0.0;
             std::u32string u32;
+            std::vector<TokenID> g_tokens;
             for (auto gid : group) {
                 Scorer::Pos g_next{};
                 g_score += scorer_.ScoreMove(g_pos, gid, g_next);
                 scorer_.Back(g_next);
                 g_pos = g_next;
+                g_tokens.push_back(gid);
                 const char32_t* gc = dict_.TokenAt(gid);
                 if (gc) {
                     for (std::size_t i = 0; gc[i] != 0; ++i)
@@ -847,7 +863,9 @@ std::vector<DecodeResult> Sime::NextGroups(
                 }
             }
             if (!u32.empty()) {
-                candidates.push_back({ustr::FromU32(u32), g_score});
+                candidates.push_back(
+                    {StripLeadingMark(ustr::FromU32(u32)),
+                     std::move(g_tokens), g_score});
             }
         }
     }
@@ -861,7 +879,8 @@ std::vector<DecodeResult> Sime::NextGroups(
     for (auto& c : candidates) {
         if (results.size() >= num) break;
         if (!seen.insert(c.text).second) continue;
-        results.push_back({std::move(c.text), {}, -c.score, 0});
+        results.push_back({std::move(c.text), {}, std::move(c.tokens),
+                           -c.score, 0});
     }
 
     return results;

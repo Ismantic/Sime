@@ -50,7 +50,9 @@ public:
 
     // Called by SimeCandidateWord on selection
     void selectCandidate(InputContext *ic, const std::string& text,
-                         const std::string& pinyin, std::size_t matchedLen);
+                         const std::string& pinyin,
+                         const std::vector<sime::TokenID>& tokens,
+                         std::size_t matchedLen);
 
     // Called by SimeNextCandidateWord
     void showPredictions(InputContext *ic);

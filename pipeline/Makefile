@@ -1,7 +1,7 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 16
+NPROC = 12
 SIME = ../build
 
 UNITS = units.20260408.txt

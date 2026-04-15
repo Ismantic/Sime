@@ -167,12 +167,14 @@ int main(int argc, char** argv) {
 
         std::string line;
         std::vector<std::string> context_strs;
+        std::vector<sime::TokenID> context_ids;
         while (true) {
             std::cout << "> " << std::flush;
             if (!std::getline(std::cin, line)) break;
             if (line == ":quit" || line == ":q") break;
             if (line == ":reset") {
                 context_strs.clear();
+                context_ids.clear();
                 std::cout << "  (context cleared)\n";
                 continue;
             }
@@ -187,15 +189,13 @@ int main(int argc, char** argv) {
             std::cout << "  decoded: " << decoded[0].text
                       << " [" << decoded[0].units << "]\n";
 
-            // Add decoded text to context
+            // Add decoded tokens to context
             context_strs.push_back(decoded[0].text);
+            for (auto tid : decoded[0].tokens) {
+                context_ids.push_back(tid);
+            }
 
-            // Build string_view context
-            std::vector<std::string_view> ctx;
-            ctx.reserve(context_strs.size());
-            for (const auto& s : context_strs) ctx.emplace_back(s);
-
-            auto nextions = engine.NextGroups(ctx, opts.n);
+            auto nextions = engine.NextGroups(context_ids, opts.n);
             if (nextions.empty()) {
                 std::cout << "  (no nextions)\n";
             } else {
@@ -267,6 +267,8 @@ int main(int argc, char** argv) {
                       << r.score;
             if (opts.sentence || (opts.num && opts.sentence))
                 std::cout << ", matched " << r.cnt << "/" << line.size();
+            std::cout << ", ids:";
+            for (auto tid : r.tokens) std::cout << " " << tid;
             std::cout << ")\n";
         }
     }
