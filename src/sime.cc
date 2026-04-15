@@ -100,7 +100,10 @@ void Sime::InitNumNet(std::string_view start,
                 }
             }
 
-            // Tail expansion: remaining prefix is an incomplete syllable
+            // Tail expansion: remaining prefix is an incomplete syllable.
+            // Skip only when the tail is already a complete pinyin syllable;
+            // non-pinyin pieces (e.g. single-letter initials registered for
+            // abbreviation support) still fall through to dynamic expansion.
             {
                 std::size_t tail_end = pos;
                 while (tail_end < p && start[tail_end] != '\'') ++tail_end;
@@ -108,8 +111,17 @@ void Sime::InitNumNet(std::string_view start,
                     std::size_t tail_len = p - pos;
                     if (tail_len > 0 && tail_len <= piece().MaxLen()) {
                         std::string tail_str(start.data() + pos, tail_len);
-                        bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
-                        if (!is_complete) {
+                        bool is_pinyin = false;
+                        auto pit = piece().GetPieceMap().find(tail_str);
+                        if (pit != piece().GetPieceMap().end()) {
+                            for (const auto& u : pit->second) {
+                                if (piece().IsPinyin(u)) {
+                                    is_pinyin = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!is_pinyin) {
                             auto matches = piece().PieceDat().FindWordsWithPrefix(
                                 tail_str, 256);
                             for (const auto& r : matches) {
@@ -509,7 +521,9 @@ void Sime::InitNet(std::string_view input,
                     emit(s, end, next, new_acc);
                     if (end == total) {
                         // Input exhausted after this piece.
-                        // Walk deeper to reach nodes with tokens.
+                        // Walk deeper via the trie's outgoing moves
+                        // (not piece_map_!) until a node with tokens
+                        // is reached.
                         constexpr std::size_t MaxDepth = 8;
                         auto deeper = [&](auto& dself,
                                           const Dict::Node* dn,
@@ -519,16 +533,17 @@ void Sime::InitNet(std::string_view input,
                             std::uint32_t tc = 0;
                             dict_.GetToken(dn, tc);
                             if (tc > 0) return;
-                            for (const auto& [dk, dvec] : piece().GetPieceMap()) {
-                                for (const auto& du : dvec) {
-                                    const Dict::Node* dn2 =
-                                        dict_.DoMove(dn, du);
-                                    if (!dn2) continue;
-                                    std::string da2 =
-                                        append_py(dacc, piece().Decode(du));
-                                    emit(s, total, dn2, da2);
-                                    dself(dself, dn2, da2, depth + 1);
-                                }
+                            const auto* moves = dn->GetMove();
+                            for (std::uint16_t mi = 0;
+                                 mi < dn->move_count; ++mi) {
+                                Unit du = moves[mi].unit;
+                                const Dict::Node* dn2 =
+                                    dict_.DoMove(dn, du);
+                                if (!dn2) continue;
+                                std::string da2 =
+                                    append_py(dacc, piece().Decode(du));
+                                emit(s, total, dn2, da2);
+                                dself(dself, dn2, da2, depth + 1);
                             }
                         };
                         deeper(deeper, next, new_acc, 0);
@@ -555,30 +570,36 @@ void Sime::InitNet(std::string_view input,
                             if (piece().IsPinyin(u)) { is_pinyin = true; break; }
                         }
                     }
-                    if (!is_pinyin)
-                    for (const auto& [ukey, units] : piece().GetPieceMap()) {
-                        if (ukey.size() <= tail_len) continue;
-                        if (ukey.compare(0, tail_len, tail) != 0) continue;
-                        for (const auto& u : units) {
-                            const Dict::Node* next =
-                                dict_.DoMove(node, u);
-                            if (!next) continue;
-                            std::string new_acc =
-                                append_py(acc, piece().Decode(u));
-                            emit(s, total, next, new_acc);
-                            // Walk deeper through remaining pieces
-                            // until nodes with tokens are reached.
-                            constexpr std::size_t MaxTailDepth = 8;
-                            auto deep = [&](auto& dself,
-                                            const Dict::Node* dn,
-                                            const std::string& dacc,
-                                            std::size_t depth) {
-                                if (depth >= MaxTailDepth) return;
-                                std::uint32_t tc = 0;
-                                dict_.GetToken(dn, tc);
-                                if (tc > 0) return;
-                                for (const auto& [dk, dvec] : piece().GetPieceMap()) {
-                                    for (const auto& du : dvec) {
+                    if (!is_pinyin) {
+                        auto matches = piece().PieceDat().FindWordsWithPrefix(
+                            tail_str, 256);
+                        for (const auto& r : matches) {
+                            if (r.length <= tail_len) continue;
+                            const auto& units =
+                                piece().UnitsByPieceDatIndex(r.value);
+                            for (const auto& u : units) {
+                                const Dict::Node* next =
+                                    dict_.DoMove(node, u);
+                                if (!next) continue;
+                                std::string new_acc =
+                                    append_py(acc, piece().Decode(u));
+                                emit(s, total, next, new_acc);
+                                // Walk deeper through the trie's own
+                                // outgoing moves (not piece_map_!) until
+                                // a node with tokens is reached.
+                                constexpr std::size_t MaxTailDepth = 8;
+                                auto deep = [&](auto& dself,
+                                                const Dict::Node* dn,
+                                                const std::string& dacc,
+                                                std::size_t depth) {
+                                    if (depth >= MaxTailDepth) return;
+                                    std::uint32_t tc = 0;
+                                    dict_.GetToken(dn, tc);
+                                    if (tc > 0) return;
+                                    const auto* moves = dn->GetMove();
+                                    for (std::uint16_t mi = 0;
+                                         mi < dn->move_count; ++mi) {
+                                        Unit du = moves[mi].unit;
                                         const Dict::Node* dn2 =
                                             dict_.DoMove(dn, du);
                                         if (!dn2) continue;
@@ -587,9 +608,9 @@ void Sime::InitNet(std::string_view input,
                                         emit(s, total, dn2, da2);
                                         dself(dself, dn2, da2, depth + 1);
                                     }
-                                }
-                            };
-                            deep(deep, next, new_acc, 0);
+                                };
+                                deep(deep, next, new_acc, 0);
+                            }
                         }
                     }
                 }
