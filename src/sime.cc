@@ -110,10 +110,12 @@ void Sime::InitNumNet(std::string_view start,
                         std::string tail_str(start.data() + pos, tail_len);
                         bool is_complete = piece().GetPieceMap().count(tail_str) > 0;
                         if (!is_complete) {
-                            for (const auto& [ukey, units] : piece().GetPieceMap()) {
-                                if (ukey.size() <= tail_len) continue;
-                                if (ukey.compare(0, tail_len, tail_str) != 0)
-                                    continue;
+                            auto matches = piece().PieceDat().FindWordsWithPrefix(
+                                tail_str, 256);
+                            for (const auto& r : matches) {
+                                if (r.length <= tail_len) continue;
+                                const auto& units =
+                                    piece().UnitsByPieceDatIndex(r.value);
                                 for (const auto& u : units) {
                                     const Dict::Node* next =
                                         dict_.DoMove(node, u);
@@ -169,9 +171,12 @@ void Sime::InitNumNet(std::string_view start,
             if (dpos + tail_len == d) {
                 std::string tail(nums.substr(dpos, tail_len));
                 if (!tail.empty() && tail.size() <= piece().MaxLen()) {
-                    for (const auto& [dkey, units] : piece().GetNumMap()) {
-                        if (dkey.size() <= tail.size()) continue;
-                        if (dkey.compare(0, tail.size(), tail) != 0) continue;
+                    auto matches = piece().NumDat().FindWordsWithPrefix(
+                        tail, 256);
+                    for (const auto& r : matches) {
+                        if (r.length <= tail.size()) continue;
+                        const auto& units =
+                            piece().UnitsByNumDatIndex(r.value);
                         for (const auto& u : units) {
                             const Dict::Node* next = dict_.DoMove(node, u);
                             if (!next) continue;

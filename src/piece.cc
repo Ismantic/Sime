@@ -1,5 +1,6 @@
 #include "piece.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstring>
@@ -69,6 +70,59 @@ void PieceTable::BuildMaps() {
             num_map_[nums].push_back(u);
         }
     }
+    BuildDats();
+}
+
+void PieceTable::BuildDats() {
+    // Build DAT for piece_map_ keys.
+    piece_dat_ = trie::DoubleArray<std::uint32_t>();
+    piece_dat_units_.clear();
+    if (!piece_map_.empty()) {
+        std::vector<std::string> keys;
+        keys.reserve(piece_map_.size());
+        for (const auto& kv : piece_map_) keys.push_back(kv.first);
+        std::sort(keys.begin(), keys.end());
+
+        std::vector<std::uint32_t> values;
+        values.reserve(keys.size());
+        piece_dat_units_.reserve(keys.size());
+        for (std::uint32_t i = 0; i < keys.size(); ++i) {
+            values.push_back(i);
+            piece_dat_units_.push_back(piece_map_.at(keys[i]));
+        }
+        piece_dat_.Build(keys, values);
+    }
+
+    // Build DAT for num_map_ keys.
+    num_dat_ = trie::DoubleArray<std::uint32_t>();
+    num_dat_units_.clear();
+    if (!num_map_.empty()) {
+        std::vector<std::string> keys;
+        keys.reserve(num_map_.size());
+        for (const auto& kv : num_map_) keys.push_back(kv.first);
+        std::sort(keys.begin(), keys.end());
+
+        std::vector<std::uint32_t> values;
+        values.reserve(keys.size());
+        num_dat_units_.reserve(keys.size());
+        for (std::uint32_t i = 0; i < keys.size(); ++i) {
+            values.push_back(i);
+            num_dat_units_.push_back(num_map_.at(keys[i]));
+        }
+        num_dat_.Build(keys, values);
+    }
+}
+
+const std::vector<Unit>& PieceTable::UnitsByPieceDatIndex(std::uint32_t i) const {
+    static const std::vector<Unit> empty;
+    if (i >= piece_dat_units_.size()) return empty;
+    return piece_dat_units_[i];
+}
+
+const std::vector<Unit>& PieceTable::UnitsByNumDatIndex(std::uint32_t i) const {
+    static const std::vector<Unit> empty;
+    if (i >= num_dat_units_.size()) return empty;
+    return num_dat_units_[i];
 }
 
 void PieceTable::Serialize(std::vector<char>& buffer) const {
