@@ -33,7 +33,8 @@ private:
     };
 
     bool ParseLine(const std::string& line,
-                   std::string& token,
+                   std::string& text,
+                   std::string& token_col,
                    std::vector<std::string>& units) const;
 
     void InsertUnits(const std::vector<std::uint32_t>& ids,

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <set>
 #include <string>
 #include <vector>
@@ -65,28 +66,29 @@ bool DictConverter::Load(const std::filesystem::path& path) {
     }
 
     std::string line;
-    std::string token;
+    std::string text;
+    std::string token_col;
     std::vector<std::string> unit_strs;
+    std::size_t line_num = 0;
+    std::size_t loaded = 0;
     while (std::getline(in, line)) {
-        if (!ParseLine(line, token, unit_strs)) {
+        ++line_num;
+        if (!ParseLine(line, text, token_col, unit_strs)) {
+            if (!line.empty()) {
+                std::cerr << "warning: skipping invalid line " << line_num
+                          << ": " << line.substr(0, 40) << "\n";
+            }
             continue;
         }
+        // Build token ID group from Token column (split on '/')
         std::vector<std::uint32_t> id_group;
-        auto it = token_ids_.find(token);
-        if (it != token_ids_.end()) {
-            id_group.push_back(it->second);
-        } else {
-            // Token not in vocab — decompose by pieces into token IDs.
-            // e.g. "iPhone" with pieces "i'Ph'one" → {id_i, id_Ph, id_one}
-            // Use the first unit_str to determine the decomposition.
-            if (unit_strs.empty()) continue;
-            const auto& u = unit_strs[0];
+        {
             std::size_t pos = 0;
             bool valid = true;
-            while (pos <= u.size()) {
-                std::size_t next = u.find('\'', pos);
-                std::string seg(u, pos, next == std::string::npos
-                                        ? std::string::npos : next - pos);
+            while (pos <= token_col.size()) {
+                std::size_t next = token_col.find('/', pos);
+                std::string seg(token_col, pos, next == std::string::npos
+                                                ? std::string::npos : next - pos);
                 if (!seg.empty()) {
                     auto cit = token_ids_.find(seg);
                     if (cit == token_ids_.end()) { valid = false; break; }
@@ -116,52 +118,50 @@ bool DictConverter::Load(const std::filesystem::path& path) {
             if (units.empty()) continue;
             InsertUnits(id_group, units);
         }
+        ++loaded;
     }
+    std::cerr << "loaded " << loaded << " entries from " << path << "\n";
     return true;
 }
 
 bool DictConverter::ParseLine(const std::string& line,
-                              std::string& token,
+                              std::string& text,
+                              std::string& token_col,
                               std::vector<std::string>& units) const {
+    text.clear();
+    token_col.clear();
     units.clear();
-    token.clear();
     if (line.empty() || line[0] == '\n') {
         return false;
     }
 
     const char* ptr = line.c_str();
-    while (*ptr && IsWhitespace(*ptr)) {
-        ++ptr;
-    }
-    if (*ptr == '\0') {
-        return false;
-    }
-    const char* start = ptr;
-    while (*ptr && !IsWhitespace(*ptr)) {
-        ++ptr;
-    }
-    token.assign(start, ptr - start);
 
+    // Column 1: Text
+    while (*ptr && IsWhitespace(*ptr)) ++ptr;
+    if (*ptr == '\0') return false;
+    const char* start = ptr;
+    while (*ptr && !IsWhitespace(*ptr)) ++ptr;
+    text.assign(start, ptr - start);
+
+    // Column 2: Token (separated by '/')
+    while (*ptr && IsWhitespace(*ptr)) ++ptr;
+    if (*ptr == '\0') return false;
+    start = ptr;
+    while (*ptr && !IsWhitespace(*ptr)) ++ptr;
+    token_col.assign(start, ptr - start);
+
+    // Column 3+: Units (piece decompositions)
     std::set<std::string> unique;
     while (*ptr) {
-        while (*ptr && IsWhitespace(*ptr)) {
-            ++ptr;
-        }
-        if (*ptr == '\0') {
-            break;
-        }
+        while (*ptr && IsWhitespace(*ptr)) ++ptr;
+        if (*ptr == '\0') break;
         const char* part_start = ptr;
-        while (*ptr && !IsWhitespace(*ptr)) {
-            ++ptr;
-        }
+        while (*ptr && !IsWhitespace(*ptr)) ++ptr;
         std::string part(part_start, ptr - part_start);
         std::size_t pos = 0;
-        while (pos < part.size() && IsUnitChar(part[pos])) {
-            ++pos;
-        }
-        if (pos == 0 || pos < part.size()) {
-            continue;
-        }
+        while (pos < part.size() && IsUnitChar(part[pos])) ++pos;
+        if (pos == 0 || pos < part.size()) continue;
         unique.insert(std::move(part));
     }
 

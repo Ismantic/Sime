@@ -150,16 +150,20 @@ def main():
     print(f"total tokens: {total} ({len(chars)} chars + {len(words)} words)", file=sys.stderr)
     print(f"written to {args.token_output}", file=sys.stderr)
 
-    # Step 2: 输出 pinyin dict（只有带拼音的条目）
+    # Step 2: 输出 pinyin dict（格式: Text Token Units）
     pinyin_count = 0
     with open(args.output, "w") as fout:
         for line in chars:
             if " " in line:
-                fout.write(line + "\n")
+                w = line[:line.index(" ")]
+                units = line[line.index(" ") + 1:]
+                fout.write(f"{w} {w} {units}\n")
                 pinyin_count += 1
         for line in words:
             if " " in line:
-                fout.write(line + "\n")
+                w = line[:line.index(" ")]
+                units = line[line.index(" ") + 1:]
+                fout.write(f"{w} {w} {units}\n")
                 pinyin_count += 1
     print(f"from rime-ice: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)
