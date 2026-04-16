@@ -12,7 +12,7 @@ EN_DICT = en_dict.cut.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
 
-all: $(OUT)/sime.dict $(OUT)/sime.cnt
+all: $(OUT)/sime.dict $(OUT)/sime.raw.cnt
 
 # Step 1: count all tokens in corpus
 chars.cnt: count.bin $(CORPUS)
@@ -37,7 +37,7 @@ count: sime.token.dict.txt $(CORPUS)
 construct: $(OUT)/raw.3gram sime.token.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.3gram \
 		-n 3 \
-		-o $(OUT)/raw.slm \
+		-o $(OUT)/sime.raw.cnt \
 		-c 0,2,5 \
 		-w $(VOCAB) \
 		-r $$(($(VOCAB) + 3)),3000000,3000000
@@ -46,9 +46,9 @@ construct: $(OUT)/raw.3gram sime.token.dict.txt
 convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)
 	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict sime.dict.txt $(EN_DICT)
 
-# Step 6: compact (quantize + compress)
-compact: $(OUT)/raw.slm
-	$(SIME)/sime-compact $(OUT)/raw.slm $(OUT)/sime.cnt
+# Step 6 (optional): compact (quantize + compress)
+compact: $(OUT)/sime.raw.cnt
+	$(SIME)/sime-compact $(OUT)/sime.raw.cnt $(OUT)/sime.cnt
 
 clean:
 	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
