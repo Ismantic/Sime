@@ -92,7 +92,6 @@ private:
     std::string ExtractText(const std::vector<Link>& path) const;
     static std::string ExtractUnits(const std::vector<Link>& path);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
-    static std::string StripLeadingMark(const std::string& text);
     float_t ScoreGroup(const Link& edge) const;
 
     // Num-key lattice

@@ -208,7 +208,7 @@ std::string Sime::ExtractText(const std::vector<Link>& path) const {
     for (const auto& link : path) {
         u32 += ToText(link);
     }
-    return StripLeadingMark(ustr::FromU32(u32));
+    return ustr::FromU32(u32);
 }
 
 std::vector<TokenID> Sime::ExtractTokens(
@@ -226,17 +226,6 @@ std::vector<TokenID> Sime::ExtractTokens(
         }
     }
     return ids;
-}
-
-std::string Sime::StripLeadingMark(const std::string& text) {
-    // Strip leading ▁ (U+2581, UTF-8: E2 96 81)
-    if (text.size() >= 3 &&
-        static_cast<unsigned char>(text[0]) == 0xE2 &&
-        static_cast<unsigned char>(text[1]) == 0x96 &&
-        static_cast<unsigned char>(text[2]) == 0x81) {
-        return text.substr(3);
-    }
-    return text;
 }
 
 float_t Sime::ScoreGroup(const Link& edge) const {
@@ -318,7 +307,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
 
-        std::string text_utf8 = StripLeadingMark(ustr::FromU32(text_u32));
+        std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -748,7 +737,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
-        std::string text_utf8 = StripLeadingMark(ustr::FromU32(text_u32));
+        std::string text_utf8 = ustr::FromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -822,7 +811,7 @@ std::vector<DecodeResult> Sime::NextGroups(
             }
             if (!u32.empty()) {
                 candidates.push_back(
-                    {StripLeadingMark(ustr::FromU32(u32)),
+                    {ustr::FromU32(u32),
                      std::move(g_tokens), g_score});
             }
         }
