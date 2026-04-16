@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--dict", default="output/sime.dict")
     parser.add_argument("--cnt", default="output/sime.cnt")
     parser.add_argument("--num", action="store_true", help="num-key mode")
+    parser.add_argument("-s", "--sentence", action="store_true", help="sentence mode")
     parser.add_argument("--errors", type=int, default=10)
     args = parser.parse_args()
 
@@ -49,6 +50,8 @@ def main():
 
     # Run Sime decoder
     cmd = [args.exe, "--dict", args.dict, "--cnt", args.cnt, "-n", "1"]
+    if args.sentence:
+        cmd.append("-s")
     if args.num:
         cmd.extend(["--num", "-s"])
 
