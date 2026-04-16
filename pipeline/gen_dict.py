@@ -151,24 +151,59 @@ def main():
     print(f"written to {args.token_output}", file=sys.stderr)
 
     # Step 2: 输出 pinyin dict（格式: Text Token Units）
+    # 多字词额外生成简拼变体（从前往后逐个缩写为首字母）
+    def abbrev_variants(unit_str):
+        """对 apostrophe 分隔的拼音生成简拼变体。
+        最后一个音节保持完整，前面的缩写为首字母，然后从前往后逐个恢复：
+        gui'sui'shou → [g's'shou, gui's'shou]
+        zhong'guo → [z'guo]
+        zhong'guo'zheng'fu → [z'g'z'fu, zhong'g'z'fu, zhong'guo'z'fu]
+        """
+        syllables = unit_str.split("'")
+        n = len(syllables)
+        if n < 2:
+            return []
+        # 前 n-1 个缩写为首字母，最后一个保持
+        initials = [s[0] for s in syllables[:n - 1]] + [syllables[-1]]
+        variants = []
+        # 全缩写（最后一个保持）
+        full_abbr = "'".join(initials)
+        if full_abbr != unit_str:
+            variants.append(full_abbr)
+        # 从前往后逐个恢复全拼
+        restored = list(initials)
+        for i in range(n - 2):
+            restored[i] = syllables[i]
+            variant = "'".join(restored)
+            if variant != unit_str and (not variants or variant != variants[-1]):
+                variants.append(variant)
+        return variants
+
     pinyin_count = 0
+    abbrev_count = 0
     with open(args.output, "w") as fout:
         for line in chars:
             if " " in line:
                 w = line[:line.index(" ")]
-                units = line[line.index(" ") + 1:]
-                fout.write(f"{w} {w} {units}\n")
+                units_str = line[line.index(" ") + 1:]
+                fout.write(f"{w} {w} {units_str}\n")
                 pinyin_count += 1
         for line in words:
             if " " in line:
                 w = line[:line.index(" ")]
-                units = line[line.index(" ") + 1:]
-                fout.write(f"{w} {w} {units}\n")
+                units_str = line[line.index(" ") + 1:]
+                fout.write(f"{w} {w} {units_str}\n")
                 pinyin_count += 1
+                # 生成简拼变体（仅对 apostrophe 分隔的多音节拼音）
+                if "'" in units_str:
+                    for variant in abbrev_variants(units_str):
+                        fout.write(f"{w} {w} {variant}\n")
+                        abbrev_count += 1
     print(f"from rime-ice: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)
     print(f"no pinyin (punct/digit/etc): {no_pinyin}", file=sys.stderr)
     print(f"pinyin entries: {pinyin_count}", file=sys.stderr)
+    print(f"abbreviated entries: {abbrev_count}", file=sys.stderr)
     print(f"written to {args.output}", file=sys.stderr)
 
 
