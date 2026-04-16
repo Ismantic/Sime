@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common.h"
-#include "compact.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -9,9 +8,6 @@
 #include <vector>
 
 namespace sime {
-
-constexpr std::size_t ProTableSize = 1u << ProBits;
-constexpr std::size_t BowTableSize = 1u << BowBits;
 
 class Scorer {
 public:
@@ -60,15 +56,15 @@ private:
     struct NodeEntry {
         TokenID token = 0;
         std::uint32_t down = 0;
-        std::uint32_t bow = 0;
-        std::uint32_t pro = 0;
+        float pro = 0.0f;
+        float bow = 0.0f;
         std::uint32_t bon = 0;
         std::uint32_t boe = 0;
     };
 
     struct LeaveEntry {
         TokenID token = 0;
-        std::uint32_t pro = 0;
+        float pro = 0.0f;
         std::uint32_t bon = 0;
         std::uint32_t boe = 0;
     };
@@ -80,9 +76,6 @@ private:
     std::vector<int> sizes_;
     std::vector<std::vector<NodeEntry>> node_levels_;
     std::vector<LeaveEntry> leave_level_;
-    std::vector<float> pro_table_;
-    std::vector<float> bow_table_;
-
 };
 
-} // namespace
+} // namespace sime

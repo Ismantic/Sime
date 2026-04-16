@@ -70,6 +70,8 @@ private:
     void CalcBow();
     const void* FindDown(int level, const Node* node, TokenID i) const;
     float_t GetPro(int level, const TokenID* tokens) const;
+    void GetBack(int length, const TokenID* seq,
+                 std::uint32_t& boe, std::uint32_t& bon) const;
 
     template <typename DownLevel>
     float_t CalcNodeBow(int level,

@@ -1,19 +1,29 @@
 #include "score.h"
 
 #include <algorithm>
-#include <cmath>
 #include <fstream>
-#include <limits>
 #include <unordered_set>
 #include <utility>
 
 namespace sime {
+
 namespace {
-constexpr std::uint32_t TokenMask = (1U << TokenBits) - 1U;
-constexpr std::uint32_t BowMask = (1U << BowBits) - 1U;
-constexpr std::uint32_t ProMask = (1U << ProBits) - 1U;
-constexpr std::uint32_t BonMask = (1U << BonBits) - 1U;
-constexpr std::uint32_t BoeMask = (1U << BoeBits) - 1U;
+
+struct DiskNode {
+    TokenID id = 0;
+    float pro = 0.0f;
+    std::uint32_t down = 0;
+    float bow = 0.0f;
+    std::uint32_t bon = 0;
+    std::uint32_t boe = 0;
+};
+
+struct DiskLeave {
+    TokenID id = 0;
+    float pro = 0.0f;
+    std::uint32_t bon = 0;
+    std::uint32_t boe = 0;
+};
 
 } // namespace
 
@@ -40,75 +50,36 @@ bool Scorer::Load(const std::filesystem::path& path) {
         return false;
     }
 
-    pro_table_.resize(ProTableSize);
-    if (!in.read(reinterpret_cast<char*>(pro_table_.data()),
-                 static_cast<std::streamsize>(pro_table_.size() * sizeof(float)))) {
-        Reset();
-        return false;
-    }
-
-    bow_table_.resize(BowTableSize);
-    if (!in.read(reinterpret_cast<char*>(bow_table_.data()),
-                 static_cast<std::streamsize>(bow_table_.size() * sizeof(float)))) {
-        Reset();
-        return false;
-    }
-
     node_levels_.resize(static_cast<std::size_t>(num_));
     for (int lvl = 0; lvl < num_; ++lvl) {
         int size = sizes_[static_cast<std::size_t>(lvl)];
-        if (size <= 0) {
-            Reset();
-            return false;
-        }
+        if (size <= 0) { Reset(); return false; }
         auto& nodes = node_levels_[static_cast<std::size_t>(lvl)];
         nodes.resize(static_cast<std::size_t>(size));
         for (int idx = 0; idx < size; ++idx) {
-            std::uint32_t w0 = 0;
-            std::uint32_t w1 = 0;
-            std::uint32_t w2 = 0;
-            if (!in.read(reinterpret_cast<char*>(&w0), sizeof(w0)) ||
-                !in.read(reinterpret_cast<char*>(&w1), sizeof(w1)) ||
-                !in.read(reinterpret_cast<char*>(&w2), sizeof(w2))) {
+            DiskNode dn;
+            if (!in.read(reinterpret_cast<char*>(&dn), sizeof(dn))) {
                 Reset();
                 return false;
             }
-            NodeEntry entry;
-            entry.token = static_cast<TokenID>(w0 & TokenMask);
-            entry.bow = (w0 >> TokenBits) & BowMask;
-            entry.pro = w1 & ProMask;
-            entry.down = (w1 >> DownLowBits) & DownLowMask;
-            entry.down |= ((w2 >> (BonBits + BoeBits)) & DownHighMask) << DownLowBits;
-            entry.bon = w2 & BonMask;
-            entry.boe = (w2 >> BonBits) & BoeMask;
-            nodes[static_cast<std::size_t>(idx)] = entry;
+            nodes[static_cast<std::size_t>(idx)] = {
+                dn.id, dn.down, dn.pro, dn.bow, dn.bon, dn.boe};
         }
     }
 
     int leave_size = sizes_.back();
-    if (leave_size <= 0) {
-        Reset();
-        return false;
-    }
+    if (leave_size <= 0) { Reset(); return false; }
     leave_level_.resize(static_cast<std::size_t>(leave_size));
     for (int idx = 0; idx < leave_size; ++idx) {
-        std::uint32_t w0 = 0;
-        std::uint32_t w1 = 0;
-        if (!in.read(reinterpret_cast<char*>(&w0), sizeof(w0)) ||
-            !in.read(reinterpret_cast<char*>(&w1), sizeof(w1))) {
+        DiskLeave dl;
+        if (!in.read(reinterpret_cast<char*>(&dl), sizeof(dl))) {
             Reset();
             return false;
         }
-        LeaveEntry entry;
-        entry.token = static_cast<TokenID>(w0 & TokenMask);
-        // LeafProLow / LeafProHigh defined in compact.h
-        std::uint32_t pro_low = (w0 >> TokenBits) & ((1U << LeafProLow) - 1U);
-        std::uint32_t pro_high = (w1 >> (BonBits + BoeBits)) & ((1U << LeafProHigh) - 1U);
-        entry.pro = (pro_high << LeafProLow) | pro_low;
-        entry.bon = w1 & BonMask;
-        entry.boe = (w1 >> BonBits) & BoeMask;
-        leave_level_[static_cast<std::size_t>(idx)] = entry;
+        leave_level_[static_cast<std::size_t>(idx)] = {
+            dl.id, dl.pro, dl.bon, dl.boe};
     }
+
     return true;
 }
 
@@ -117,8 +88,6 @@ void Scorer::Reset() {
     sizes_.clear();
     node_levels_.clear();
     leave_level_.clear();
-    pro_table_.clear();
-    bow_table_.clear();
 }
 
 void Scorer::Back(Pos& pos) const {
@@ -167,18 +136,18 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
             if (down_idx != end) {
                 r.level = static_cast<std::uint32_t>(num_);
                 r.index = static_cast<std::uint32_t>(down_idx);
-                return cost + pro_table_[leave_level_[down_idx].pro];
+                return cost + leave_level_[down_idx].pro;
             }
         } else {
             auto down_idx = GetNode(static_cast<int>(level + 1), begin, end, w);
             if (down_idx != end) {
                 r.level = level + 1;
                 r.index = static_cast<std::uint32_t>(down_idx);
-                return cost + pro_table_[node_levels_[level + 1][down_idx].pro];
+                return cost + node_levels_[level + 1][down_idx].pro;
             }
         }
 
-        cost += bow_table_[node.bow];
+        cost += node.bow;
         if (level == 0) {
             break;
         }
@@ -187,7 +156,7 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
     }
 
     r = Pos{};
-    return cost + pro_table_[node_levels_[0][0].pro];
+    return cost + node_levels_[0][0].pro;
 }
 
 float_t Scorer::UnknownPenalty() const {
@@ -195,46 +164,39 @@ float_t Scorer::UnknownPenalty() const {
         constexpr float_t DefaultUnknownPenalty = -20.0;
         return DefaultUnknownPenalty;
     }
-    return pro_table_[node_levels_[0][0].pro];
+    return node_levels_[0][0].pro;
 }
 
 std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
     Pos& context, std::size_t num) const {
     std::vector<std::pair<TokenID, float_t>> result;
-    if (num_ < 2) return result;  // unigram LM has no prediction
+    if (num_ < 2) return result;
 
-    // Back off from leaf or dead-end nodes until we find one with children.
-    // Stop at level == 0 (root) — its children are the global unigram
-    // distribution which has no contextual relevance.
     Pos ctx = context;
     while (true) {
         if (ctx.level == 0) return result;
 
-        // Leaf: always back off
         if (ctx.level >= static_cast<std::uint32_t>(num_)) {
             Back(ctx);
             if (ctx.level >= static_cast<std::uint32_t>(num_)) return result;
             continue;
         }
 
-        // Non-leaf: check if node has children
         const auto& nodes = node_levels_[ctx.level];
         std::size_t node_index = ctx.index;
         if (node_index + 1 >= nodes.size()) return result;
         auto begin = nodes[node_index].down;
         auto end = nodes[node_index + 1].down;
-        if (begin < end) break;  // has children
+        if (begin < end) break;
 
-        // Dead end: back off
         Pos backed = ctx;
         Back(backed);
         if (backed.level == ctx.level && backed.index == ctx.index) {
-            return result;  // stuck
+            return result;
         }
         ctx = backed;
     }
 
-    // Collect children from the resolved context node
     auto collect = [&](std::uint32_t level, std::uint32_t index,
                        std::vector<std::pair<TokenID, float_t>>& out) {
         if (level >= static_cast<std::uint32_t>(num_)) return;
@@ -246,14 +208,12 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
 
         if (level == static_cast<std::uint32_t>(num_ - 1)) {
             for (auto i = begin; i < end && i < leave_level_.size(); ++i) {
-                out.emplace_back(leave_level_[i].token,
-                                 pro_table_[leave_level_[i].pro]);
+                out.emplace_back(leave_level_[i].token, leave_level_[i].pro);
             }
         } else {
             const auto& children = node_levels_[level + 1];
             for (auto i = begin; i < end && i < children.size(); ++i) {
-                out.emplace_back(children[i].token,
-                                 pro_table_[children[i].pro]);
+                out.emplace_back(children[i].token, children[i].pro);
             }
         }
     };
@@ -262,7 +222,6 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
     std::sort(result.begin(), result.end(),
               [](const auto& a, const auto& b) { return a.second < b.second; });
 
-    // If not enough, supplement from backoff node (dedup against high-order)
     if (result.size() < num && ctx.level > 1) {
         const auto& node = node_levels_[ctx.level][ctx.index];
         Pos backed{node.boe, node.bon};
@@ -283,7 +242,7 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
         }
     }
 
-    context = ctx;  // write back resolved position
+    context = ctx;
     if (result.size() > num) result.resize(num);
     return result;
 }
@@ -292,19 +251,7 @@ std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
     std::vector<NGram> results;
     if (level < 1 || level > num_) return results;
 
-    // Helper: get token path from root to a node
-    // For level 1 (unigram): just the token at that node
-    // For level 2 (bigram): parent token + child token
-    // For level 3 (trigram): grandparent + parent + leaf token
-
-    // Model structure: node_levels_[0] = root (1 node)
-    //   its children in node_levels_[1] = unigram entries
-    //   their children in node_levels_[2] (if num>=3) or leave_level_ = bigram
-    //   leave_level_ = trigram (if num==3)
-
     if (level == 1) {
-        // Unigram: children of root node (node_levels_[0][0])
-        // They are in node_levels_[1] (range: root.down to root+1.down)
         if (num_ < 2 || node_levels_.size() < 2) return results;
         const auto& root = node_levels_[0];
         const auto& unigrams = node_levels_[1];
@@ -313,15 +260,13 @@ std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
         for (auto i = begin; i < end && i < unigrams.size(); ++i) {
             NGram ng;
             ng.tokens.push_back(unigrams[i].token);
-            ng.pro = pro_table_[unigrams[i].pro];
+            ng.pro = unigrams[i].pro;
             results.push_back(std::move(ng));
         }
     } else if (level == 2) {
-        // Bigram: for each unigram, enumerate its children
         if (num_ < 2 || node_levels_.size() < 2) return results;
         const auto& unigrams = node_levels_[1];
         if (num_ == 2) {
-            // Children are in leave_level_
             for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
                 auto begin = unigrams[i].down;
                 auto end = unigrams[i + 1].down;
@@ -329,12 +274,11 @@ std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
                     NGram ng;
                     ng.tokens.push_back(unigrams[i].token);
                     ng.tokens.push_back(leave_level_[j].token);
-                    ng.pro = pro_table_[leave_level_[j].pro];
+                    ng.pro = leave_level_[j].pro;
                     results.push_back(std::move(ng));
                 }
             }
         } else {
-            // num_ >= 3: children are in node_levels_[2]
             const auto& bigrams = node_levels_[2];
             for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
                 auto begin = unigrams[i].down;
@@ -343,13 +287,12 @@ std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
                     NGram ng;
                     ng.tokens.push_back(unigrams[i].token);
                     ng.tokens.push_back(bigrams[j].token);
-                    ng.pro = pro_table_[bigrams[j].pro];
+                    ng.pro = bigrams[j].pro;
                     results.push_back(std::move(ng));
                 }
             }
         }
     } else if (level == 3 && num_ >= 3) {
-        // Trigram: unigram → bigram → leaf
         const auto& unigrams = node_levels_[1];
         const auto& bigrams = node_levels_[2];
         for (std::size_t i = 0; i + 1 < unigrams.size(); ++i) {
@@ -363,7 +306,7 @@ std::vector<Scorer::NGram> Scorer::DumpLevel(int level) const {
                     ng.tokens.push_back(unigrams[i].token);
                     ng.tokens.push_back(bigrams[j].token);
                     ng.tokens.push_back(leave_level_[k].token);
-                    ng.pro = pro_table_[leave_level_[k].pro];
+                    ng.pro = leave_level_[k].pro;
                     results.push_back(std::move(ng));
                 }
             }
@@ -380,9 +323,10 @@ std::size_t Scorer::GetNode(int level,
     const auto& nodes = node_levels_[static_cast<std::size_t>(level)];
     auto first = nodes.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = nodes.begin() + static_cast<std::ptrdiff_t>(end);
-    auto it = std::lower_bound(first, last, w, [](const NodeEntry& node, TokenID token) {
-        return node.token < token;
-    });
+    auto it = std::lower_bound(first, last, w,
+        [](const NodeEntry& node, TokenID token) {
+            return node.token < token;
+        });
     if (it == last || it->token != w) {
         return end;
     }
@@ -390,13 +334,14 @@ std::size_t Scorer::GetNode(int level,
 }
 
 std::size_t Scorer::GetLeave(std::size_t begin,
-                             std::size_t end, 
+                             std::size_t end,
                              TokenID w) const {
     auto first = leave_level_.begin() + static_cast<std::ptrdiff_t>(begin);
     auto last = leave_level_.begin() + static_cast<std::ptrdiff_t>(end);
-    auto it = std::lower_bound(first, last, w, [](const LeaveEntry& leaf, TokenID token) {
-        return leaf.token < token;
-    });
+    auto it = std::lower_bound(first, last, w,
+        [](const LeaveEntry& leaf, TokenID token) {
+            return leaf.token < token;
+        });
     if (it == last || it->token != w) {
         return end;
     }
