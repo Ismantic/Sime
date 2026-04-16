@@ -27,6 +27,7 @@ void Dict::Clear() {
     token_strs_.clear();
     token_groups_.clear();
     token_ids_.clear();
+    node_pieces_.clear();
 }
 
 uint32_t Dict::NodeCount() const {
@@ -224,18 +225,24 @@ std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
 
 void Dict::BuildTokenGroups() {
     token_groups_.clear();
+    node_pieces_.clear();
     const Node* root = Root();
     if (!root) return;
 
-    // DFS the entire trie, collect all Groups
-    std::vector<const Node*> stack;
-    stack.push_back(root);
+    // DFS the entire trie, collect all Groups and piece paths.
+    struct Frame {
+        const Node* node;
+        std::string pieces;
+    };
+    std::vector<Frame> stack;
+    stack.push_back({root, ""});
     while (!stack.empty()) {
-        const Node* cur = stack.back();
+        auto [cur, pieces] = stack.back();
         stack.pop_back();
         if (!cur) continue;
 
         if (cur->count > 0) {
+            node_pieces_[cur] = pieces;
             const std::uint32_t* tokens = cur->GetToken();
             std::uint32_t gi = 0;
             while (gi < cur->count) {
@@ -254,7 +261,12 @@ void Dict::BuildTokenGroups() {
         const auto* moves = cur->GetMove();
         for (std::uint16_t i = 0; i < cur->move_count; ++i) {
             const Node* child = DoMove(cur, Unit(moves[i].unit.value));
-            if (child) stack.push_back(child);
+            if (!child) continue;
+            const char* seg = piece_.Decode(Unit(moves[i].unit.value));
+            std::string child_pieces = pieces;
+            if (!child_pieces.empty()) child_pieces += "'";
+            child_pieces += (seg ? seg : "");
+            stack.push_back({child, std::move(child_pieces)});
         }
     }
 }

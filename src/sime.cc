@@ -21,18 +21,10 @@ Sime::Sime(const std::filesystem::path& dict_path,
 }
 
 
-std::uint64_t Sime::EdgeKey(std::size_t start, std::size_t end,
-                                       TokenID id) {
-    return (static_cast<std::uint64_t>(start) << 48) |
-           (static_cast<std::uint64_t>(end) << 32) |
-           static_cast<std::uint64_t>(id);
-}
-
 void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
-                              bool tail_expansion,
                               std::vector<Node>& net,
-                              UnitMap* pm) const {
+                              bool expansion) const {
     // Lattice layout:
     //   columns [0, p)     — prefix letter columns (InitNet-style)
     //   columns [p, p+d)   — digit columns (num_map + letter edges)
@@ -46,9 +38,10 @@ void Sime::InitNumNet(std::string_view start,
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    const Dict::Node* node, const std::string& acc) {
+                    const Dict::Node* node) {
         std::uint32_t count = 0;
         const std::uint32_t* tokens = dict_.GetToken(node, count);
+        const std::string* np = &dict_.NodePieces(node);
         std::uint32_t gi = 0;
         while (gi < count) {
             const std::uint32_t* grp = tokens + gi;
@@ -56,32 +49,23 @@ void Sime::InitNumNet(std::string_view start,
             while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
             if (gi < count) ++gi;
             auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
-            net[s].es.push_back({s, new_col, tid, grp, glen});
-            if (pm) pm->emplace(EdgeKey(s, new_col, tid), acc);
+            net[s].es.push_back({s, new_col, tid, grp, glen, np});
         }
     };
 
-    auto append_py = [](const std::string& acc, const char* seg) {
-        std::string s = seg ? seg : "";
-        if (acc.empty()) return s;
-        return acc + "'" + s;
-    };
-
     auto walk = [&](auto& self, std::size_t s, std::size_t pos,
-                    const Dict::Node* node, const std::string& acc) -> void {
+                    const Dict::Node* node) -> void {
         if (!node || pos >= total) return;
 
         // === Prefix letter columns ===
         if (pos < p) {
             char ch = start[pos];
 
-            // Boundary — skip without trie move
             if (ch == '\'') {
-                self(self, s, pos + 1, node, acc);
+                self(self, s, pos + 1, node);
                 return;
             }
 
-            // Piece matches via piece().GetPieceMap()
             std::string key;
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + piece().MaxLen(), p); ++end) {
@@ -93,17 +77,12 @@ void Sime::InitNumNet(std::string_view start,
                 for (const auto& u : it->second) {
                     const Dict::Node* next = dict_.DoMove(node, u);
                     if (!next) continue;
-                    std::string new_acc =
-                        append_py(acc, piece().Decode(u));
-                    emit(s, end, next, new_acc);
-                    self(self, s, end, next, new_acc);
+                    emit(s, end, next);
+                    self(self, s, end, next);
                 }
             }
 
-            // Tail expansion: remaining prefix is an incomplete syllable.
-            // Skip only when the tail is already a complete pinyin syllable;
-            // non-pinyin pieces (e.g. single-letter initials registered for
-            // abbreviation support) still fall through to dynamic expansion.
+            // Tail expansion for prefix letters
             {
                 std::size_t tail_end = pos;
                 while (tail_end < p && start[tail_end] != '\'') ++tail_end;
@@ -132,10 +111,8 @@ void Sime::InitNumNet(std::string_view start,
                                     const Dict::Node* next =
                                         dict_.DoMove(node, u);
                                     if (!next) continue;
-                                    std::string new_acc = append_py(
-                                        acc, piece().Decode(u));
-                                    emit(s, p, next, new_acc);
-                                    self(self, s, p, next, new_acc);
+                                    emit(s, p, next);
+                                    self(self, s, p, next);
                                 }
                             }
                         }
@@ -149,13 +126,11 @@ void Sime::InitNumNet(std::string_view start,
         // === Digit columns ===
         const std::size_t dpos = pos - p;
 
-        // Boundary — skip
         if (nums[dpos] == '\'') {
-            self(self, s, pos + 1, node, acc);
+            self(self, s, pos + 1, node);
             return;
         }
 
-        // Pinyin syllable matches via piece().GetNumMap()
         std::string key;
         for (std::size_t dend = dpos + 1;
              dend <= std::min(dpos + piece().MaxLen(), d); ++dend) {
@@ -167,15 +142,14 @@ void Sime::InitNumNet(std::string_view start,
             for (const auto& u : it->second) {
                 const Dict::Node* next = dict_.DoMove(node, u);
                 if (!next) continue;
-                std::string new_acc = append_py(acc, piece().Decode(u));
                 const std::size_t new_col = p + dend;
-                emit(s, new_col, next, new_acc);
-                self(self, s, new_col, next, new_acc);
+                emit(s, new_col, next);
+                self(self, s, new_col, next);
             }
         }
 
         // Tail expansion for digits
-        if (tail_expansion) {
+        if (expansion) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
                 ++tail_len;
@@ -192,9 +166,7 @@ void Sime::InitNumNet(std::string_view start,
                         for (const auto& u : units) {
                             const Dict::Node* next = dict_.DoMove(node, u);
                             if (!next) continue;
-                            std::string new_acc =
-                                append_py(acc, piece().Decode(u));
-                            emit(s, total, next, new_acc);
+                            emit(s, total, next);
                         }
                     }
                 }
@@ -211,7 +183,7 @@ void Sime::InitNumNet(std::string_view start,
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
-        walk(walk, s, s, dict_.Root(), "");
+        walk(walk, s, s, dict_.Root());
     }
     for (std::size_t i = 0; i < total; ++i) {
         PruneNode(net[i].es);
@@ -219,16 +191,14 @@ void Sime::InitNumNet(std::string_view start,
     net[total].es.push_back({total, total + 1, SentenceEnd});
 }
 
-std::string Sime::ExtractUnits(const std::vector<Link>& path,
-                                            const UnitMap& pm) {
+std::string Sime::ExtractUnits(const std::vector<Link>& path) {
     std::string py;
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
             link.id == NotToken) continue;
-        auto it = pm.find(EdgeKey(link.start, link.end, link.id));
-        if (it == pm.end()) continue;
+        if (!link.pieces || link.pieces->empty()) continue;
         if (!py.empty()) py += '\'';
-        py += it->second;
+        py += *link.pieces;
     }
     return py;
 }
@@ -287,9 +257,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const std::size_t total = p + d;
 
     std::vector<Node> net;
-    UnitMap pm;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
-    InitNumNet(start, nums, can_tail_expand, net, &pm);
+    InitNumNet(start, nums, net, can_tail_expand);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -313,7 +282,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             auto path = Backtrace(tail[rank], total + 1);
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
-            std::string py = ExtractUnits(path, pm);
+            std::string py = ExtractUnits(path);
             results.push_back({std::move(text), std::move(py),
                                ExtractTokens(path),
                                -tail[rank].score, full_cnt});
@@ -341,8 +310,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         float_t score =
             -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
 
-        auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
-        std::string edge_py = (pit != pm.end()) ? pit->second : "";
+        std::string edge_py = edge.pieces ? *edge.pieces : "";
         std::size_t cnt = edge.end;
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            ExtractTokens({edge}),
@@ -376,8 +344,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     const std::size_t total = start.size() + nums.size();
 
     std::vector<Node> net;
-    UnitMap pm;
-    InitNumNet(start, nums, /*tail_expansion=*/false, net, &pm);
+    InitNumNet(start, nums, net, /*expansion=*/false);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -391,7 +358,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
         auto path = Backtrace(tail_states[rank], total + 1);
         std::string text = ExtractText(path);
         if (text.empty() || !dedup.insert(text).second) continue;
-        std::string py = ExtractUnits(path, pm);
+        std::string py = ExtractUnits(path);
         results.push_back({std::move(text), std::move(py),
                            ExtractTokens(path),
                            -tail_states[rank].score,
@@ -432,8 +399,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    UnitMap pm;
-    InitNet(lower, net, &pm);
+    InitNet(lower, net, /*expansion=*/false);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -449,7 +415,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
         if (path.empty()) continue;
         std::string text = ExtractText(path);
         if (text.empty() || !dedup.insert(text).second) continue;
-        std::string py = ExtractUnits(path, pm);
+        std::string py = ExtractUnits(path);
         results.push_back({std::move(text), std::move(py),
                            ExtractTokens(path),
                            -tail_states[rank].score, input.size()});
@@ -459,15 +425,16 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
 void Sime::InitNet(std::string_view input,
                       std::vector<Node>& net,
-                      UnitMap* pm) const {
+                      bool expansion) const {
     const std::size_t total = input.size();
     net.clear();
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    const Dict::Node* node, const std::string& acc) {
+                    const Dict::Node* node) {
         std::uint32_t count = 0;
         const std::uint32_t* tokens = dict_.GetToken(node, count);
+        const std::string* np = &dict_.NodePieces(node);
         std::uint32_t gi = 0;
         while (gi < count) {
             const std::uint32_t* grp = tokens + gi;
@@ -475,15 +442,29 @@ void Sime::InitNet(std::string_view input,
             while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
             if (gi < count) ++gi;
             auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
-            net[s].es.push_back({s, new_col, tid, grp, glen});
-            if (pm) pm->emplace(EdgeKey(s, new_col, tid), acc);
+            net[s].es.push_back({s, new_col, tid, grp, glen, np});
         }
     };
 
-    auto append_py = [](const std::string& acc, const char* seg) {
-        std::string s = seg ? seg : "";
-        if (acc.empty()) return s;
-        return acc + "'" + s;
+    // Walk deeper through the trie's outgoing moves until a node
+    // with tokens is reached. Used by both piece match (when input
+    // is exhausted) and tail expansion.
+    constexpr std::size_t MaxDeepWalkDepth = 8;
+    auto deep_walk = [&](auto& dself, std::size_t s,
+                         const Dict::Node* dn,
+                         std::size_t depth) {
+        if (depth >= MaxDeepWalkDepth) return;
+        std::uint32_t tc = 0;
+        dict_.GetToken(dn, tc);
+        if (tc > 0) return;
+        const auto* moves = dn->GetMove();
+        for (std::uint16_t mi = 0; mi < dn->move_count; ++mi) {
+            Unit du = moves[mi].unit;
+            const Dict::Node* dn2 = dict_.DoMove(dn, du);
+            if (!dn2) continue;
+            emit(s, total, dn2);
+            dself(dself, s, dn2, depth + 1);
+        }
     };
 
     for (std::size_t s = 0; s < total; ++s) {
@@ -494,13 +475,12 @@ void Sime::InitNet(std::string_view input,
         }
 
         auto walk = [&](auto& self, std::size_t pos,
-                        const Dict::Node* node,
-                        const std::string& acc) -> void {
+                        const Dict::Node* node) -> void {
             if (!node || pos >= total) return;
 
             // Boundary column — skip forward without consuming trie.
             if (input[pos] == '\'') {
-                self(self, pos + 1, node, acc);
+                self(self, pos + 1, node);
                 return;
             }
 
@@ -509,60 +489,29 @@ void Sime::InitNet(std::string_view input,
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + piece().MaxLen(), total); ++end) {
                 char ch = input[end - 1];
-                if (ch == '\'') break;  // Don't extend past boundary.
+                if (ch == '\'') break;
                 key.push_back(ch);
                 auto it = piece().GetPieceMap().find(key);
                 if (it == piece().GetPieceMap().end()) continue;
                 for (const auto& u : it->second) {
                     const Dict::Node* next = dict_.DoMove(node, u);
                     if (!next) continue;
-                    std::string new_acc =
-                        append_py(acc, piece().Decode(u));
-                    emit(s, end, next, new_acc);
-                    if (end == total) {
-                        // Input exhausted after this piece.
-                        // Walk deeper via the trie's outgoing moves
-                        // (not piece_map_!) until a node with tokens
-                        // is reached.
-                        constexpr std::size_t MaxDepth = 8;
-                        auto deeper = [&](auto& dself,
-                                          const Dict::Node* dn,
-                                          const std::string& dacc,
-                                          std::size_t depth) {
-                            if (depth >= MaxDepth) return;
-                            std::uint32_t tc = 0;
-                            dict_.GetToken(dn, tc);
-                            if (tc > 0) return;
-                            const auto* moves = dn->GetMove();
-                            for (std::uint16_t mi = 0;
-                                 mi < dn->move_count; ++mi) {
-                                Unit du = moves[mi].unit;
-                                const Dict::Node* dn2 =
-                                    dict_.DoMove(dn, du);
-                                if (!dn2) continue;
-                                std::string da2 =
-                                    append_py(dacc, piece().Decode(du));
-                                emit(s, total, dn2, da2);
-                                dself(dself, dn2, da2, depth + 1);
-                            }
-                        };
-                        deeper(deeper, next, new_acc, 0);
-                    } else {
-                        self(self, end, next, new_acc);
+                    emit(s, end, next);
+                    if (end == total && expansion) {
+                        deep_walk(deep_walk, s, next, 0);
+                    } else if (end < total) {
+                        self(self, end, next);
                     }
                 }
             }
 
-            // 2. Tail expansion: remaining input is a prefix of a longer
+            // 2. Expansion: remaining input is a prefix of a longer
             //    piece that extends beyond the input end.
             //    Skip when the tail is a complete pinyin syllable.
-            //    For non-pinyin pieces, walk deeper until a node with
-            //    tokens is found.
-            {
+            if (expansion) {
                 std::size_t tail_len = total - pos;
                 if (tail_len > 0 && tail_len <= piece().MaxLen()) {
                     std::string tail_str(input.data() + pos, tail_len);
-                    std::string_view tail(tail_str);
                     bool is_pinyin = false;
                     auto pit = piece().GetPieceMap().find(tail_str);
                     if (pit != piece().GetPieceMap().end()) {
@@ -581,35 +530,8 @@ void Sime::InitNet(std::string_view input,
                                 const Dict::Node* next =
                                     dict_.DoMove(node, u);
                                 if (!next) continue;
-                                std::string new_acc =
-                                    append_py(acc, piece().Decode(u));
-                                emit(s, total, next, new_acc);
-                                // Walk deeper through the trie's own
-                                // outgoing moves (not piece_map_!) until
-                                // a node with tokens is reached.
-                                constexpr std::size_t MaxTailDepth = 8;
-                                auto deep = [&](auto& dself,
-                                                const Dict::Node* dn,
-                                                const std::string& dacc,
-                                                std::size_t depth) {
-                                    if (depth >= MaxTailDepth) return;
-                                    std::uint32_t tc = 0;
-                                    dict_.GetToken(dn, tc);
-                                    if (tc > 0) return;
-                                    const auto* moves = dn->GetMove();
-                                    for (std::uint16_t mi = 0;
-                                         mi < dn->move_count; ++mi) {
-                                        Unit du = moves[mi].unit;
-                                        const Dict::Node* dn2 =
-                                            dict_.DoMove(dn, du);
-                                        if (!dn2) continue;
-                                        std::string da2 =
-                                            append_py(dacc, piece().Decode(du));
-                                        emit(s, total, dn2, da2);
-                                        dself(dself, dn2, da2, depth + 1);
-                                    }
-                                };
-                                deep(deep, next, new_acc, 0);
+                                emit(s, total, next);
+                                deep_walk(deep_walk, s, next, 0);
                             }
                         }
                     }
@@ -618,7 +540,7 @@ void Sime::InitNet(std::string_view input,
 
         };
 
-        walk(walk, s, dict_.Root(), "");
+        walk(walk, s, dict_.Root());
     }
 
     for (std::size_t i = 0; i < total; ++i) {
@@ -705,7 +627,7 @@ void Sime::Process(std::vector<Node>& net) const {
 
                 float_t next_cost = value.score + step;
                 State next(next_cost, word.end, cur_pos, &value, word.id,
-                           word.group, word.group_len);
+                           word.group, word.group_len, word.pieces);
                 net[word.end].states.Insert(next);
             }
         }
@@ -722,7 +644,8 @@ std::vector<Sime::Link> Sime::Backtrace(
         path.push_back({prev->now, state->now,
                         state->backtrace_token,
                         state->backtrace_group,
-                        state->backtrace_group_len});
+                        state->backtrace_group_len,
+                        state->backtrace_pieces});
         state = prev;
     }
     std::reverse(path.begin(), path.end());
@@ -770,8 +693,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t total = lower.size();
 
     std::vector<Node> net;
-    UnitMap pm;
-    InitNet(lower, net, &pm);
+    InitNet(lower, net);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -792,7 +714,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             if (path.empty()) continue;
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
-            std::string py = ExtractUnits(path, pm);
+            std::string py = ExtractUnits(path);
             results.push_back({std::move(text), std::move(py),
                                ExtractTokens(path),
                                -tail[rank].score, input.size()});
@@ -802,6 +724,9 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: word/char alternatives at position 0 ===
+    // TODO: expansion candidates (deep walk / tail expansion) currently get
+    // distance=0 same as exact matches. Should add penalty proportional to
+    // expansion depth so that precise matches rank above expanded ones.
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     for (const auto& edge : net[0].es) {
@@ -820,8 +745,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) -
             dist_penalty;
 
-        auto pit = pm.find(EdgeKey(edge.start, edge.end, edge.id));
-        std::string edge_py = (pit != pm.end()) ? pit->second : "";
+        std::string edge_py = edge.pieces ? *edge.pieces : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            ExtractTokens({edge}),
                            score, edge.end});
