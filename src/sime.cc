@@ -306,9 +306,22 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::size_t distance = total - edge.end;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
-        Scorer::Pos dummy{};
-        float_t score =
-            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) - dist_penalty;
+        float_t cost = 0.0;
+        Scorer::Pos gpos{};
+        if (edge.group_len > 1 && edge.group) {
+            for (std::uint16_t gi = 0; gi < edge.group_len; ++gi) {
+                auto tid = static_cast<TokenID>(
+                    edge.group[gi] & GroupTokenMask);
+                Scorer::Pos next{};
+                cost += scorer_.ScoreMove(gpos, tid, next);
+                scorer_.Back(next);
+                gpos = next;
+            }
+        } else {
+            Scorer::Pos next{};
+            cost = scorer_.ScoreMove(gpos, edge.id, next);
+        }
+        float_t score = -cost - dist_penalty;
 
         std::string edge_py = edge.pieces ? *edge.pieces : "";
         std::size_t cnt = edge.end;
@@ -570,18 +583,31 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
             continue;
         }
 
-        // Score by unigram, keep top NodeSize
+        // Score by full group cost, keep top NodeSize
         std::vector<std::pair<float_t, std::size_t>> scored;
         scored.reserve(indices.size());
         for (auto idx : indices) {
-            if (edges[idx].id == ScoreNotToken ||
-                edges[idx].id == SentenceEnd) {
+            const auto& e = edges[idx];
+            if (e.id == ScoreNotToken || e.id == SentenceEnd) {
                 scored.push_back({0.0, idx});
                 continue;
             }
-            Scorer::Pos dummy{};
-            float_t s = scorer_.ScoreMove(Scorer::Pos{}, edges[idx].id, dummy);
-            scored.push_back({s, idx});
+            float_t cost = 0.0;
+            Scorer::Pos gpos{};
+            if (e.group_len > 1 && e.group) {
+                for (std::uint16_t gi = 0; gi < e.group_len; ++gi) {
+                    auto tid = static_cast<TokenID>(
+                        e.group[gi] & GroupTokenMask);
+                    Scorer::Pos next{};
+                    cost += scorer_.ScoreMove(gpos, tid, next);
+                    scorer_.Back(next);
+                    gpos = next;
+                }
+            } else {
+                Scorer::Pos next{};
+                cost = scorer_.ScoreMove(gpos, e.id, next);
+            }
+            scored.push_back({cost, idx});
         }
 
         std::partial_sort(
@@ -740,10 +766,23 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::size_t distance = total - edge.end;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
-        Scorer::Pos dummy{};
-        float_t score =
-            -(scorer_.ScoreMove(Scorer::Pos{}, edge.id, dummy)) -
-            dist_penalty;
+        // Score all tokens in the group, not just the first.
+        float_t cost = 0.0;
+        Scorer::Pos gpos{};
+        if (edge.group_len > 1 && edge.group) {
+            for (std::uint16_t gi = 0; gi < edge.group_len; ++gi) {
+                auto tid = static_cast<TokenID>(
+                    edge.group[gi] & GroupTokenMask);
+                Scorer::Pos next{};
+                cost += scorer_.ScoreMove(gpos, tid, next);
+                scorer_.Back(next);
+                gpos = next;
+            }
+        } else {
+            Scorer::Pos next{};
+            cost = scorer_.ScoreMove(gpos, edge.id, next);
+        }
+        float_t score = -cost - dist_penalty;
 
         std::string edge_py = edge.pieces ? *edge.pieces : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
