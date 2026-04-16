@@ -201,17 +201,48 @@ float_t Scorer::UnknownPenalty() const {
 std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
     Pos context, std::size_t num) const {
     std::vector<std::pair<TokenID, float_t>> result;
-    if (num_ < 1) return result;
+    if (num_ < 2) return result;  // unigram LM has no prediction
 
+    // Back off from leaf or dead-end nodes until we find one with children.
+    // Stop at level == 0 (root) — its children are the global unigram
+    // distribution which has no contextual relevance.
+    Pos ctx = context;
+    while (true) {
+        if (ctx.level == 0) return result;
+
+        // Leaf: always back off
+        if (ctx.level >= static_cast<std::uint32_t>(num_)) {
+            Back(ctx);
+            if (ctx.level >= static_cast<std::uint32_t>(num_)) return result;
+            continue;
+        }
+
+        // Non-leaf: check if node has children
+        const auto& nodes = node_levels_[ctx.level];
+        std::size_t node_index = ctx.index;
+        if (node_index + 1 >= nodes.size()) return result;
+        auto begin = nodes[node_index].down;
+        auto end = nodes[node_index + 1].down;
+        if (begin < end) break;  // has children
+
+        // Dead end: back off
+        Pos backed = ctx;
+        Back(backed);
+        if (backed.level == ctx.level && backed.index == ctx.index) {
+            return result;  // stuck
+        }
+        ctx = backed;
+    }
+
+    // Collect children from the resolved context node
     auto collect = [&](std::uint32_t level, std::uint32_t index,
                        std::vector<std::pair<TokenID, float_t>>& out) {
         if (level >= static_cast<std::uint32_t>(num_)) return;
         const auto& nodes = node_levels_[level];
-        std::size_t node_index = (level == 0) ? 0 : index;
-        if (node_index + 1 >= nodes.size()) return;
-
-        auto begin = nodes[node_index].down;
-        auto end = nodes[node_index + 1].down;
+        std::size_t ni = index;
+        if (ni + 1 >= nodes.size()) return;
+        auto begin = nodes[ni].down;
+        auto end = nodes[ni + 1].down;
 
         if (level == static_cast<std::uint32_t>(num_ - 1)) {
             for (auto i = begin; i < end && i < leave_level_.size(); ++i) {
@@ -227,19 +258,15 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
         }
     };
 
-    // Collect from current context level (high-order)
-    collect(context.level, context.index, result);
+    collect(ctx.level, ctx.index, result);
     std::sort(result.begin(), result.end(),
               [](const auto& a, const auto& b) { return a.second < b.second; });
 
-    // If not enough, use backoff pointer to reach lower-order context
-    // (Back() won't work here — it only backs off when node has NO children)
-    if (result.size() < num && context.level > 1
-        && context.level < static_cast<std::uint32_t>(num_)) {
-        const auto& node = node_levels_[context.level][context.index];
+    // If not enough, supplement from backoff node (dedup against high-order)
+    if (result.size() < num && ctx.level > 1) {
+        const auto& node = node_levels_[ctx.level][ctx.index];
         Pos backed{node.boe, node.bon};
         if (backed.level >= 1) {
-            // Collect backoff results, dedup against high-order
             std::unordered_set<TokenID> seen;
             for (const auto& [tid, _] : result) seen.insert(tid);
 
