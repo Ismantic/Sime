@@ -23,7 +23,7 @@ class Sime {
 public:
     Sime() = default;
     Sime(const std::filesystem::path& dict_path,
-                const std::filesystem::path& model_path);
+         const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
     int ContextSize() const { return scorer_.Num() - 1; }
@@ -93,6 +93,7 @@ private:
     static std::string ExtractUnits(const std::vector<Link>& path);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string StripLeadingMark(const std::string& text);
+    float_t ScoreGroup(const Link& edge) const;
 
     // Num-key lattice
     void InitNumNet(std::string_view start,

@@ -34,12 +34,12 @@ public:
 
     const Node* Root() const;
     const Node* DoMove(const Node* node, Unit u) const;
-    const std::uint32_t* GetToken(const Node* node, uint32_t& count) const;
+    const std::uint32_t* GetToken(const Node* node, std::uint32_t& count) const;
 
-    uint32_t NodeCount() const;
-    uint32_t TokenCount() const;
+    std::uint32_t NodeCount() const;
+    std::uint32_t TokenCount() const;
 
-    const char32_t* TokenAt(uint32_t i) const;
+    const char32_t* TokenAt(std::uint32_t i) const;
     TokenID TokenFromText(const std::u32string& text) const;
 
     const PieceTable& GetPieceTable() const { return piece_; }
