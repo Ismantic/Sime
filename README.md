@@ -23,10 +23,10 @@ cmake --build build
 
 ```bash
 # 全键盘拼音（交互式）
-./build/sime --trie data/sime.trie --cnt data/sime.cnt -s
+./build/sime --dict data/sime.dict --cnt data/sime.raw.cnt -s
 
 # 九宫格模式
-./build/sime --trie data/sime.trie --cnt data/sime.cnt --num -s
+./build/sime --dict data/sime.dict --cnt data/sime.raw.cnt --num -s
 ```
 
 ```
@@ -49,14 +49,13 @@ cmake --build build
 ```bash
 cd pipeline
 make chars       # 1. 统计语料词频
-make dict        # 2. 生成拼音词典
+make dict        # 2. 生成词典
 make count       # 3. N-gram 统计
 make construct   # 4. 构建语言模型
 make convert     # 5. 编译拼音 Trie
-make compact     # 6. 量化压缩
 ```
 
-产出文件：`pipeline/output/sime.trie` 和 `pipeline/output/sime.cnt` 。
+产出文件：`pipeline/output/sime.dict` 和 `pipeline/output/sime.raw.cnt` 。
 
 
 ## License

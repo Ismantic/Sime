@@ -46,12 +46,8 @@ construct: $(OUT)/raw.3gram sime.token.dict.txt
 convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)
 	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict sime.dict.txt $(EN_DICT)
 
-# Step 6 (optional): compact (quantize + compress)
-compact: $(OUT)/sime.raw.cnt
-	$(SIME)/sime-compact $(OUT)/sime.raw.cnt $(OUT)/sime.cnt
-
 clean:
 	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
 	rm -rf $(OUT)
 
-.PHONY: all chars dict count construct convert compact clean
+.PHONY: all chars dict count construct convert clean
