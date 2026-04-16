@@ -199,7 +199,7 @@ float_t Scorer::UnknownPenalty() const {
 }
 
 std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
-    Pos context, std::size_t num) const {
+    Pos& context, std::size_t num) const {
     std::vector<std::pair<TokenID, float_t>> result;
     if (num_ < 2) return result;  // unigram LM has no prediction
 
@@ -283,6 +283,7 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
         }
     }
 
+    context = ctx;  // write back resolved position
     if (result.size() > num) result.resize(num);
     return result;
 }
