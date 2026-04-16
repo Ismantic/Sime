@@ -31,17 +31,13 @@ count: data.cut.txt pinyin.dict.txt
 construct: $(OUT)/raw.2gram pinyin.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.2gram \
 		-n 2 \
-		-o $(OUT)/raw.slm \
+		-o $(OUT)/sime.nine \
 		-c 0,0 \
 		-w $(VOCAB) \
 		-r $$(($(VOCAB) + 3)),200000
-
-# Step 6: compact
-compact: $(OUT)/raw.slm
-	$(SIME)/sime-compact $(OUT)/raw.slm $(OUT)/sime.nine
 
 clean:
 	rm -f sentences.units.txt data.cut.txt pinyin.dict.txt
 	rm -rf $(OUT)
 
-.PHONY: units dict data count construct compact clean
+.PHONY: units dict data count construct clean

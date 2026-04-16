@@ -19,7 +19,7 @@ def main():
     parser.add_argument("--cases", default="cases.1.txt")
     parser.add_argument("--exe", default="../build/sime")
     parser.add_argument("--dict", default="output/sime.dict")
-    parser.add_argument("--cnt", default="output/sime.cnt")
+    parser.add_argument("--cnt", default="output/sime.raw.cnt")
     parser.add_argument("--num", action="store_true", help="num-key mode")
     parser.add_argument("-s", "--sentence", action="store_true", help="sentence mode")
     parser.add_argument("--errors", type=int, default=10)

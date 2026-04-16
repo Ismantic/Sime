@@ -15,14 +15,14 @@ cmake --build build
 
 For the Fcitx5 plugin: add `-DSIME_ENABLE_FCITX5=ON`.
 
-Build outputs in `./build/`: `sime-count`, `sime-construct`, `sime-converter`, `sime-compact`, `sime`, `sime-dump`.
+Build outputs in `./build/`: `sime-count`, `sime-construct`, `sime-converter`, `sime`, `sime-dump`.
 
 ## Testing
 
 No automated test suite. Use the interactive interpreter to verify behavior:
 
 ```bash
-./build/sime --trie pipeline/output/sime.trie --cnt pipeline/output/sime.cnt
+./build/sime --dict pipeline/output/sime.dict --cnt pipeline/output/sime.raw.cnt
 # Sentence mode: add -s
 # T9 mode: add --num
 ```
@@ -34,16 +34,15 @@ Test case files: `pipeline/cases.1.txt`, `pipeline/cases.2.txt`, `pipeline/cases
 Run from `pipeline/` directory. Requires `sentences.cut.txt` (pre-segmented corpus) and `chinese_units.txt` (pinyin table). Steps are sequential via Makefile targets:
 
 ```bash
-cd sime
+cd pipeline
 make chars      # 1. Count corpus word frequencies
-make dict       # 2. Generate pinyin dictionary
+make dict       # 2. Generate token dict + pinyin dictionary
 make count      # 3. Parallel n-gram counting
 make construct  # 4. Build Kneser-Ney language model
 make convert    # 5. Build pinyin Trie
-make compact    # 6. Quantize and compress
 ```
 
-Outputs: `pipeline/output/sime.trie` and `pipeline/output/sime.cnt`. Training tools reference `../build/` so the C++ tools must be built first.
+Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Training tools reference `../build/` so the C++ tools must be built first.
 
 ## Architecture
 
@@ -52,10 +51,9 @@ Outputs: `pipeline/output/sime.trie` and `pipeline/output/sime.cnt`. Training to
 - **Encoding**: `unit.h/cc` — pinyin syllables packed into 20-bit `Unit` structs (initial + final + tone)
 - **Trie**: `trie.h/cc` — binary pinyin-to-character prefix trie, loaded from `.trie` files
 - **Scorer**: `score.h/cc` — n-gram LM probability lookups with backoff
-- **Decoder**: `sime.h/cc` — lattice construction + Viterbi beam search. Key constants: `NodeSize=40`, `BeamSize=20`, `MaxSyllableCnt=6`
+- **Decoder**: `sime.h/cc` — lattice construction + Viterbi beam search. Key constants: `NodeSize=40`, `BeamSize=60`
 - **State**: `state.h/cc` — beam search state heap (`NetStates`)
 - **Construction**: `construct.h/cc` — Modified Kneser-Ney with entropy pruning
-- **Compact**: `compact.h/cc` — quantization (16-bit prob, 14-bit backoff, 18-bit tokens)
 - **T9**: `nine.h/cc` — digit-to-pinyin decoder for nine-key input
 
 **CLI tools** (`bin/`): Each tool is a thin entry point linking `sime_core`.
