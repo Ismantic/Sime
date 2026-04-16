@@ -51,6 +51,10 @@ def main():
                         help="pinyin dict output file")
     parser.add_argument("--token-output", default="sime.token.dict.txt",
                         help="token dict output file (all tokens, no pinyin)")
+    parser.add_argument("--dict", default="dict.txt",
+                        help="Chinese word dictionary (word\\tcount)")
+    parser.add_argument("--pieces", default="piece.txt",
+                        help="BBPE piece file (SentencePiece format)")
     args = parser.parse_args()
 
     # 读语料词频
@@ -119,35 +123,81 @@ def main():
     chars.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
     words.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
 
-    # TokenID is 18-bit; first 70 IDs are reserved (StartToken = 70).
+    # Step 1: 输出 token dict
+    # 优先: dict.txt (中文词典) + piece.txt (英文 BBPE pieces)
+    # 补充: chars.cnt.txt 高频词填充剩余空间
     max_vocab = (1 << 18) - 70  # 262074
-    total = len(chars) + len(words)
-    if total > max_vocab:
-        print(f"WARNING: vocab {total} exceeds 18-bit token limit {max_vocab}, "
-              f"truncating words by frequency", file=sys.stderr)
-        # 保留全部单字，按词频截断多字词
-        words_with_freq = []
-        for r in words:
-            w = r[:r.index(" ")] if " " in r else r
-            words_with_freq.append((freq.get(w, 0), r))
-        words_with_freq.sort(key=lambda x: x[0], reverse=True)
-        keep = max_vocab - len(chars)
-        words = [r for _, r in words_with_freq[:keep]]
-        words.sort(key=lambda r: r[:r.index(" ")] if " " in r else r)
-        total = len(chars) + len(words)
-        print(f"after truncation: {total} ({len(chars)} chars + {len(words)} words)",
-              file=sys.stderr)
 
-    # Step 1: 输出 token dict（全部 token，无拼音）
+    # 1a. 读 dict.txt 全部词
+    dict_tokens = []
+    dict_seen = set()
+    for line in open(args.dict):
+        w = line.rstrip("\n").split("\t")[0]
+        if w and w not in dict_seen:
+            dict_tokens.append(w)
+            dict_seen.add(w)
+    print(f"\ndict.txt tokens: {len(dict_tokens)}", file=sys.stderr)
+
+    # 1b. 读 piece.txt 有效 UTF-8 pieces（跳过 header、特殊 token、不可打印字符）
+    piece_tokens = []
+    piece_seen = set(dict_seen)  # dedup against dict
+    in_pieces = False
+    for line in open(args.pieces, errors='replace'):
+        line = line.rstrip("\n")
+        if line == "[Pieces]":
+            in_pieces = True
+            continue
+        if not in_pieces:
+            continue
+        if line.startswith("size="):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        piece = parts[1]
+        if piece in ("<unk>", "<s>", "</s>", "<pad>"):
+            continue
+        if not piece or not piece.isprintable() or '\\x' in piece:
+            continue
+        if piece not in piece_seen:
+            piece_tokens.append(piece)
+            piece_seen.add(piece)
+    print(f"piece.txt tokens: {len(piece_tokens)}", file=sys.stderr)
+
+    # 1c. 用 chars.cnt 的高频词补充剩余空间
+    remaining = max_vocab - len(dict_tokens) - len(piece_tokens)
+    fill_tokens = []
+    if remaining > 0:
+        # 按频次降序（chars.cnt.txt 已是降序）
+        for w, cnt in sorted(freq.items(), key=lambda x: x[1], reverse=True):
+            if remaining <= 0:
+                break
+            if w in piece_seen:
+                continue
+            if not w.isprintable():
+                continue
+            fill_tokens.append(w)
+            piece_seen.add(w)
+            remaining -= 1
+    print(f"fill tokens from corpus: {len(fill_tokens)}", file=sys.stderr)
+
+    total = len(dict_tokens) + len(piece_tokens) + len(fill_tokens)
+    if total > max_vocab:
+        print(f"WARNING: total {total} exceeds limit {max_vocab}, truncating",
+              file=sys.stderr)
+        # 截断 fill_tokens
+        fill_tokens = fill_tokens[:max_vocab - len(dict_tokens) - len(piece_tokens)]
+        total = len(dict_tokens) + len(piece_tokens) + len(fill_tokens)
+
     with open(args.token_output, "w") as fout:
-        for line in chars:
-            w = line[:line.index(" ")] if " " in line else line
+        for w in dict_tokens:
             fout.write(w + "\n")
-        for line in words:
-            w = line[:line.index(" ")] if " " in line else line
+        for w in piece_tokens:
             fout.write(w + "\n")
-    print(f"\nmin_count: {args.min_count}", file=sys.stderr)
-    print(f"total tokens: {total} ({len(chars)} chars + {len(words)} words)", file=sys.stderr)
+        for w in fill_tokens:
+            fout.write(w + "\n")
+    print(f"total tokens: {total} (dict:{len(dict_tokens)} + piece:{len(piece_tokens)} + fill:{len(fill_tokens)})",
+          file=sys.stderr)
     print(f"written to {args.token_output}", file=sys.stderr)
 
     # Step 2: 输出 pinyin dict（格式: Text Token Units）

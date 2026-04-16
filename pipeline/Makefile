@@ -6,6 +6,9 @@ SIME = ../build
 
 UNITS = units.20260408.txt
 CORPUS = sentences.cut.txt
+DICT = dict.txt
+PIECES = piece.txt
+EN_DICT = en_dict.cut.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
 
@@ -22,8 +25,8 @@ merge.bin: merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
 # Step 2: generate token dict + pinyin dictionary
-dict: chars.cnt.txt $(UNITS)
-	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt --token-output sime.token.dict.txt
+dict: chars.cnt.txt $(UNITS) $(DICT) $(PIECES)
+	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt --token-output sime.token.dict.txt --dict $(DICT) --pieces $(PIECES)
 
 # Step 3: n-gram count (parallel)
 count: sime.token.dict.txt $(CORPUS)
@@ -35,13 +38,13 @@ construct: $(OUT)/raw.3gram sime.token.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.3gram \
 		-n 3 \
 		-o $(OUT)/raw.slm \
-		-c 0,5,10 \
+		-c 0,2,5 \
 		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),2000000,2000000
+		-r $$(($(VOCAB) + 3)),3000000,3000000
 
 # Step 5: convert pinyin dict to trie
-convert: sime.token.dict.txt sime.dict.txt en_dict.cut.txt
-	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict sime.dict.txt en_dict.cut.txt
+convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)
+	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict sime.dict.txt $(EN_DICT)
 
 # Step 6: compact (quantize + compress)
 compact: $(OUT)/raw.slm
