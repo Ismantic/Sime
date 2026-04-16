@@ -2,10 +2,7 @@
 
 #include "common.h"
 #include "piece.h"
-#include "unit.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -55,6 +52,13 @@ public:
     const std::unordered_map<TokenID, std::vector<std::vector<TokenID>>>&
     TokenGroups() const { return token_groups_; }
 
+    // Piece path for a trie node (e.g. "ni'hao" for 你好).
+    const std::string& NodePieces(const Node* node) const {
+        static const std::string empty;
+        auto it = node_pieces_.find(node);
+        return it != node_pieces_.end() ? it->second : empty;
+    }
+
 private:
     void BuildTokenGroups();
     const Node* NodeFrom(std::uint32_t i) const;
@@ -67,6 +71,7 @@ private:
     PieceTable piece_;
     std::unordered_map<TokenID, std::vector<std::vector<TokenID>>> token_groups_;
     std::unordered_map<std::u32string, TokenID> token_ids_;
+    std::unordered_map<const Node*, std::string> node_pieces_;
 };
 
 } // namespace sime

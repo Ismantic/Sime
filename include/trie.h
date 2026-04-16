@@ -1,17 +1,14 @@
 #pragma once
 
-#include <stdint.h>
-#include <assert.h>
+#include <cstdint>
 
-#include <vector>
-#include <memory>
-#include <string>
-#include <map>
-#include <set>
 #include <algorithm>
-#include <functional>
-#include <iostream>
-#include <iomanip>
+#include <map>
+#include <memory>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace trie {
 
@@ -71,17 +68,6 @@ public:
         return index_ == 0 && label_ == 0 && !eow_ && parent_ == 0;
     }
 
-    void Print(const std::string& p = "") const {
-        std::cout << p << "Unit: Eow=" << eow_
-                  << ", Label=" << static_cast<int>(label_)
-                  << ", Parent=" << parent_;
-        if (HasValue()) {
-            std::cout << ", Value=" << value_;
-        } else {
-            std::cout << ", Index=" << index_;
-        }
-        std::cout << std::endl;
-    }
 };
 
 template <typename T = int32_t>
@@ -261,47 +247,6 @@ public:
 
     size_t Size() const { return size_; }
     bool Empty() const { return size_ == 0; }
-
-    void Print() const {
-        std::cout << "=== DoubleArray ===" << std::endl;
-        std::cout << "Size: " << size_ << std::endl;
-
-        size_t use_count = 0;
-        size_t value_count = 0;
-        size_t branch_count = 0;
-
-        for (std::size_t i = 0; i < size_; ++i) {
-            if (!array_[i].IsEmpty()) {
-                use_count++;
-                if (array_[i].HasValue()) {
-                    value_count++;
-                } else {
-                    branch_count++;
-                }
-            }
-        }
-        float rate = size_ > 0 ? (100.0 * use_count / size_) : 0.0;
-
-        std::cout << "Memory Usage:" << std::endl;
-        std::cout << "  Total units: " << size_ << std::endl;
-        std::cout << "  Used units: " << use_count << std::endl;
-        std::cout << "  Empty units: " << (size_ - use_count) << std::endl;
-        std::cout << "  Usage rate: " << std::fixed << std::setprecision(2) << rate << "%" << std::endl;
-        std::cout << "  Branch nodes: " << branch_count << std::endl;
-        std::cout << "  Value nodes: " << value_count << std::endl;
-        std::cout << "  Memory size: " << (size_ * sizeof(ArrayUnit)) << " bytes ("
-                  << std::fixed << std::setprecision(1) << (size_ * sizeof(ArrayUnit) / 1024.0 / 1024.0) << " MB)" << std::endl;
-
-        std::cout << std::endl;
-
-        for (std::size_t i = 0; i < std::min(size_, std::size_t(20)); ++i) {
-            std::cout << "Pos " << i << ": ";
-            array_[i].Print();
-        }
-        if (size_ > 20) {
-            std::cout << "... (omit " << (size_ - 20) << " units)" << std::endl;
-        }
-    }
 
 private:
     void CollectPrefixWords(size_t pos, std::string& current_word,

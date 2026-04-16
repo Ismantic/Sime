@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace sime {
@@ -65,6 +64,7 @@ private:
         TokenID id = 0;
         const std::uint32_t* group = nullptr;
         std::uint16_t group_len = 1;
+        const std::string* pieces = nullptr;  // piece path from Dict::NodePieces
     };
 
     struct Node {
@@ -77,14 +77,10 @@ private:
     static constexpr std::size_t BeamSize = 60;
     static constexpr float_t DistancePenalty = 1.8;
 
-    // Shared types
-    using UnitMap = std::unordered_map<std::uint64_t, std::string>;
-    static std::uint64_t EdgeKey(std::size_t start, std::size_t end, TokenID id);
-
     // Lattice building
     void InitNet(std::string_view input,
                     std::vector<Node>& net,
-                    UnitMap* unit_map = nullptr) const;
+                    bool expansion = true) const;
     void PruneNode(std::vector<Link>& edges) const;
 
     // Beam search
@@ -92,20 +88,17 @@ private:
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
 
-    // Text extraction
     std::u32string ToText(const Link& n) const;
     std::string ExtractText(const std::vector<Link>& path) const;
-    static std::string ExtractUnits(const std::vector<Link>& path,
-                                         const UnitMap& pm);
+    static std::string ExtractUnits(const std::vector<Link>& path);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string StripLeadingMark(const std::string& text);
 
     // Num-key lattice
     void InitNumNet(std::string_view start,
                      std::string_view nums,
-                     bool tail_expansion,
                      std::vector<Node>& net,
-                     UnitMap* unit_map = nullptr) const;
+                     bool expansion = true) const;
 
     // Resources
     const PieceTable& piece() const { return dict_.GetPieceTable(); }
