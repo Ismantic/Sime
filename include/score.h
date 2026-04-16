@@ -11,6 +11,10 @@ namespace sime {
 
 class Scorer {
 public:
+    Scorer() = default;
+    ~Scorer() { Reset(); }
+    Scorer(const Scorer&) = delete;
+    Scorer& operator=(const Scorer&) = delete;
 
     struct Pos {
         std::uint32_t level = 0;
@@ -53,10 +57,11 @@ public:
     std::vector<NGram> DumpLevel(int level) const;
 
 private:
+    // Layout matches disk format — enables mmap without copy.
     struct NodeEntry {
         TokenID token = 0;
-        std::uint32_t down = 0;
         float pro = 0.0f;
+        std::uint32_t down = 0;
         float bow = 0.0f;
         std::uint32_t bon = 0;
         std::uint32_t boe = 0;
@@ -74,8 +79,19 @@ private:
 
     int num_ = 0;
     std::vector<int> sizes_;
-    std::vector<std::vector<NodeEntry>> node_levels_;
-    std::vector<LeaveEntry> leave_level_;
+
+    // mmap-backed arrays — point directly into mapped file.
+    struct LevelView {
+        const NodeEntry* data = nullptr;
+        std::size_t size = 0;
+    };
+    std::vector<LevelView> node_levels_;
+    const LeaveEntry* leave_data_ = nullptr;
+    std::size_t leave_size_ = 0;
+
+    // mmap state
+    void* mmap_addr_ = nullptr;
+    std::size_t mmap_len_ = 0;
 };
 
 } // namespace sime
