@@ -1,50 +1,43 @@
 PYTHON = python3
-MIN_COUNT = 50
 COUNT_MAX = 83886080
 NPROC = 16
 SIME = ../../build
 
 CORPUS = sentences.en.cut.txt
+PIECES = piece.24w.txt
+EN_DICT = en_dict_cut.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.en.token.dict.txt 2>/dev/null || echo 0)
 
 all: $(OUT)/sime.en.dict $(OUT)/sime.en.raw.cnt
 
-# Step 1: count all tokens in corpus
-chars.cnt: count.bin $(CORPUS)
-	./count.bin $(CORPUS) chars.cnt.txt
-
-count.bin: ../count.cc
-	g++ -O3 -std=c++17 $< -o $@
+# Step 1: extract token dict from pieces file
+dict: $(PIECES)
+	$(PYTHON) extract_tokens.py $(PIECES) sime.en.token.dict.txt
 
 merge.bin: ../merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
-# Step 2: generate token dictionary (no pinyin)
-dict: chars.cnt.txt
-	$(PYTHON) gen_token_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --output sime.en.token.dict.txt
-
-# Step 3: n-gram count (parallel)
+# Step 2: n-gram count (parallel)
 count: sime.en.token.dict.txt $(CORPUS)
 	mkdir -p $(OUT)
 	../parallel_count.sh -n 3 -d sime.en.token.dict.txt -o $(OUT)/raw.3gram -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
-# Step 4: construct language model
+# Step 3: construct language model
 construct: $(OUT)/raw.3gram sime.en.token.dict.txt
 	$(SIME)/sime-construct $(OUT)/raw.3gram \
 		-n 3 \
 		-o $(OUT)/sime.en.raw.cnt \
-		-c 0,5,10 \
+		-c 0,2,5 \
 		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),2000000,2000000
+		-r $$(($(VOCAB) + 3)),3000000,3000000
 
-# Step 5: convert token dict to dict
-# Requires en_dict.cut.txt (generated separately)
-convert: sime.en.token.dict.txt en_dict.cut.txt
-	$(SIME)/sime-converter sime.en.token.dict.txt $(OUT)/sime.en.dict en_dict.cut.txt
+# Step 4: convert token dict to dict
+convert: sime.en.token.dict.txt $(EN_DICT)
+	$(SIME)/sime-converter sime.en.token.dict.txt $(OUT)/sime.en.dict $(EN_DICT)
 
 clean:
-	rm -f count.bin merge.bin chars.cnt.txt sime.en.token.dict.txt
+	rm -f merge.bin sime.en.token.dict.txt
 	rm -rf $(OUT)
 
-.PHONY: all chars dict count construct convert clean
+.PHONY: all dict count construct convert clean
