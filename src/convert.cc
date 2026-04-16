@@ -32,8 +32,10 @@ bool IsWhitespace(char ch) {
 }
 
 bool IsUnitChar(char ch) {
+    auto uc = static_cast<unsigned char>(ch);
     return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '"' ||
-           (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9');
+           (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+           uc >= 0x80;  // allow multi-byte UTF-8 (e.g. ▁ U+2581)
 }
 
 } // namespace

@@ -208,6 +208,13 @@ std::string Sime::ExtractText(const std::vector<Link>& path) const {
     for (const auto& link : path) {
         u32 += ToText(link);
     }
+    return TextFromU32(u32);
+}
+
+std::string Sime::TextFromU32(std::u32string& u32) {
+    for (auto& ch : u32) {
+        if (ch == 0x2581) ch = U' ';
+    }
     return ustr::FromU32(u32);
 }
 
@@ -307,7 +314,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
 
-        std::string text_utf8 = ustr::FromU32(text_u32);
+        std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -381,6 +388,11 @@ std::string NormalizeInput(std::string_view input) {
     for (char c : input) {
         if (c == '\'') {
             lower.push_back(c);
+        } else if (c == ' ') {
+            // Space → ▁ (U+2581, UTF-8: E2 96 81)
+            lower.push_back(static_cast<char>(0xE2));
+            lower.push_back(static_cast<char>(0x96));
+            lower.push_back(static_cast<char>(0x81));
         } else {
             char lc = static_cast<char>(
                 std::tolower(static_cast<unsigned char>(c)));
@@ -737,7 +749,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
-        std::string text_utf8 = ustr::FromU32(text_u32);
+        std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
         std::size_t distance = total - edge.end;
@@ -811,7 +823,7 @@ std::vector<DecodeResult> Sime::NextGroups(
             }
             if (!u32.empty()) {
                 candidates.push_back(
-                    {ustr::FromU32(u32),
+                    {TextFromU32(u32),
                      std::move(g_tokens), g_score});
             }
         }
