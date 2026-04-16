@@ -187,13 +187,20 @@ int main(int argc, char** argv) {
                 continue;
             }
             std::cout << "  decoded: " << decoded[0].text
-                      << " [" << decoded[0].units << "]\n";
+                      << " [" << decoded[0].units << "]"
+                      << " ids:";
+            for (auto tid : decoded[0].tokens) std::cout << " " << tid;
+            std::cout << "\n";
 
             // Add decoded tokens to context
             context_strs.push_back(decoded[0].text);
             for (auto tid : decoded[0].tokens) {
                 context_ids.push_back(tid);
             }
+
+            std::cout << "  context:";
+            for (auto tid : context_ids) std::cout << " " << tid;
+            std::cout << "\n";
 
             auto nextions = engine.NextGroups(context_ids, opts.n);
             if (nextions.empty()) {
@@ -203,7 +210,10 @@ int main(int argc, char** argv) {
                     const auto& s = nextions[idx];
                     std::cout << "  [" << idx << "] " << s.text
                               << " (score " << std::fixed
-                              << std::setprecision(3) << s.score << ")\n";
+                              << std::setprecision(3) << s.score
+                              << ", ids:";
+                    for (auto tid : s.tokens) std::cout << " " << tid;
+                    std::cout << ")\n";
                 }
             }
         }

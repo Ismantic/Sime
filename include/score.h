@@ -40,8 +40,9 @@ public:
     float_t UnknownPenalty() const;
 
     // Enumerate successor tokens from context, sorted by cost (best first).
+    // context is backed off in-place to the resolved position.
     std::vector<std::pair<TokenID, float_t>> NextTokens(
-        Pos context, std::size_t num) const;
+        Pos& context, std::size_t num) const;
 
     // Accessors for dump tool
     int Num() const { return num_; }
