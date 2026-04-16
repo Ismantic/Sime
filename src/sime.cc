@@ -248,7 +248,6 @@ float_t Sime::ScoreGroup(const Link& edge) const {
                 edge.group[gi] & GroupTokenMask);
             Scorer::Pos next{};
             cost += scorer_.ScoreMove(gpos, tid, next);
-            scorer_.Back(next);
             gpos = next;
         }
     } else {
@@ -780,11 +779,9 @@ std::vector<DecodeResult> Sime::NextGroups(
     if (!ready_ || num == 0) return results;
 
     Scorer::Pos pos{};
-    for (std::size_t i = 0; i < context.size(); ++i) {
+    for (auto tid : context) {
         Scorer::Pos next{};
-        scorer_.ScoreMove(pos, context[i], next);
-        // Don't Back() the last token — keep the most specific context
-        if (i + 1 < context.size()) scorer_.Back(next);
+        scorer_.ScoreMove(pos, tid, next);
         pos = next;
     }
 
@@ -815,7 +812,6 @@ std::vector<DecodeResult> Sime::NextGroups(
             for (auto gid : group) {
                 Scorer::Pos g_next{};
                 g_score += scorer_.ScoreMove(g_pos, gid, g_next);
-                scorer_.Back(g_next);
                 g_pos = g_next;
                 g_tokens.push_back(gid);
                 const char32_t* gc = dict_.TokenAt(gid);
