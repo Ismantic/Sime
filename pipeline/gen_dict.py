@@ -157,7 +157,7 @@ def main():
         piece = parts[1]
         if piece in ("<unk>", "<s>", "</s>", "<pad>"):
             continue
-        if not piece or not piece.isprintable() or '\\x' in piece:
+        if not piece or not piece.isprintable() or '\\x' in piece or piece.isspace():
             continue
         if piece not in piece_seen:
             piece_tokens.append(piece)
