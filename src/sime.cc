@@ -45,14 +45,9 @@ void Sime::InitNumNet(std::string_view start,
         std::uint32_t count = 0;
         const std::uint32_t* tokens = dict_.GetToken(node, count);
         const std::string* np = &dict_.NodePieces(node);
-        std::uint32_t gi = 0;
-        while (gi < count) {
-            const std::uint32_t* grp = tokens + gi;
-            std::uint16_t glen = 1;
-            while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
-            if (gi < count) ++gi;
-            auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
-            net[s].es.push_back({s, new_col, tid, grp, glen, np});
+        for (std::uint32_t i = 0; i < count; ++i) {
+            auto tid = static_cast<TokenID>(tokens[i]);
+            net[s].es.push_back({s, new_col, tid, np});
         }
     };
 
@@ -245,34 +240,9 @@ std::vector<TokenID> Sime::ExtractTokens(
     std::vector<TokenID> ids;
     for (const auto& link : path) {
         if (link.id == ScoreNotToken || link.id == NotToken) continue;
-        if (link.group_len > 1 && link.group) {
-            for (std::uint16_t gi = 0; gi < link.group_len; ++gi) {
-                ids.push_back(static_cast<TokenID>(
-                    link.group[gi] & GroupTokenMask));
-            }
-        } else {
-            ids.push_back(link.id);
-        }
+        ids.push_back(link.id);
     }
     return ids;
-}
-
-float_t Sime::ScoreGroup(const Link& edge) const {
-    float_t cost = 0.0;
-    Scorer::Pos gpos{};
-    if (edge.group_len > 1 && edge.group) {
-        for (std::uint16_t gi = 0; gi < edge.group_len; ++gi) {
-            auto tid = static_cast<TokenID>(
-                edge.group[gi] & GroupTokenMask);
-            Scorer::Pos next{};
-            cost += scorer_.ScoreMove(gpos, tid, next);
-            gpos = next;
-        }
-    } else {
-        Scorer::Pos next{};
-        cost = scorer_.ScoreMove(gpos, edge.id, next);
-    }
-    return cost;
 }
 
 std::vector<DecodeResult> Sime::DecodeNumSentence(
@@ -353,7 +323,9 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
                              : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
-        float_t score = -ScoreGroup(edge) - dist_penalty;
+        Scorer::Pos epos{};
+        Scorer::Pos enext{};
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext) - dist_penalty;
 
         std::string edge_py = edge.pieces ? *edge.pieces : "";
         std::size_t cnt = edge.end;
@@ -482,14 +454,9 @@ void Sime::InitNet(std::string_view input,
         std::uint32_t count = 0;
         const std::uint32_t* tokens = dict_.GetToken(node, count);
         const std::string* np = &dict_.NodePieces(node);
-        std::uint32_t gi = 0;
-        while (gi < count) {
-            const std::uint32_t* grp = tokens + gi;
-            std::uint16_t glen = 1;
-            while (gi < count && (tokens[gi] & GroupEnd) == 0) { ++gi; ++glen; }
-            if (gi < count) ++gi;
-            auto tid = static_cast<TokenID>(grp[0] & GroupTokenMask);
-            net[s].es.push_back({s, new_col, tid, grp, glen, np});
+        for (std::uint32_t i = 0; i < count; ++i) {
+            auto tid = static_cast<TokenID>(tokens[i]);
+            net[s].es.push_back({s, new_col, tid, np});
         }
     };
 
@@ -617,7 +584,7 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
             continue;
         }
 
-        // Score by full group cost, keep top NodeSize
+        // Score by unigram cost, keep top NodeSize
         std::vector<std::pair<float_t, std::size_t>> scored;
         scored.reserve(indices.size());
         for (auto idx : indices) {
@@ -626,7 +593,9 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
                 scored.push_back({0.0, idx});
                 continue;
             }
-            scored.push_back({ScoreGroup(e), idx});
+            Scorer::Pos ppos{};
+            Scorer::Pos pnext{};
+            scored.push_back({scorer_.ScoreMove(ppos, e.id, pnext), idx});
         }
 
         std::partial_sort(
@@ -652,27 +621,14 @@ void Sime::Process(std::vector<Node>& net) const {
             const auto& value = *it;
             for (const auto& word : column.es) {
                 Scorer::Pos cur_pos = value.pos;
-                float_t step = 0.0;
-
-                if (word.group_len <= 1) {
-                    Scorer::Pos next_pos{};
-                    step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
-                    scorer_.Back(next_pos);
-                    cur_pos = next_pos;
-                } else {
-                    for (std::uint16_t gi = 0; gi < word.group_len; ++gi) {
-                        TokenID pid = static_cast<TokenID>(
-                            word.group[gi] & GroupTokenMask);
-                        Scorer::Pos next_pos{};
-                        step += scorer_.ScoreMove(cur_pos, pid, next_pos);
-                        scorer_.Back(next_pos);
-                        cur_pos = next_pos;
-                    }
-                }
+                Scorer::Pos next_pos{};
+                float_t step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
+                scorer_.Back(next_pos);
+                cur_pos = next_pos;
 
                 float_t next_cost = value.score + step;
                 State next(next_cost, word.end, cur_pos, &value, word.id,
-                           word.group, word.group_len, word.pieces);
+                           word.pieces);
                 net[word.end].states.Insert(next);
             }
         }
@@ -688,8 +644,6 @@ std::vector<Sime::Link> Sime::Backtrace(
         const State* prev = state->backtrace_state;
         path.push_back({prev->now, state->now,
                         state->backtrace_token,
-                        state->backtrace_group,
-                        state->backtrace_group_len,
                         state->backtrace_pieces});
         state = prev;
     }
@@ -704,23 +658,10 @@ std::u32string Sime::ToText(const Link& n) const {
         return {};
     }
     std::u32string buffer;
-    if (n.group_len > 1 && n.group) {
-        for (std::uint16_t gi = 0; gi < n.group_len; ++gi) {
-            TokenID pid = static_cast<TokenID>(
-                n.group[gi] & GroupTokenMask);
-            const char32_t* chars = dict_.TokenAt(pid);
-            if (chars) {
-                for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
-                    buffer.push_back(chars[i]);
-                }
-            }
-        }
-    } else {
-        const char32_t* chars = dict_.TokenAt(n.id);
-        if (chars) {
-            for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
-                buffer.push_back(chars[i]);
-            }
+    const char32_t* chars = dict_.TokenAt(n.id);
+    if (chars) {
+        for (std::size_t i = 0; chars[i] != 0 && i < 64; ++i) {
+            buffer.push_back(chars[i]);
         }
     }
     return buffer;
@@ -799,7 +740,9 @@ std::vector<DecodeResult> Sime::DecodeSentence(
                              : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
-        float_t score = -ScoreGroup(edge) - dist_penalty;
+        Scorer::Pos epos{};
+        Scorer::Pos enext{};
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext) - dist_penalty;
 
         std::string edge_py = edge.pieces ? *edge.pieces : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
@@ -833,57 +776,24 @@ std::vector<DecodeResult> Sime::NextGroups(
     // Get successor tokens from LM
     auto next_tokens = scorer_.NextTokens(pos, num * 4);
 
-    const auto& tg = dict_.TokenGroups();
+    const auto& ts = dict_.TokenSet();
 
-    struct Candidate {
-        std::string text;
-        std::vector<TokenID> tokens;
-        float_t score;
-    };
-    std::vector<Candidate> candidates;
-
-    for (const auto& [tid, pro] : next_tokens) {
-        if (tid < StartToken) continue;
-
-        // Only emit words that exist as Groups in the dict
-        auto it = tg.find(tid);
-        if (it == tg.end()) continue;
-
-        for (const auto& group : it->second) {
-            Scorer::Pos g_pos = pos;
-            float_t g_score = 0.0;
-            std::u32string u32;
-            std::vector<TokenID> g_tokens;
-            for (auto gid : group) {
-                Scorer::Pos g_next{};
-                g_score += scorer_.ScoreMove(g_pos, gid, g_next);
-                g_pos = g_next;
-                g_tokens.push_back(gid);
-                const char32_t* gc = dict_.TokenAt(gid);
-                if (gc) {
-                    for (std::size_t i = 0; gc[i] != 0; ++i)
-                        u32.push_back(gc[i]);
-                }
-            }
-            if (!u32.empty()) {
-                candidates.push_back(
-                    {TextFromU32(u32),
-                     std::move(g_tokens), g_score});
-            }
-        }
-    }
-
-    // Sort by cost ascending (lower cost = higher probability)
-    std::sort(candidates.begin(), candidates.end(),
-              [](const auto& a, const auto& b) { return a.score < b.score; });
-
-    // Dedup and collect
     std::unordered_set<std::string> seen;
-    for (auto& c : candidates) {
+    for (const auto& [tid, pro] : next_tokens) {
         if (results.size() >= num) break;
-        if (!seen.insert(c.text).second) continue;
-        results.push_back({std::move(c.text), {}, std::move(c.tokens),
-                           -c.score, 0});
+        if (tid < StartToken) continue;
+        if (ts.find(tid) == ts.end()) continue;
+
+        const char32_t* chars = dict_.TokenAt(tid);
+        if (!chars || chars[0] == 0) continue;
+
+        std::u32string u32;
+        for (std::size_t i = 0; chars[i] != 0; ++i)
+            u32.push_back(chars[i]);
+        std::string text = TextFromU32(u32);
+        if (!seen.insert(text).second) continue;
+
+        results.push_back({std::move(text), {}, {tid}, -pro, 0});
     }
 
     return results;

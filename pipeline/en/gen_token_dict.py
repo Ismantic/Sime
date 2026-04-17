@@ -60,7 +60,7 @@ def main():
     with open(args.en_output, "w") as fout:
         for w in tokens:
             if is_english(w):
-                fout.write(f"{w} {w} {w}\n")
+                fout.write(f"{w} {w}\n")
                 en_count += 1
     print(f"en tokens: {en_count}", file=sys.stderr)
     print(f"written to {args.en_output}", file=sys.stderr)

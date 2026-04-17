@@ -64,8 +64,6 @@ private:
         std::size_t start = 0;
         std::size_t end = 0;
         TokenID id = 0;
-        const std::uint32_t* group = nullptr;
-        std::uint16_t group_len = 1;
         const std::string* pieces = nullptr;  // piece path from Dict::NodePieces
     };
 
@@ -96,7 +94,6 @@ private:
     static std::string ExtractUnits(const std::vector<Link>& path);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string TextFromU32(std::u32string& u32);
-    float_t ScoreGroup(const Link& edge) const;
 
     // Num-key lattice
     void InitNumNet(std::string_view start,

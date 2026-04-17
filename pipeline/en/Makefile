@@ -42,7 +42,7 @@ construct: $(OUT)/raw.3gram sime.en.token.dict.txt
 		-o $(OUT)/sime.en.raw.cnt \
 		-c 0,2,5 \
 		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),500000,500000
+		-r $$(($(VOCAB) + 3)),2000000,2000000
 
 # Step 4: convert token dict to dict
 convert: sime.en.token.dict.txt $(EN_DICT)

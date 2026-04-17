@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace sime {
@@ -44,13 +45,12 @@ public:
 
     const PieceTable& GetPieceTable() const { return piece_; }
 
-    // Walk piece path, BFS subtree, collect Groups (token ID sequences).
-    std::vector<std::vector<std::uint32_t>> GetGroups(
+    // Walk piece path, BFS subtree, collect token IDs.
+    std::vector<std::uint32_t> GetTokens(
         std::string_view pieces, std::size_t num) const;
 
-    // Reverse index: first TokenID → complete Group sequences containing it.
-    const std::unordered_map<TokenID, std::vector<std::vector<TokenID>>>&
-    TokenGroups() const { return token_groups_; }
+    // Set of all token IDs present in the trie.
+    const std::unordered_set<TokenID>& TokenSet() const { return token_set_; }
 
     // Piece path for a trie node (e.g. "ni'hao" for 你好).
     const std::string& NodePieces(const Node* node) const {
@@ -60,7 +60,7 @@ public:
     }
 
 private:
-    void BuildTokenGroups();
+    void BuildTokenIndex();
     const Node* NodeFrom(std::uint32_t i) const;
     std::uint32_t RootIndex() const;
     std::uint32_t TokenIndex() const;
@@ -69,7 +69,7 @@ private:
     std::vector<char> blob_;
     std::vector<const char32_t*> token_strs_;
     PieceTable piece_;
-    std::unordered_map<TokenID, std::vector<std::vector<TokenID>>> token_groups_;
+    std::unordered_set<TokenID> token_set_;
     std::unordered_map<std::u32string, TokenID> token_ids_;
     std::unordered_map<const Node*, std::string> node_pieces_;
 };
