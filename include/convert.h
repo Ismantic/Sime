@@ -16,7 +16,7 @@ namespace sime {
 class DictConverter {
 public:
     bool LoadTokens(const std::filesystem::path& path);
-    bool Load(const std::filesystem::path& path);
+    bool Load(const std::filesystem::path& path, bool en = false);
     bool Write(const std::filesystem::path& output);
     std::size_t Count() const;
     std::vector<std::string> Dump() const;

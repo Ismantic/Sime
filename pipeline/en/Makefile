@@ -4,7 +4,7 @@ NPROC = 16
 SIME = ../../build
 
 CORPUS = en_sentences.en.cut.txt
-PIECES = piece.25w.txt
+PIECES = piece.txt
 EN_DICT = en_dict_cut.en.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.en.token.dict.txt 2>/dev/null || echo 0)
@@ -30,11 +30,11 @@ construct: $(OUT)/raw.3gram sime.en.token.dict.txt
 		-o $(OUT)/sime.en.raw.cnt \
 		-c 0,2,5 \
 		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),3000000,3000000
+		-r $$(($(VOCAB) + 3)),500000,500000
 
 # Step 4: convert token dict to dict
 convert: sime.en.token.dict.txt $(EN_DICT)
-	$(SIME)/sime-converter sime.en.token.dict.txt $(OUT)/sime.en.dict $(EN_DICT)
+	$(SIME)/sime-converter sime.en.token.dict.txt $(OUT)/sime.en.dict --en $(EN_DICT)
 
 clean:
 	rm -f merge.bin sime.en.token.dict.txt

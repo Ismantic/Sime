@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
             }
             // Recurse into children
             const auto* moves = node->GetMove();
-            for (std::uint16_t i = 0; i < node->move_count; ++i) {
+            for (std::uint32_t i = 0; i < node->move_count; ++i) {
                 sime::Unit u(moves[i].unit.value);
                 const char* piece_text = pt.Decode(u);
                 std::string child_pieces = pieces;

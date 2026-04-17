@@ -19,8 +19,8 @@ public:
     };
 
     struct Node {
-        std::uint16_t move_count = 0;
-        std::uint16_t count = 0;
+        std::uint32_t move_count = 0;
+        std::uint32_t count = 0;
 
         const Move* GetMove() const;
         const std::uint32_t* GetToken() const;

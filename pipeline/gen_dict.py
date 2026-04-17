@@ -88,7 +88,7 @@ def main():
         if cnt < args.min_count:
             continue
         if word in units:
-            results.append(units[word])
+            results.append(units[word].replace("'", "/"))
             from_units += 1
         elif is_chinese(word):
             py = get_pinyin(word)

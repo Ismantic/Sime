@@ -105,7 +105,7 @@ void Sime::InitNumNet(std::string_view start,
                         }
                         if (!is_pinyin) {
                             auto matches = piece().PieceDat().FindWordsWithPrefix(
-                                tail_str, 256);
+                                tail_str, 512);
                             for (const auto& r : matches) {
                                 if (r.length <= tail_len) continue;
                                 const auto& units =
@@ -134,24 +134,29 @@ void Sime::InitNumNet(std::string_view start,
             return;
         }
 
-        std::string key;
-        for (std::size_t dend = dpos + 1;
-             dend <= std::min(dpos + piece().MaxLen(), d); ++dend) {
-            char ch = nums[dend - 1];
-            if (separator && ch == '\'') break;
-            key.push_back(ch);
-            auto it = piece().GetNumMap().find(key);
-            if (it == piece().GetNumMap().end()) continue;
-            for (const auto& u : it->second) {
-                const Dict::Node* next = dict_.DoMove(node, u);
-                if (!next) continue;
-                const std::size_t new_col = p + dend;
-                emit(s, new_col, next);
-                self(self, s, new_col, next);
+        // Match digits against both pinyin and english num maps.
+        auto match_num = [&](const PieceTable::PieceMap& nmap) {
+            std::string key;
+            for (std::size_t dend = dpos + 1;
+                 dend <= std::min(dpos + piece().MaxLen(), d); ++dend) {
+                char ch = nums[dend - 1];
+                if (separator && ch == '\'') break;
+                key.push_back(ch);
+                auto it = nmap.find(key);
+                if (it == nmap.end()) continue;
+                for (const auto& u : it->second) {
+                    const Dict::Node* next = dict_.DoMove(node, u);
+                    if (!next) continue;
+                    const std::size_t new_col = p + dend;
+                    emit(s, new_col, next);
+                    self(self, s, new_col, next);
+                }
             }
-        }
+        };
+        match_num(piece().GetNumMap());
+        match_num(piece().GetNumMapEn());
 
-        // Tail expansion for digits
+        // Tail expansion for digits (both pinyin and english)
         if (expansion) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
@@ -160,12 +165,26 @@ void Sime::InitNumNet(std::string_view start,
             if (dpos + tail_len == d) {
                 std::string tail(nums.substr(dpos, tail_len));
                 if (!tail.empty() && tail.size() <= piece().MaxLen()) {
+                    // Pinyin expansion
                     auto matches = piece().NumDat().FindWordsWithPrefix(
-                        tail, 256);
+                        tail, 512);
                     for (const auto& r : matches) {
                         if (r.length <= tail.size()) continue;
                         const auto& units =
                             piece().UnitsByNumDatIndex(r.value);
+                        for (const auto& u : units) {
+                            const Dict::Node* next = dict_.DoMove(node, u);
+                            if (!next) continue;
+                            emit(s, total, next);
+                        }
+                    }
+                    // English expansion
+                    auto matches_en = piece().NumDatEn().FindWordsWithPrefix(
+                        tail, 1024);
+                    for (const auto& r : matches_en) {
+                        if (r.length <= tail.size()) continue;
+                        const auto& units =
+                            piece().UnitsByNumDatEnIndex(r.value);
                         for (const auto& u : units) {
                             const Dict::Node* next = dict_.DoMove(node, u);
                             if (!next) continue;
@@ -320,7 +339,18 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
-        std::size_t distance = total - edge.end;
+        // Distance: difference between piece path length and input length.
+        // Covers both "input not fully consumed" and "candidate expanded beyond input".
+        std::size_t piece_len = 0;
+        if (edge.pieces) {
+            for (char c : *edge.pieces) {
+                if (c != '\'') ++piece_len;
+            }
+        }
+        std::size_t consumed = edge.end - edge.start;
+        std::size_t distance = (piece_len > consumed) ? (piece_len - consumed)
+                             : (total > edge.end)     ? (total - edge.end)
+                             : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
         float_t score = -ScoreGroup(edge) - dist_penalty;
@@ -396,12 +426,8 @@ std::string NormalizeInput(std::string_view input) {
             lower.push_back(static_cast<char>(0xE2));
             lower.push_back(static_cast<char>(0x96));
             lower.push_back(static_cast<char>(0x81));
-        } else {
-            char lc = static_cast<char>(
-                std::tolower(static_cast<unsigned char>(c)));
-            if (lc >= 'a' && lc <= 'z') {
-                lower.push_back(lc);
-            }
+        } else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+            lower.push_back(c);
         }
     }
     return lower;
@@ -479,7 +505,7 @@ void Sime::InitNet(std::string_view input,
         dict_.GetToken(dn, tc);
         if (tc > 0) return;
         const auto* moves = dn->GetMove();
-        for (std::uint16_t mi = 0; mi < dn->move_count; ++mi) {
+        for (std::uint32_t mi = 0; mi < dn->move_count; ++mi) {
             Unit du = moves[mi].unit;
             const Dict::Node* dn2 = dict_.DoMove(dn, du);
             if (!dn2) continue;
@@ -722,6 +748,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::unordered_set<std::string> dedup;
 
     // === Layer 1: Full sentence N-best ===
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     {
         const auto tail = net.back().states.GetStates();
         const std::size_t full_limit = 1 + extra;
@@ -734,20 +762,23 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractUnits(path);
+            // Expansion penalty: pieces length vs input length
+            std::size_t piece_len = 0;
+            for (char c : py) {
+                if (c != '\'') ++piece_len;
+            }
+            std::size_t distance = (piece_len > total) ? (piece_len - total) : 0;
+            float_t dist_penalty =
+                static_cast<float_t>(distance) * penalty_per_unit;
             results.push_back({std::move(text), std::move(py),
                                ExtractTokens(path),
-                               -tail[rank].score, input.size()});
+                               -tail[rank].score - dist_penalty, input.size()});
         }
     }
 
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: word/char alternatives at position 0 ===
-    // TODO: expansion candidates (deep walk / tail expansion) currently get
-    // distance=0 same as exact matches. Should add penalty proportional to
-    // expansion depth so that precise matches rank above expanded ones.
-    const float_t penalty_per_unit =
-        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     for (const auto& edge : net[0].es) {
         if (edge.id == SentenceEnd) continue;
 
@@ -756,7 +787,16 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
-        std::size_t distance = total - edge.end;
+        std::size_t piece_len = 0;
+        if (edge.pieces) {
+            for (char c : *edge.pieces) {
+                if (c != '\'') ++piece_len;
+            }
+        }
+        std::size_t consumed = edge.end - edge.start;
+        std::size_t distance = (piece_len > consumed) ? (piece_len - consumed)
+                             : (total > edge.end)     ? (total - edge.end)
+                             : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
         float_t score = -ScoreGroup(edge) - dist_penalty;
