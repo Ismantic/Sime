@@ -3,9 +3,9 @@ COUNT_MAX = 83886080
 NPROC = 16
 SIME = ../../build
 
-CORPUS = sentences.en.cut.txt
-PIECES = piece.24w.txt
-EN_DICT = en_dict_cut.txt
+CORPUS = en_sentences.en.cut.txt
+PIECES = piece.25w.txt
+EN_DICT = en_dict_cut.en.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.en.token.dict.txt 2>/dev/null || echo 0)
 

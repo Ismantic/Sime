@@ -43,6 +43,15 @@ if [[ $PER_PROC_MAX -lt 1024 ]]; then
 fi
 echo "=== Counting n-grams (count_max per proc: $PER_PROC_MAX) ===" >&2
 
+cleanup() {
+    echo "Interrupted, killing child processes..." >&2
+    for pid in "${pids[@]}"; do
+        kill "$pid" 2>/dev/null
+    done
+    exit 1
+}
+trap cleanup INT TERM
+
 pids=()
 outputs=()
 for i in "${!CHUNKS[@]}"; do
