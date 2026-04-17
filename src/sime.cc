@@ -64,21 +64,25 @@ void Sime::InitNumNet(std::string_view start,
                 return;
             }
 
-            std::string key;
-            for (std::size_t end = pos + 1;
-                 end <= std::min(pos + piece().MaxLen(), p); ++end) {
-                char kc = start[end - 1];
-                if (separator && kc == '\'') break;
-                key.push_back(kc);
-                auto it = piece().GetPieceMap().find(key);
-                if (it == piece().GetPieceMap().end()) continue;
-                for (const auto& u : it->second) {
-                    const Dict::Node* next = dict_.DoMove(node, u);
-                    if (!next) continue;
-                    emit(s, end, next);
-                    self(self, s, end, next);
+            auto try_prefix_pieces = [&](const PieceTable::PieceMap& pmap) {
+                std::string key;
+                for (std::size_t end = pos + 1;
+                     end <= std::min(pos + piece().MaxLen(), p); ++end) {
+                    char kc = start[end - 1];
+                    if (separator && kc == '\'') break;
+                    key.push_back(kc);
+                    auto it = pmap.find(key);
+                    if (it == pmap.end()) continue;
+                    for (const auto& u : it->second) {
+                        const Dict::Node* next = dict_.DoMove(node, u);
+                        if (!next) continue;
+                        emit(s, end, next);
+                        self(self, s, end, next);
+                    }
                 }
-            }
+            };
+            try_prefix_pieces(piece().GetPieceMap());
+            try_prefix_pieces(piece().GetPieceMapEn());
 
             // Tail expansion for prefix letters
             {
@@ -105,6 +109,20 @@ void Sime::InitNumNet(std::string_view start,
                                 if (r.length <= tail_len) continue;
                                 const auto& units =
                                     piece().UnitsByPieceDatIndex(r.value);
+                                for (const auto& u : units) {
+                                    const Dict::Node* next =
+                                        dict_.DoMove(node, u);
+                                    if (!next) continue;
+                                    emit(s, p, next);
+                                    self(self, s, p, next);
+                                }
+                            }
+                            auto matches_en = piece().PieceDatEn().FindWordsWithPrefix(
+                                tail_str, 1024);
+                            for (const auto& r : matches_en) {
+                                if (r.length <= tail_len) continue;
+                                const auto& units =
+                                    piece().UnitsByPieceDatEnIndex(r.value);
                                 for (const auto& u : units) {
                                     const Dict::Node* next =
                                         dict_.DoMove(node, u);
@@ -498,26 +516,30 @@ void Sime::InitNet(std::string_view input,
                 return;
             }
 
-            // 1. Piece matches via piece().GetPieceMap()
-            std::string key;
-            for (std::size_t end = pos + 1;
-                 end <= std::min(pos + piece().MaxLen(), total); ++end) {
-                char ch = input[end - 1];
-                if (separator && ch == '\'') break;
-                key.push_back(ch);
-                auto it = piece().GetPieceMap().find(key);
-                if (it == piece().GetPieceMap().end()) continue;
-                for (const auto& u : it->second) {
-                    const Dict::Node* next = dict_.DoMove(node, u);
-                    if (!next) continue;
-                    emit(s, end, next);
-                    if (end == total && expansion) {
-                        deep_walk(deep_walk, s, next, 0);
-                    } else if (end < total) {
-                        self(self, end, next);
+            // 1. Piece matches (pinyin + english)
+            auto try_pieces = [&](const PieceTable::PieceMap& pmap) {
+                std::string key;
+                for (std::size_t end = pos + 1;
+                     end <= std::min(pos + piece().MaxLen(), total); ++end) {
+                    char ch = input[end - 1];
+                    if (separator && ch == '\'') break;
+                    key.push_back(ch);
+                    auto it = pmap.find(key);
+                    if (it == pmap.end()) continue;
+                    for (const auto& u : it->second) {
+                        const Dict::Node* next = dict_.DoMove(node, u);
+                        if (!next) continue;
+                        emit(s, end, next);
+                        if (end == total && expansion) {
+                            deep_walk(deep_walk, s, next, 0);
+                        } else if (end < total) {
+                            self(self, end, next);
+                        }
                     }
                 }
-            }
+            };
+            try_pieces(piece().GetPieceMap());
+            try_pieces(piece().GetPieceMapEn());
 
             // 2. Expansion: remaining input is a prefix of a longer
             //    piece that extends beyond the input end.
@@ -534,6 +556,7 @@ void Sime::InitNet(std::string_view input,
                         }
                     }
                     if (!is_pinyin) {
+                        // Pinyin expansion
                         auto matches = piece().PieceDat().FindWordsWithPrefix(
                             tail_str, 256);
                         for (const auto& r : matches) {
@@ -546,6 +569,20 @@ void Sime::InitNet(std::string_view input,
                                 if (!next) continue;
                                 emit(s, total, next);
                                 deep_walk(deep_walk, s, next, 0);
+                            }
+                        }
+                        // English expansion
+                        auto matches_en = piece().PieceDatEn().FindWordsWithPrefix(
+                            tail_str, 1024);
+                        for (const auto& r : matches_en) {
+                            if (r.length <= tail_len) continue;
+                            const auto& units =
+                                piece().UnitsByPieceDatEnIndex(r.value);
+                            for (const auto& u : units) {
+                                const Dict::Node* next =
+                                    dict_.DoMove(node, u);
+                                if (!next) continue;
+                                emit(s, total, next);
                             }
                         }
                     }
