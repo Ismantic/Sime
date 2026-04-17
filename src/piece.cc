@@ -48,13 +48,19 @@ Unit PieceTable::Register(std::string_view piece, bool en) {
 
 void PieceTable::BuildMaps() {
     piece_map_.clear();
+    piece_map_en_.clear();
     num_map_.clear();
     num_map_en_.clear();
     max_len_ = 0;
     for (std::uint32_t id = 1; id < pieces_.size(); ++id) {
         Unit u(id);
         const auto& text = pieces_[id];
-        piece_map_[text].push_back(u);
+        if (en_ids_.count(id)) {
+            piece_map_en_[text].push_back(u);
+        }
+        if (!en_ids_.count(id) || IsInPinyinDict(text)) {
+            piece_map_[text].push_back(u);
+        }
         if (text.size() > max_len_) max_len_ = text.size();
         std::string nums = PieceToNum(text);
         if (!nums.empty()) {
@@ -70,7 +76,7 @@ void PieceTable::BuildMaps() {
 }
 
 void PieceTable::BuildDats() {
-    // Build DAT for piece_map_ keys.
+    // Build DAT for piece_map_ keys (pinyin).
     piece_dat_ = trie::DoubleArray<std::uint32_t>();
     piece_dat_units_.clear();
     if (!piece_map_.empty()) {
@@ -87,6 +93,25 @@ void PieceTable::BuildDats() {
             piece_dat_units_.push_back(piece_map_.at(keys[i]));
         }
         piece_dat_.Build(keys, values);
+    }
+
+    // Build DAT for piece_map_en_ keys (english).
+    piece_dat_en_ = trie::DoubleArray<std::uint32_t>();
+    piece_dat_en_units_.clear();
+    if (!piece_map_en_.empty()) {
+        std::vector<std::string> keys;
+        keys.reserve(piece_map_en_.size());
+        for (const auto& kv : piece_map_en_) keys.push_back(kv.first);
+        std::sort(keys.begin(), keys.end());
+
+        std::vector<std::uint32_t> values;
+        values.reserve(keys.size());
+        piece_dat_en_units_.reserve(keys.size());
+        for (std::uint32_t i = 0; i < keys.size(); ++i) {
+            values.push_back(i);
+            piece_dat_en_units_.push_back(piece_map_en_.at(keys[i]));
+        }
+        piece_dat_en_.Build(keys, values);
     }
 
     // Build DAT for num_map_ keys (pinyin).
@@ -132,6 +157,12 @@ const std::vector<Unit>& PieceTable::UnitsByPieceDatIndex(std::uint32_t i) const
     static const std::vector<Unit> empty;
     if (i >= piece_dat_units_.size()) return empty;
     return piece_dat_units_[i];
+}
+
+const std::vector<Unit>& PieceTable::UnitsByPieceDatEnIndex(std::uint32_t i) const {
+    static const std::vector<Unit> empty;
+    if (i >= piece_dat_en_units_.size()) return empty;
+    return piece_dat_en_units_[i];
 }
 
 const std::vector<Unit>& PieceTable::UnitsByNumDatIndex(std::uint32_t i) const {
