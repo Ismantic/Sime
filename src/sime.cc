@@ -9,9 +9,7 @@
 namespace sime {
 
 Sime::Sime(const std::filesystem::path& dict_path,
-                         const std::filesystem::path& model_path,
-                         bool separator)
-    : separator_(separator) {
+                         const std::filesystem::path& model_path) {
     if (!dict_.Load(dict_path)) {
         return;
     }
@@ -26,8 +24,7 @@ Sime::Sime(const std::filesystem::path& dict_path,
 void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
                               std::vector<Node>& net,
-                              bool expansion,
-                              bool separator) const {
+                              bool expansion) const {
     const std::size_t p = start.size();
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
@@ -41,8 +38,11 @@ void Sime::InitNumNet(std::string_view start,
     };
 
     auto emit_dat = [&](std::size_t s, Dict::DatType type,
-                        std::string_view suffix, std::size_t max_end) {
-        auto results = dict_.Dat(type).PrefixSearch(suffix, 512);
+                        std::string_view suffix, std::size_t max_end,
+                        bool pinyin) {
+        auto results = pinyin
+            ? dict_.Dat(type).PrefixSearchPinyin(suffix, 512)
+            : dict_.Dat(type).PrefixSearch(suffix, 512);
         for (const auto& r : results) {
             std::size_t new_col = s + r.length;
             if (new_col > max_end) continue;
@@ -55,8 +55,10 @@ void Sime::InitNumNet(std::string_view start,
 
     auto expand_dat = [&](std::size_t s, Dict::DatType type,
                           std::string_view tail, std::size_t target_col,
-                          std::size_t max_num) {
-        auto results = dict_.Dat(type).FindWordsWithPrefix(tail, max_num);
+                          std::size_t max_num, bool pinyin) {
+        auto results = pinyin
+            ? dict_.Dat(type).FindWordsWithPrefixPinyin(tail, max_num)
+            : dict_.Dat(type).FindWordsWithPrefix(tail, max_num);
         for (const auto& r : results) {
             if (r.length <= tail.size()) continue;
             auto entry = dict_.GetEntry(type, r.value);
@@ -69,33 +71,28 @@ void Sime::InitNumNet(std::string_view start,
     for (std::size_t s = 0; s < total; ++s) {
         // === Prefix letter columns ===
         if (s < p) {
-            if (separator && start[s] == '\'') {
+            if (start[s] == '\'') {
                 net[s].es.push_back({s, s + 1, ScoreNotToken});
                 continue;
             }
 
             std::string_view suffix = start.substr(s);
-            emit_dat(s, Dict::LetterPinyin, suffix, p);
-            emit_dat(s, Dict::LetterEn, suffix, p);
+            emit_dat(s, Dict::LetterPinyin, suffix, p, true);
+            emit_dat(s, Dict::LetterEn, suffix, p, false);
 
             // Tail expansion for prefix letters
             if (expansion) {
                 std::size_t tail_end = s;
                 while (tail_end < p && start[tail_end] != '\'') ++tail_end;
                 if (tail_end == p) {
-                    std::string tail(suffix);
                     std::string tail_clean;
-                    for (char c : tail) {
-                        if (separator && c == '\'') continue;
-                        tail_clean.push_back(c);
+                    for (std::size_t i = s; i < p; ++i) {
+                        if (start[i] == '\'') continue;
+                        tail_clean.push_back(start[i]);
                     }
                     if (!tail_clean.empty() && !Dict::IsKnownPinyin(tail_clean)) {
-                        expand_dat(s, Dict::LetterPinyin, tail, p, 512);
-                        expand_dat(s, Dict::LetterEn, tail, p, 1024);
-                        if (tail_clean != tail) {
-                            expand_dat(s, Dict::LetterPinyin, tail_clean, p, 512);
-                            expand_dat(s, Dict::LetterEn, tail_clean, p, 1024);
-                        }
+                        expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true);
+                        expand_dat(s, Dict::LetterEn, tail_clean, p, 1024, false);
                     }
                 }
             }
@@ -105,19 +102,27 @@ void Sime::InitNumNet(std::string_view start,
         // === Digit columns ===
         const std::size_t dpos = s - p;
 
-        if (separator && nums[dpos] == '\'') {
+        if (nums[dpos] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
 
-        // Num-key matches (pinyin + english)
-        std::string clean_nums;
-        for (std::size_t i = dpos; i < d; ++i) {
-            if (separator && nums[i] == '\'') continue;
-            clean_nums.push_back(nums[i]);
-        }
-        emit_dat(s, Dict::NumPinyin, clean_nums, total);
-        emit_dat(s, Dict::NumEn, clean_nums, total);
+        // T9: expand digits to letters and search letter DATs
+        std::string_view num_suffix = nums.substr(dpos);
+        auto t9_emit = [&](Dict::DatType type, std::size_t max_num) {
+            auto results = dict_.Dat(type).PrefixSearchT9(
+                num_suffix, Dict::NumToLetters, max_num);
+            for (const auto& r : results) {
+                std::size_t new_col = s + r.length;
+                if (new_col > total) continue;
+                auto entry = dict_.GetEntry(type, r.value);
+                for (uint32_t i = 0; i < entry.count; ++i) {
+                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces);
+                }
+            }
+        };
+        t9_emit(Dict::LetterPinyin, 512);
+        t9_emit(Dict::LetterEn, 512);
 
         // Tail expansion for digits
         if (expansion) {
@@ -126,8 +131,20 @@ void Sime::InitNumNet(std::string_view start,
                 ++tail_len;
             if (dpos + tail_len == d && tail_len > 0) {
                 std::string tail(nums.substr(dpos, tail_len));
-                expand_dat(s, Dict::NumPinyin, tail, total, 512);
-                expand_dat(s, Dict::NumEn, tail, total, 1024);
+                auto t9_expand = [&](Dict::DatType type, std::size_t max_num) {
+                    auto results = dict_.Dat(type).FindWordsWithPrefixT9(
+                        tail, Dict::NumToLetters, max_num);
+                    for (const auto& r : results) {
+                        if (r.length <= tail.size()) continue;
+                        auto entry = dict_.GetEntry(type, r.value);
+                        for (uint32_t i = 0; i < entry.count; ++i) {
+                            emit(s, total, entry.items[i].id,
+                                 entry.items[i].pieces);
+                        }
+                    }
+                };
+                t9_expand(Dict::LetterPinyin, 512);
+                t9_expand(Dict::LetterEn, 1024);
             }
         }
     }
@@ -193,7 +210,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
 
     std::vector<Node> net;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
-    InitNumNet(start, nums, net, can_tail_expand, separator_);
+    InitNumNet(start, nums, net, can_tail_expand);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -282,7 +299,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     const std::size_t total = start.size() + nums.size();
 
     std::vector<Node> net;
-    InitNumNet(start, nums, net, /*expansion=*/false, separator_);
+    InitNumNet(start, nums, net, /*expansion=*/false);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -338,7 +355,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    InitNet(lower, net, /*expansion=*/false, separator_);
+    InitNet(lower, net, /*expansion=*/false);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -364,8 +381,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
 void Sime::InitNet(std::string_view input,
                       std::vector<Node>& net,
-                      bool expansion,
-                      bool separator) const {
+                      bool expansion) const {
     const std::size_t total = input.size();
     net.clear();
     net.resize(total + 2);
@@ -376,17 +392,18 @@ void Sime::InitNet(std::string_view input,
     };
 
     for (std::size_t s = 0; s < total; ++s) {
-        if (separator && input[s] == '\'') {
+        if (input[s] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
 
-        // PrefixSearch directly on the raw suffix (DAT has both
-        // separator keys like "xi'an" and plain keys like "xian")
+        // Pinyin: PrefixSearchPinyin handles separator skipping
+        // and syllable abbreviation at query time.
+        // English: plain PrefixSearch (no abbreviation).
         std::string_view suffix = input.substr(s);
 
-        auto match_dat = [&](Dict::DatType type) {
-            auto results = dict_.Dat(type).PrefixSearch(suffix, 512);
+        auto emit_results = [&](const std::vector<trie::SearchResult>& results,
+                                Dict::DatType type) {
             for (const auto& r : results) {
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
@@ -395,47 +412,42 @@ void Sime::InitNet(std::string_view input,
                 }
             }
         };
-        match_dat(Dict::LetterPinyin);
-        match_dat(Dict::LetterEn);
 
-        // Tail expansion: remaining input is a prefix of a longer piece
+        emit_results(
+            dict_.Dat(Dict::LetterPinyin).PrefixSearchPinyin(suffix, 512),
+            Dict::LetterPinyin);
+        emit_results(
+            dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
+            Dict::LetterEn);
+
+        // Tail expansion
         if (expansion) {
-            std::string tail(suffix);
-            // Also try without separators for expansion
             std::string tail_clean;
-            for (char c : tail) {
-                if (separator && c == '\'') continue;
+            for (char c : suffix) {
+                if (c == '\'') continue;
                 tail_clean.push_back(c);
             }
             if (!tail_clean.empty() && !Dict::IsKnownPinyin(tail_clean)) {
-                auto expand = [&](Dict::DatType type, std::size_t max_num) {
-                    // Expand with separator-preserved tail
-                    auto results = dict_.Dat(type).FindWordsWithPrefix(
-                        tail, max_num);
+                auto expand_results = [&](
+                    const std::vector<trie::SearchResult>& results,
+                    Dict::DatType type, std::size_t tail_len) {
                     for (const auto& r : results) {
-                        if (r.length <= tail.size()) continue;
+                        if (r.length <= tail_len) continue;
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             emit(s, total, entry.items[i].id,
                                  entry.items[i].pieces);
                         }
                     }
-                    // Also expand with clean tail (no separators)
-                    if (tail_clean != tail) {
-                        auto results2 = dict_.Dat(type).FindWordsWithPrefix(
-                            tail_clean, max_num);
-                        for (const auto& r : results2) {
-                            if (r.length <= tail_clean.size()) continue;
-                            auto entry = dict_.GetEntry(type, r.value);
-                            for (uint32_t i = 0; i < entry.count; ++i) {
-                                emit(s, total, entry.items[i].id,
-                                     entry.items[i].pieces);
-                            }
-                        }
-                    }
                 };
-                expand(Dict::LetterPinyin, 512);
-                expand(Dict::LetterEn, 1024);
+                expand_results(
+                    dict_.Dat(Dict::LetterPinyin).FindWordsWithPrefixPinyin(
+                        suffix, 512),
+                    Dict::LetterPinyin, suffix.size());
+                expand_results(
+                    dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(
+                        tail_clean, 1024),
+                    Dict::LetterEn, tail_clean.size());
             }
         }
     }
@@ -561,7 +573,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t total = lower.size();
 
     std::vector<Node> net;
-    InitNet(lower, net, /*expansion=*/true, separator_);
+    InitNet(lower, net, /*expansion=*/true);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);

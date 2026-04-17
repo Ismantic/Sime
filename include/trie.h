@@ -54,6 +54,26 @@ public:
     std::vector<SearchResult> FindWordsWithPrefix(std::string_view prefix,
                                                   std::size_t max_num = 96) const;
 
+    // Pinyin-aware variants: `'` in DAT keys is treated as a syllable
+    // boundary.  Input chars that don't match the DAT can skip ahead to
+    // the next `'` (syllable abbreviation), and `'` in keys can be
+    // silently skipped when the input has no separator.
+    std::vector<SearchResult> PrefixSearchPinyin(
+        std::string_view str, std::size_t max_num = 96) const;
+    std::vector<SearchResult> FindWordsWithPrefixPinyin(
+        std::string_view prefix, std::size_t max_num = 96) const;
+
+    // T9 digit-expansion variants: each digit (2-9) is expanded to
+    // its possible letters and matched against letter-based DAT keys.
+    // The expander function returns possible chars for an input byte.
+    using CharExpander = const char* (*)(uint8_t);
+    std::vector<SearchResult> PrefixSearchT9(
+        std::string_view digits, CharExpander expand,
+        std::size_t max_num = 96) const;
+    std::vector<SearchResult> FindWordsWithPrefixT9(
+        std::string_view digits, CharExpander expand,
+        std::size_t max_num = 96) const;
+
     // Serialization.
     void Serialize(std::vector<char>& buffer) const;
     bool Deserialize(const char* data, std::size_t size);
@@ -65,6 +85,28 @@ private:
     void CollectWords(std::size_t pos, std::string& word,
                       std::vector<SearchResult>& results,
                       std::size_t max_num) const;
+
+    // Try following a character from pos. Returns child pos or SIZE_MAX.
+    std::size_t TryChild(std::size_t pos, uint8_t ch) const;
+
+    // Find all '\'' descendant positions reachable from pos within
+    // max_depth non-'\'' steps.
+    void FindSepDescendants(std::size_t pos,
+                            std::vector<std::size_t>& out,
+                            int max_depth) const;
+
+    // Core state-machine advance: given a set of (dat_pos, at_boundary)
+    // states and an input character, compute the next state set.
+    struct PinyinState {
+        std::size_t pos;
+        uint8_t depth;  // 0=boundary (root/after '), 1=initial matched, 2+=deep
+    };
+    void AdvancePinyin(std::vector<PinyinState>& states,
+                       uint8_t ch) const;
+    void RecordMatches(const std::vector<PinyinState>& states,
+                       std::size_t input_len,
+                       std::vector<SearchResult>& results,
+                       std::size_t max_num) const;
 
     std::size_t size_ = 0;
     std::unique_ptr<ArrayUnit[]> array_;

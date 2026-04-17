@@ -38,7 +38,6 @@ private:
 
     // Utilities
     static std::string PiecesToLetterKey(const std::vector<std::string>& pieces);
-    static std::string PiecesToNumKey(const std::vector<std::string>& pieces);
     static std::string PiecesToString(const std::vector<std::string>& pieces);
 
     void WriteSideTable(const EntryMap& map,

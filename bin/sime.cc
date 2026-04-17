@@ -17,7 +17,6 @@ struct Options {
     bool sentence = false;
     bool num = false;
     bool next = false;
-    bool separator = true;
 };
 
 void PrintUsage() {
@@ -31,8 +30,7 @@ void PrintUsage() {
               << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
-              << "  --next              Prediction mode (input token IDs, get nextions)\n"
-              << "  --no-sep            Disable ' as separator (for English)\n";
+              << "  --next              Prediction mode (input token IDs, get nextions)\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -52,8 +50,6 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.num = true;
         } else if (arg == "--next") {
             opts.next = true;
-        } else if (arg == "--no-sep") {
-            opts.separator = false;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -108,7 +104,7 @@ int main(int argc, char** argv) {
     }
 
     // Sime mode
-    sime::Sime engine(opts.dict, opts.cnt, opts.separator);
+    sime::Sime engine(opts.dict, opts.cnt);
     if (!engine.Ready()) {
         std::cerr << "Load failed: " << opts.dict << ", " << opts.cnt << "\n";
         return 1;

@@ -119,6 +119,96 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
     }
 }
 
+// --- T9 digit expansion ---
+
+std::vector<SearchResult> DoubleArray::PrefixSearchT9(
+    std::string_view digits, CharExpander expand,
+    std::size_t max_num) const {
+    std::vector<SearchResult> results;
+    if (Empty()) return results;
+
+    // Reuse the pinyin state machine but expand each input char
+    std::vector<PinyinState> states = {{0, 0}};
+    RecordMatches(states, 0, results, max_num);
+
+    for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
+        if (results.size() >= max_num) break;
+        auto ch = static_cast<uint8_t>(digits[i]);
+
+        if (ch == '\'') {
+            // Separator in digit input — pass through
+            AdvancePinyin(states, ch);
+        } else {
+            const char* letters = expand(ch);
+            if (!letters || !letters[0]) {
+                states.clear();
+                break;
+            }
+            // Try each possible letter
+            std::vector<PinyinState> next;
+            for (const char* lp = letters; *lp; ++lp) {
+                auto tmp = states;
+                AdvancePinyin(tmp, static_cast<uint8_t>(*lp));
+                next.insert(next.end(), tmp.begin(), tmp.end());
+            }
+            // Dedup
+            std::sort(next.begin(), next.end(),
+                      [](const PinyinState& a, const PinyinState& b) {
+                          return a.pos < b.pos;
+                      });
+            next.erase(std::unique(next.begin(), next.end(),
+                                   [](const PinyinState& a, const PinyinState& b) {
+                                       return a.pos == b.pos;
+                                   }), next.end());
+            states = std::move(next);
+        }
+        RecordMatches(states, i + 1, results, max_num);
+    }
+    return results;
+}
+
+std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
+    std::string_view digits, CharExpander expand,
+    std::size_t max_num) const {
+    std::vector<SearchResult> results;
+    if (Empty()) return results;
+
+    // Advance through digit prefix
+    std::vector<PinyinState> states = {{0, 0}};
+    for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
+        auto ch = static_cast<uint8_t>(digits[i]);
+        if (ch == '\'') {
+            AdvancePinyin(states, ch);
+        } else {
+            const char* letters = expand(ch);
+            if (!letters || !letters[0]) { states.clear(); break; }
+            std::vector<PinyinState> next;
+            for (const char* lp = letters; *lp; ++lp) {
+                auto tmp = states;
+                AdvancePinyin(tmp, static_cast<uint8_t>(*lp));
+                next.insert(next.end(), tmp.begin(), tmp.end());
+            }
+            std::sort(next.begin(), next.end(),
+                      [](const PinyinState& a, const PinyinState& b) {
+                          return a.pos < b.pos;
+                      });
+            next.erase(std::unique(next.begin(), next.end(),
+                                   [](const PinyinState& a, const PinyinState& b) {
+                                       return a.pos == b.pos;
+                                   }), next.end());
+            states = std::move(next);
+        }
+    }
+
+    // Collect all words from surviving states
+    for (const auto& s : states) {
+        if (results.size() >= max_num) break;
+        std::string word;
+        CollectWords(s.pos, word, results, max_num);
+    }
+    return results;
+}
+
 // --- Serialize / Deserialize ---
 
 void DoubleArray::Serialize(std::vector<char>& buffer) const {
@@ -160,6 +250,161 @@ bool DoubleArray::Deserialize(const char* data, std::size_t size) {
         offset += sizeof(u.parent);
     }
     return true;
+}
+
+// --- Pinyin-aware matching ---
+
+std::size_t DoubleArray::TryChild(std::size_t pos, uint8_t ch) const {
+    if (pos >= size_) return SIZE_MAX;
+    std::size_t child = pos ^ array_[pos].index ^ ch;
+    if (child >= size_ || child == pos) return SIZE_MAX;
+    if (array_[child].label != ch || array_[child].parent != pos)
+        return SIZE_MAX;
+    return child;
+}
+
+void DoubleArray::FindSepDescendants(std::size_t pos,
+                                     std::vector<std::size_t>& out,
+                                     int max_depth) const {
+    if (max_depth <= 0 || pos >= size_) return;
+    uint32_t base = array_[pos].index;
+    for (int ch = 1; ch <= 255; ++ch) {
+        std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
+        if (child >= size_ || child == pos) continue;
+        if (array_[child].label != ch || array_[child].parent != pos)
+            continue;
+        if (ch == '\'') {
+            out.push_back(child);
+        } else {
+            FindSepDescendants(child, out, max_depth - 1);
+        }
+    }
+}
+
+void DoubleArray::RecordMatches(const std::vector<PinyinState>& states,
+                                std::size_t input_len,
+                                std::vector<SearchResult>& results,
+                                std::size_t max_num) const {
+    for (const auto& s : states) {
+        if (results.size() >= max_num) return;
+        if (!array_[s.pos].eow) continue;
+        std::size_t vp = s.pos ^ array_[s.pos].index;
+        if (vp >= size_ || !array_[vp].HasValue()) continue;
+        uint32_t val = static_cast<uint32_t>(array_[vp].value);
+        // Deduplicate by value
+        bool dup = false;
+        for (const auto& r : results) {
+            if (r.value == val && r.length == input_len) { dup = true; break; }
+        }
+        if (!dup) {
+            results.push_back({val, input_len});
+        }
+    }
+}
+
+void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
+                                uint8_t ch) const {
+    // depth: 0=boundary, 1=initial letter matched, 2+=deep in syllable
+    // Syllable skip only when depth==1 (abbreviation = initial letter only)
+    std::vector<PinyinState> next;
+
+    for (const auto& s : states) {
+        uint8_t new_depth = (s.depth < 255) ? static_cast<uint8_t>(s.depth + 1) : 255;
+
+        if (ch == static_cast<uint8_t>('\'')) {
+            // Separator in input
+            // 1. Direct '\'' match
+            std::size_t sep = TryChild(s.pos, ch);
+            if (sep != SIZE_MAX) {
+                next.push_back({sep, 0});
+            }
+            // 2. Syllable skip to '\'' (only if depth==1: initial abbreviation)
+            if (s.depth == 1) {
+                std::vector<std::size_t> seps;
+                FindSepDescendants(s.pos, seps, 6);
+                for (auto sp : seps) {
+                    next.push_back({sp, 0});
+                }
+            }
+        } else {
+            // Normal character
+            // 1. Direct match
+            std::size_t child = TryChild(s.pos, ch);
+            if (child != SIZE_MAX) {
+                next.push_back({child, new_depth});
+            }
+            // 2. Skip '\'' then match (for non-separator input crossing boundary)
+            std::size_t sep = TryChild(s.pos, static_cast<uint8_t>('\''));
+            if (sep != SIZE_MAX) {
+                std::size_t after_sep = TryChild(sep, ch);
+                if (after_sep != SIZE_MAX) {
+                    next.push_back({after_sep, 1});  // new syllable, first char
+                }
+            }
+            // 3. Syllable skip (only if depth==1: initial abbreviation)
+            if (s.depth == 1) {
+                std::vector<std::size_t> seps;
+                FindSepDescendants(s.pos, seps, 6);
+                for (auto sp : seps) {
+                    std::size_t after = TryChild(sp, ch);
+                    if (after != SIZE_MAX) {
+                        next.push_back({after, 1});  // new syllable
+                    }
+                }
+            }
+        }
+    }
+
+    // Deduplicate by pos (keep smallest depth)
+    std::sort(next.begin(), next.end(),
+              [](const PinyinState& a, const PinyinState& b) {
+                  return a.pos < b.pos || (a.pos == b.pos && a.depth < b.depth);
+              });
+    next.erase(std::unique(next.begin(), next.end(),
+                           [](const PinyinState& a, const PinyinState& b) {
+                               return a.pos == b.pos;
+                           }), next.end());
+
+    states = std::move(next);
+}
+
+std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
+    std::string_view str, std::size_t max_num) const {
+    std::vector<SearchResult> results;
+    if (Empty()) return results;
+
+    std::vector<PinyinState> states = {{0, 0}};
+
+    RecordMatches(states, 0, results, max_num);
+
+    for (std::size_t i = 0; i < str.size() && !states.empty(); ++i) {
+        if (results.size() >= max_num) break;
+        AdvancePinyin(states, static_cast<uint8_t>(str[i]));
+        RecordMatches(states, i + 1, results, max_num);
+    }
+
+    return results;
+}
+
+std::vector<SearchResult> DoubleArray::FindWordsWithPrefixPinyin(
+    std::string_view prefix, std::size_t max_num) const {
+    std::vector<SearchResult> results;
+    if (Empty()) return results;
+
+    // Advance through prefix using pinyin state machine
+    std::vector<PinyinState> states = {{0, 0}};
+    for (std::size_t i = 0; i < prefix.size() && !states.empty(); ++i) {
+        AdvancePinyin(states, static_cast<uint8_t>(prefix[i]));
+    }
+
+    // Collect all words reachable from any surviving state
+    for (const auto& s : states) {
+        if (results.size() >= max_num) break;
+        std::string word(prefix);
+        CollectWords(s.pos, word, results, max_num);
+    }
+
+    return results;
 }
 
 // --- Builder ---
