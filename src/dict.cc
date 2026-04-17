@@ -25,7 +25,7 @@ Dict::~Dict() { Clear(); }
 void Dict::Clear() {
     blob_.clear();
     token_strs_.clear();
-    token_groups_.clear();
+    token_set_.clear();
     token_ids_.clear();
     node_pieces_.clear();
 }
@@ -117,7 +117,7 @@ bool Dict::Load(const std::filesystem::path& path) {
         }
     }
 
-    BuildTokenGroups();
+    BuildTokenIndex();
     return true;
 }
 
@@ -162,9 +162,9 @@ TokenID Dict::TokenFromText(const std::u32string& text) const {
     return NotToken;
 }
 
-std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
+std::vector<std::uint32_t> Dict::GetTokens(
     std::string_view pieces, std::size_t num) const {
-    std::vector<std::vector<std::uint32_t>> result;
+    std::vector<std::uint32_t> result;
     if (num == 0) return result;
 
     // Walk piece path to anchor node
@@ -173,7 +173,6 @@ std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
 
     std::size_t pos = 0;
     while (pos < pieces.size() && node) {
-        // Skip apostrophe separators
         if (pieces[pos] == '\'') {
             ++pos;
             continue;
@@ -184,36 +183,26 @@ std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
                                                 : next - pos);
         if (seg.empty()) break;
         Unit u = piece_.Encode(seg);
-        if (u.value == 0) return result;  // unknown piece
+        if (u.value == 0) return result;
         node = DoMove(node, u);
         pos = (next == std::string_view::npos) ? pieces.size() : next + 1;
     }
     if (!node) return result;
 
-    // BFS subtree, collect Groups
+    // BFS subtree, collect tokens
     std::vector<const Node*> queue;
     queue.push_back(node);
     std::size_t head = 0;
     while (head < queue.size() && result.size() < num) {
         const Node* cur = queue[head++];
 
-        // Collect groups at this node (skip anchor itself)
         if (cur != node && cur->count > 0) {
             const std::uint32_t* tokens = cur->GetToken();
-            std::uint32_t gi = 0;
-            while (gi < cur->count && result.size() < num) {
-                std::vector<std::uint32_t> group;
-                do {
-                    group.push_back(tokens[gi] & GroupTokenMask);
-                    bool is_end = (tokens[gi] & GroupEnd) != 0;
-                    ++gi;
-                    if (is_end) break;
-                } while (gi < cur->count);
-                result.push_back(std::move(group));
+            for (std::uint32_t i = 0; i < cur->count && result.size() < num; ++i) {
+                result.push_back(tokens[i]);
             }
         }
 
-        // Enqueue children
         const auto* moves = cur->GetMove();
         for (std::uint32_t i = 0; i < cur->move_count; ++i) {
             const Node* child = DoMove(cur, Unit(moves[i].unit.value));
@@ -223,13 +212,12 @@ std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
     return result;
 }
 
-void Dict::BuildTokenGroups() {
-    token_groups_.clear();
+void Dict::BuildTokenIndex() {
+    token_set_.clear();
     node_pieces_.clear();
     const Node* root = Root();
     if (!root) return;
 
-    // DFS the entire trie, collect all Groups and piece paths.
     struct Frame {
         const Node* node;
         std::string pieces;
@@ -244,17 +232,8 @@ void Dict::BuildTokenGroups() {
         if (cur->count > 0) {
             node_pieces_[cur] = pieces;
             const std::uint32_t* tokens = cur->GetToken();
-            std::uint32_t gi = 0;
-            while (gi < cur->count) {
-                std::vector<TokenID> group;
-                do {
-                    group.push_back(
-                        static_cast<TokenID>(tokens[gi] & GroupTokenMask));
-                    bool is_end = (tokens[gi] & GroupEnd) != 0;
-                    ++gi;
-                    if (is_end) break;
-                } while (gi < cur->count);
-                token_groups_[group[0]].push_back(group);
+            for (std::uint32_t i = 0; i < cur->count; ++i) {
+                token_set_.insert(static_cast<TokenID>(tokens[i]));
             }
         }
 

@@ -59,19 +59,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // --groups mode: query GetGroups and print results
+    // --groups mode: query GetTokens and print results
     if (!groups_query.empty()) {
-        auto groups = dict.GetGroups(groups_query, 50);
-        std::cerr << "GetGroups(\"" << groups_query << "\"): "
-                  << groups.size() << " groups\n";
-        for (std::size_t i = 0; i < groups.size(); ++i) {
-            std::string text;
-            for (auto id : groups[i]) {
-                text += TokenToText(dict, static_cast<sime::TokenID>(id));
-            }
-            std::cout << "  [" << i << "] " << text << " (ids:";
-            for (auto id : groups[i]) std::cout << " " << id;
-            std::cout << ")\n";
+        auto tokens = dict.GetTokens(groups_query, 50);
+        std::cerr << "GetTokens(\"" << groups_query << "\"): "
+                  << tokens.size() << " tokens\n";
+        for (std::size_t i = 0; i < tokens.size(); ++i) {
+            auto tid = static_cast<sime::TokenID>(tokens[i]);
+            std::cout << "  [" << i << "] " << TokenToText(dict, tid)
+                      << " (id: " << tid << ")\n";
         }
         return 0;
     }
@@ -115,19 +111,9 @@ int main(int argc, char* argv[]) {
             std::uint32_t count = 0;
             const std::uint32_t* tokens = dict.GetToken(node, count);
             if (count > 0 && !pieces.empty()) {
-                std::uint32_t gi = 0;
-                while (gi < count) {
-                    // Concatenate all tokens in group
-                    std::string text;
-                    do {
-                        auto tid = static_cast<sime::TokenID>(
-                            tokens[gi] & sime::GroupTokenMask);
-                        text += TokenToText(dict, tid);
-                        bool is_end = (tokens[gi] & sime::GroupEnd) != 0;
-                        ++gi;
-                        if (is_end) break;
-                    } while (gi < count);
-                    out << text << " " << pieces << "\n";
+                for (std::uint32_t i = 0; i < count; ++i) {
+                    auto tid = static_cast<sime::TokenID>(tokens[i]);
+                    out << TokenToText(dict, tid) << " " << pieces << "\n";
                     ++n;
                 }
             }

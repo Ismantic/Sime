@@ -10,16 +10,12 @@ State::State(float_t score,
              Scorer::Pos pos,
              const State* backtrace_state,
              TokenID backtrace_token,
-             const std::uint32_t* backtrace_group,
-             std::uint16_t backtrace_group_len,
              const std::string* backtrace_pieces)
     : score(score),
       now(now),
       pos(pos),
       backtrace_state(backtrace_state),
       backtrace_token(backtrace_token),
-      backtrace_group(backtrace_group),
-      backtrace_group_len(backtrace_group_len),
       backtrace_pieces(backtrace_pieces) {}
 
 TopStates::TopStates(std::size_t size)

@@ -24,7 +24,7 @@ public:
 private:
     struct Node {
         std::map<std::uint32_t, Node*> moves;
-        std::set<std::vector<std::uint32_t>> ids;
+        std::set<std::uint32_t> ids;
     };
 
     struct NodeSize {
@@ -33,16 +33,14 @@ private:
     };
 
     bool ParseLine(const std::string& line,
-                   std::string& text,
                    std::string& token_col,
                    std::vector<std::string>& units) const;
 
-    void InsertUnits(const std::vector<std::uint32_t>& ids,
-                     const std::vector<Unit>& units);
+    void InsertUnits(std::uint32_t id, const std::vector<Unit>& units);
 
     Node* CreateNode();
     Node* InsertMove(Node* node, Unit unit);
-    void InsertText(Node* node, const std::vector<std::uint32_t>& ids);
+    void InsertText(Node* node, std::uint32_t id);
 
     std::size_t SerializeTree(std::vector<char>& buffer);
     std::size_t WriteTokenTable(std::vector<char>& buffer);

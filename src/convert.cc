@@ -68,39 +68,22 @@ bool DictConverter::Load(const std::filesystem::path& path, bool en) {
     }
 
     std::string line;
-    std::string text;
     std::string token_col;
     std::vector<std::string> unit_strs;
     std::size_t line_num = 0;
     std::size_t loaded = 0;
     while (std::getline(in, line)) {
         ++line_num;
-        if (!ParseLine(line, text, token_col, unit_strs)) {
+        if (!ParseLine(line, token_col, unit_strs)) {
             if (!line.empty()) {
                 std::cerr << "warning: skipping invalid line " << line_num
                           << ": " << line.substr(0, 40) << "\n";
             }
             continue;
         }
-        // Build token ID group from Token column (split on '/')
-        std::vector<std::uint32_t> id_group;
-        {
-            std::size_t pos = 0;
-            bool valid = true;
-            while (pos <= token_col.size()) {
-                std::size_t next = token_col.find('/', pos);
-                std::string seg(token_col, pos, next == std::string::npos
-                                                ? std::string::npos : next - pos);
-                if (!seg.empty()) {
-                    auto cit = token_ids_.find(seg);
-                    if (cit == token_ids_.end()) { valid = false; break; }
-                    id_group.push_back(cit->second);
-                }
-                if (next == std::string::npos) break;
-                pos = next + 1;
-            }
-            if (!valid || id_group.empty()) continue;
-        }
+        auto cit = token_ids_.find(token_col);
+        if (cit == token_ids_.end()) continue;
+        std::uint32_t id = cit->second;
         for (const auto& u : unit_strs) {
             // Split on '/' to get individual pieces
             std::vector<Unit> units;
@@ -118,7 +101,7 @@ bool DictConverter::Load(const std::filesystem::path& path, bool en) {
                 pos = next + 1;
             }
             if (units.empty()) continue;
-            InsertUnits(id_group, units);
+            InsertUnits(id, units);
         }
         ++loaded;
     }
@@ -127,10 +110,8 @@ bool DictConverter::Load(const std::filesystem::path& path, bool en) {
 }
 
 bool DictConverter::ParseLine(const std::string& line,
-                              std::string& text,
                               std::string& token_col,
                               std::vector<std::string>& units) const {
-    text.clear();
     token_col.clear();
     units.clear();
     if (line.empty() || line[0] == '\n') {
@@ -139,21 +120,14 @@ bool DictConverter::ParseLine(const std::string& line,
 
     const char* ptr = line.c_str();
 
-    // Column 1: Text
+    // Column 1: Token
     while (*ptr && IsWhitespace(*ptr)) ++ptr;
     if (*ptr == '\0') return false;
     const char* start = ptr;
     while (*ptr && !IsWhitespace(*ptr)) ++ptr;
-    text.assign(start, ptr - start);
-
-    // Column 2: Token (separated by '/')
-    while (*ptr && IsWhitespace(*ptr)) ++ptr;
-    if (*ptr == '\0') return false;
-    start = ptr;
-    while (*ptr && !IsWhitespace(*ptr)) ++ptr;
     token_col.assign(start, ptr - start);
 
-    // Column 3+: Units (piece decompositions)
+    // Column 2+: Units (piece decompositions)
     std::set<std::string> unique;
     while (*ptr) {
         while (*ptr && IsWhitespace(*ptr)) ++ptr;
@@ -171,16 +145,16 @@ bool DictConverter::ParseLine(const std::string& line,
     return !units.empty();
 }
 
-void DictConverter::InsertUnits(const std::vector<std::uint32_t>& ids,
+void DictConverter::InsertUnits(std::uint32_t id,
                                 const std::vector<Unit>& units) {
-    if (units.empty() || ids.empty() || root_ == nullptr) {
+    if (units.empty() || root_ == nullptr) {
         return;
     }
     Node* node = root_;
     for (const auto& u : units) {
         node = InsertMove(node, u);
     }
-    InsertText(node, ids);
+    InsertText(node, id);
 }
 
 DictConverter::Node* DictConverter::CreateNode() {
@@ -201,9 +175,8 @@ DictConverter::Node* DictConverter::InsertMove(Node* node, Unit u) {
     return c;
 }
 
-void DictConverter::InsertText(Node* node,
-                               const std::vector<std::uint32_t>& ids) {
-    node->ids.insert(ids);
+void DictConverter::InsertText(Node* node, std::uint32_t id) {
+    node->ids.insert(id);
 }
 
 std::size_t DictConverter::Count() const {
@@ -224,15 +197,11 @@ std::size_t DictConverter::SerializeTree(std::vector<char>& buffer) {
     const std::uint32_t header = 4 * sizeof(std::uint32_t);
     std::uint32_t offset = header;
     for (Node* node : order_) {
-        std::size_t total_tokens = 0;
-        for (const auto& group : node->ids) {
-            total_tokens += group.size();
-        }
         NodeSize metrics;
         metrics.size =
             sizeof(TrieNodeHeader) +
             node->moves.size() * sizeof(TrieMove) +
-            total_tokens * sizeof(std::uint32_t);
+            node->ids.size() * sizeof(std::uint32_t);
         metrics.i = offset;
         metrics_[node] = metrics;
         offset += static_cast<std::uint32_t>(metrics.size);
@@ -250,11 +219,7 @@ void DictConverter::SerializeNode(const Node* node,
     auto* base =
         reinterpret_cast<TrieNodeHeader*>(buffer.data() + metrics.i);
     TrieNodeHeader header{};
-    std::size_t total_tokens = 0;
-    for (const auto& group : node->ids) {
-        total_tokens += group.size();
-    }
-    header.count = static_cast<std::uint32_t>(total_tokens);
+    header.count = static_cast<std::uint32_t>(node->ids.size());
     header.move_count = static_cast<std::uint32_t>(node->moves.size());
     *base = header;
 
@@ -268,14 +233,8 @@ void DictConverter::SerializeNode(const Node* node,
 
     auto* entries = reinterpret_cast<std::uint32_t*>(moves + node->moves.size());
     idx = 0;
-    for (const auto& group : node->ids) {
-        for (std::size_t j = 0; j < group.size(); ++j) {
-            std::uint32_t val = group[j];
-            if (j + 1 == group.size()) {
-                val |= GroupEnd;
-            }
-            entries[idx++] = val;
-        }
+    for (auto id : node->ids) {
+        entries[idx++] = id;
     }
 }
 

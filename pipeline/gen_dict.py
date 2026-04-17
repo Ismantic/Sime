@@ -118,7 +118,7 @@ def main():
             dict_seen.add(w)
     print(f"dict.txt tokens: {len(dict_tokens)}", file=sys.stderr)
 
-    # 1b. chars.cnt.txt 按频次降序补充（过 min_count，只收中文词和标点）
+    # 1b. chars.cnt.txt 按频次降序补充（过 min_count，收中文词、标点和英文词）
     remaining = max_vocab - len(dict_tokens)
     fill_tokens = []
     if remaining > 0:
@@ -129,7 +129,7 @@ def main():
                 continue
             if w in dict_seen:
                 continue
-            if not (is_chinese(w) or is_punct(w)):
+            if not (is_chinese(w) or is_punct(w) or is_english(w)):
                 continue
             fill_tokens.append(w)
             dict_seen.add(w)
@@ -173,11 +173,11 @@ def main():
 
     with open(args.cn_output, "w") as fout:
         for word, py_str in cn_entries:
-            fout.write(f"{word} {word} {py_str}\n")
+            fout.write(f"{word} {py_str}\n")
             pinyin_count += 1
             if "/" in py_str:
                 for variant in abbrev_variants(py_str):
-                    fout.write(f"{word} {word} {variant}\n")
+                    fout.write(f"{word} {variant}\n")
                     abbrev_count += 1
 
     print(f"\nfrom units: {from_units}", file=sys.stderr)
@@ -191,7 +191,7 @@ def main():
     with open(args.en_output, "w") as fout:
         for word in all_tokens:
             if is_english(word):
-                fout.write(f"{word} {word} {word.lower()}\n")
+                fout.write(f"{word} {word.lower()}\n")
                 en_count += 1
 
     print(f"\nen tokens: {en_count}", file=sys.stderr)
