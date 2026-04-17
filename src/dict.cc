@@ -215,7 +215,7 @@ std::vector<std::vector<std::uint32_t>> Dict::GetGroups(
 
         // Enqueue children
         const auto* moves = cur->GetMove();
-        for (std::uint16_t i = 0; i < cur->move_count; ++i) {
+        for (std::uint32_t i = 0; i < cur->move_count; ++i) {
             const Node* child = DoMove(cur, Unit(moves[i].unit.value));
             if (child) queue.push_back(child);
         }
@@ -259,7 +259,7 @@ void Dict::BuildTokenGroups() {
         }
 
         const auto* moves = cur->GetMove();
-        for (std::uint16_t i = 0; i < cur->move_count; ++i) {
+        for (std::uint32_t i = 0; i < cur->move_count; ++i) {
             const Node* child = DoMove(cur, Unit(moves[i].unit.value));
             if (!child) continue;
             const char* seg = piece_.Decode(Unit(moves[i].unit.value));

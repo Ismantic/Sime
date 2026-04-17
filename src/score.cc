@@ -189,6 +189,10 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
         ctx = backed;
     }
 
+    // Zero-probability threshold: root.pro is the unknown penalty,
+    // entries with this score have no real probability.
+    const float zero_pro = node_levels_[0].data[0].pro;
+
     auto collect = [&](std::uint32_t level, std::uint32_t index,
                        std::vector<std::pair<TokenID, float_t>>& out) {
         if (level >= static_cast<std::uint32_t>(num_)) return;
@@ -200,11 +204,13 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
 
         if (level == static_cast<std::uint32_t>(num_ - 1)) {
             for (auto i = begin; i < end && i < leave_size_; ++i) {
+                if (leave_data_[i].pro >= zero_pro) continue;
                 out.emplace_back(leave_data_[i].token, leave_data_[i].pro);
             }
         } else {
             const auto& children = node_levels_[level + 1];
             for (auto i = begin; i < end && i < children.size; ++i) {
+                if (children.data[i].pro >= zero_pro) continue;
                 out.emplace_back(children.data[i].token, children.data[i].pro);
             }
         }

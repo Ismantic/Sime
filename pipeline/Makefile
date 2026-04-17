@@ -44,7 +44,7 @@ construct: $(OUT)/raw.3gram sime.token.dict.txt
 
 # Step 5: convert pinyin dict to trie
 convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)
-	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict sime.dict.txt $(EN_DICT)
+	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict --cn sime.dict.txt --en $(EN_DICT)
 
 clean:
 	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt

@@ -17,8 +17,8 @@ namespace sime {
 namespace {
 
 struct TrieNodeHeader {
-    std::uint16_t move_count = 0;
-    std::uint16_t count = 0;
+    std::uint32_t move_count = 0;
+    std::uint32_t count = 0;
 };
 
 struct TrieMove {
@@ -57,7 +57,7 @@ bool DictConverter::LoadTokens(const std::filesystem::path& path) {
     return true;
 }
 
-bool DictConverter::Load(const std::filesystem::path& path) {
+bool DictConverter::Load(const std::filesystem::path& path, bool en) {
     if (root_ == nullptr) {
         return false;
     }
@@ -112,7 +112,7 @@ bool DictConverter::Load(const std::filesystem::path& path) {
                              ? std::string::npos
                              : next - pos);
                 if (!seg.empty()) {
-                    units.push_back(piece_.Register(seg));
+                    units.push_back(piece_.Register(seg, en));
                 }
                 if (next == std::string::npos) break;
                 pos = next + 1;
@@ -254,14 +254,8 @@ void DictConverter::SerializeNode(const Node* node,
     for (const auto& group : node->ids) {
         total_tokens += group.size();
     }
-    auto entry_count =
-        static_cast<std::uint32_t>(std::min<std::size_t>(
-            total_tokens, static_cast<std::size_t>(0xFFFF)));
-    auto move_count =
-        static_cast<std::uint32_t>(std::min<std::size_t>(
-            node->moves.size(), static_cast<std::size_t>(0xFFFF)));
-    header.count = static_cast<std::uint16_t>(entry_count);
-    header.move_count = static_cast<std::uint16_t>(move_count);
+    header.count = static_cast<std::uint32_t>(total_tokens);
+    header.move_count = static_cast<std::uint32_t>(node->moves.size());
     *base = header;
 
     auto* moves = reinterpret_cast<TrieMove*>(base + 1);
