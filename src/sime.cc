@@ -24,7 +24,8 @@ Sime::Sime(const std::filesystem::path& dict_path,
 void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
                               std::vector<Node>& net,
-                              bool expansion) const {
+                              bool expansion,
+                              bool separator) const {
     // Lattice layout:
     //   columns [0, p)     — prefix letter columns (InitNet-style)
     //   columns [p, p+d)   — digit columns (num_map + letter edges)
@@ -61,7 +62,7 @@ void Sime::InitNumNet(std::string_view start,
         if (pos < p) {
             char ch = start[pos];
 
-            if (ch == '\'') {
+            if (separator && ch == '\'') {
                 self(self, s, pos + 1, node);
                 return;
             }
@@ -70,7 +71,7 @@ void Sime::InitNumNet(std::string_view start,
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + piece().MaxLen(), p); ++end) {
                 char kc = start[end - 1];
-                if (kc == '\'') break;
+                if (separator && kc == '\'') break;
                 key.push_back(kc);
                 auto it = piece().GetPieceMap().find(key);
                 if (it == piece().GetPieceMap().end()) continue;
@@ -126,7 +127,7 @@ void Sime::InitNumNet(std::string_view start,
         // === Digit columns ===
         const std::size_t dpos = pos - p;
 
-        if (nums[dpos] == '\'') {
+        if (separator && nums[dpos] == '\'') {
             self(self, s, pos + 1, node);
             return;
         }
@@ -135,7 +136,7 @@ void Sime::InitNumNet(std::string_view start,
         for (std::size_t dend = dpos + 1;
              dend <= std::min(dpos + piece().MaxLen(), d); ++dend) {
             char ch = nums[dend - 1];
-            if (ch == '\'') break;
+            if (separator && ch == '\'') break;
             key.push_back(ch);
             auto it = piece().GetNumMap().find(key);
             if (it == piece().GetNumMap().end()) continue;
@@ -175,11 +176,11 @@ void Sime::InitNumNet(std::string_view start,
     };
 
     for (std::size_t s = 0; s < total; ++s) {
-        if (s < p && start[s] == '\'') {
+        if (separator && s < p && start[s] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
-        if (s >= p && nums[s - p] == '\'') {
+        if (separator && s >= p && nums[s - p] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
@@ -442,7 +443,8 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
 void Sime::InitNet(std::string_view input,
                       std::vector<Node>& net,
-                      bool expansion) const {
+                      bool expansion,
+                      bool separator) const {
     const std::size_t total = input.size();
     net.clear();
     net.resize(total + 2);
@@ -486,7 +488,7 @@ void Sime::InitNet(std::string_view input,
 
     for (std::size_t s = 0; s < total; ++s) {
         // Boundary column: pass-through only.
-        if (input[s] == '\'') {
+        if (separator && input[s] == '\'') {
             net[s].es.push_back({s, s + 1, ScoreNotToken});
             continue;
         }
@@ -496,7 +498,7 @@ void Sime::InitNet(std::string_view input,
             if (!node || pos >= total) return;
 
             // Boundary column — skip forward without consuming trie.
-            if (input[pos] == '\'') {
+            if (separator && input[pos] == '\'') {
                 self(self, pos + 1, node);
                 return;
             }
@@ -506,7 +508,7 @@ void Sime::InitNet(std::string_view input,
             for (std::size_t end = pos + 1;
                  end <= std::min(pos + piece().MaxLen(), total); ++end) {
                 char ch = input[end - 1];
-                if (ch == '\'') break;
+                if (separator && ch == '\'') break;
                 key.push_back(ch);
                 auto it = piece().GetPieceMap().find(key);
                 if (it == piece().GetPieceMap().end()) continue;

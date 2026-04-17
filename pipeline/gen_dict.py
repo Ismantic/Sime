@@ -35,7 +35,7 @@ def get_pinyin(word):
         py = pinyin(word, style=Style.NORMAL, heteronym=False)
         parts = [p[0] for p in py]
         if all(re.match(r'^[a-z]+$', p) for p in parts):
-            return "'".join(parts)
+            return "/".join(parts)
         return None
 
 
@@ -209,7 +209,7 @@ def main():
         zhong'guo → [z'guo]
         zhong'guo'zheng'fu → [z'g'z'fu, zhong'g'z'fu, zhong'guo'z'fu]
         """
-        syllables = unit_str.split("'")
+        syllables = unit_str.split("/")
         n = len(syllables)
         if n < 2:
             return []
@@ -217,14 +217,14 @@ def main():
         initials = [s[0] for s in syllables[:n - 1]] + [syllables[-1]]
         variants = []
         # 全缩写（最后一个保持）
-        full_abbr = "'".join(initials)
+        full_abbr = "/".join(initials)
         if full_abbr != unit_str:
             variants.append(full_abbr)
         # 从前往后逐个恢复全拼
         restored = list(initials)
         for i in range(n - 2):
             restored[i] = syllables[i]
-            variant = "'".join(restored)
+            variant = "/".join(restored)
             if variant != unit_str and (not variants or variant != variants[-1]):
                 variants.append(variant)
         return variants
@@ -245,7 +245,7 @@ def main():
                 fout.write(f"{w} {w} {units_str}\n")
                 pinyin_count += 1
                 # 生成简拼变体（仅对 apostrophe 分隔的多音节拼音）
-                if "'" in units_str:
+                if "/" in units_str:
                     for variant in abbrev_variants(units_str):
                         fout.write(f"{w} {w} {variant}\n")
                         abbrev_count += 1
