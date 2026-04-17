@@ -23,11 +23,9 @@ class Sime {
 public:
     Sime() = default;
     Sime(const std::filesystem::path& dict_path,
-         const std::filesystem::path& model_path,
-         bool separator = true);
+         const std::filesystem::path& model_path);
 
     bool Ready() const { return ready_; }
-    bool Separator() const { return separator_; }
     int ContextSize() const { return scorer_.Num() - 1; }
     // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
@@ -80,8 +78,7 @@ private:
     // Lattice building
     void InitNet(std::string_view input,
                     std::vector<Node>& net,
-                    bool expansion = true,
-                    bool separator = true) const;
+                    bool expansion = true) const;
     void PruneNode(std::vector<Link>& edges) const;
 
     // Beam search
@@ -99,14 +96,12 @@ private:
     void InitNumNet(std::string_view start,
                      std::string_view nums,
                      std::vector<Node>& net,
-                     bool expansion = true,
-                     bool separator = true) const;
+                     bool expansion = true) const;
 
     // Resources
     Dict dict_;
     Scorer scorer_;
     bool ready_ = false;
-    bool separator_ = true;
 };
 
 } // namespace sime

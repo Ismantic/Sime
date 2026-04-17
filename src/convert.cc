@@ -113,45 +113,16 @@ bool DictConverter::Load(const std::filesystem::path& path, bool en) {
             }
             if (pieces.empty()) continue;
 
-            std::string letter_key = PiecesToLetterKey(pieces);
-            std::string num_key = PiecesToNumKey(pieces);
             std::string pieces_str = PiecesToString(pieces);
-
             Item item{id, pieces_str};
 
-            // Separator key (with '): for separated input like xi'an
-            // Non-separator key (without '): for plain input like xian
-            // Only differ for multi-piece entries.
-            std::string sep_letter_key = pieces_str;  // "xi'an"
-            std::string sep_num_key;
-            if (pieces.size() > 1) {
-                // Build num key with separators
-                std::string snk;
-                for (std::size_t pi = 0; pi < pieces.size(); ++pi) {
-                    if (pi > 0) snk += '\'';
-                    snk += Dict::LettersToNums(pieces[pi]);
-                }
-                sep_num_key = snk;
-            }
-
+            // Only store letter keys (with separator).
+            // T9 digits are expanded to letters at query time.
             if (en) {
+                std::string letter_key = PiecesToLetterKey(pieces);
                 maps_[Dict::LetterEn][letter_key].push_back(item);
-                if (!num_key.empty())
-                    maps_[Dict::NumEn][num_key].push_back(item);
-                // Separator keys (only if different)
-                if (sep_letter_key != letter_key)
-                    maps_[Dict::LetterEn][sep_letter_key].push_back(item);
-                if (!sep_num_key.empty() && sep_num_key != num_key)
-                    maps_[Dict::NumEn][sep_num_key].push_back(item);
             } else {
-                maps_[Dict::LetterPinyin][letter_key].push_back(item);
-                if (!num_key.empty())
-                    maps_[Dict::NumPinyin][num_key].push_back(item);
-                // Separator keys (only if different)
-                if (sep_letter_key != letter_key)
-                    maps_[Dict::LetterPinyin][sep_letter_key].push_back(item);
-                if (!sep_num_key.empty() && sep_num_key != num_key)
-                    maps_[Dict::NumPinyin][sep_num_key].push_back(item);
+                maps_[Dict::LetterPinyin][pieces_str].push_back(item);
             }
         }
         ++loaded;
@@ -165,11 +136,6 @@ std::string DictConverter::PiecesToLetterKey(
     std::string key;
     for (const auto& p : pieces) key += p;
     return key;
-}
-
-std::string DictConverter::PiecesToNumKey(
-    const std::vector<std::string>& pieces) {
-    return Dict::LettersToNums(PiecesToLetterKey(pieces));
 }
 
 std::string DictConverter::PiecesToString(

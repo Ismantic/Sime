@@ -189,15 +189,10 @@ def main():
         for word, py_str in cn_entries:
             fout.write(f"{word} {py_str}\n")
             pinyin_count += 1
-            if "/" in py_str:
-                for variant in abbrev_variants(py_str):
-                    fout.write(f"{word} {variant}\n")
-                    abbrev_count += 1
 
     print(f"\nfrom units: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)
     print(f"pinyin entries: {pinyin_count}", file=sys.stderr)
-    print(f"abbreviated entries: {abbrev_count}", file=sys.stderr)
     print(f"written to {args.cn_output}", file=sys.stderr)
 
     # ── Step 3: sime.en.dict.txt (英文词典) ──
