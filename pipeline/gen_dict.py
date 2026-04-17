@@ -84,7 +84,18 @@ def main():
                         help="Chinese pinyin dict output")
     parser.add_argument("--en-output", default="sime.en.dict.txt",
                         help="English dict output")
+    parser.add_argument("--en-words", default="",
+                        help="English word list for filtering (one word per line)")
     args = parser.parse_args()
+
+    # ── 读英文词表 ──
+    en_words = set()
+    if args.en_words:
+        for line in open(args.en_words):
+            w = line.rstrip("\n")
+            if w:
+                en_words.add(w)
+        print(f"en word list: {len(en_words)}", file=sys.stderr)
 
     # ── 读语料词频 ──
     freq = {}
@@ -129,7 +140,10 @@ def main():
                 continue
             if w in dict_seen:
                 continue
-            if not (is_chinese(w) or is_punct(w) or is_english(w)):
+            if is_english(w):
+                if not en_words or w not in en_words:
+                    continue
+            elif not (is_chinese(w) or is_punct(w)):
                 continue
             fill_tokens.append(w)
             dict_seen.add(w)

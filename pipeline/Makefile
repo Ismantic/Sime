@@ -9,6 +9,7 @@ UNITS = units.20260408.txt
 CORPUS = sentences.cut.txt
 CUT_DICT = dict.txt
 DICT = dict.txt
+EN_WORDS = en_dict.raw
 EN_DICT = sime.en.dict.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
@@ -30,8 +31,8 @@ merge.bin: merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
 # Step 2: generate token dict + pinyin/english dictionaries
-dict: chars.cnt.txt $(UNITS) $(DICT)
-	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --dict $(DICT) --token-output sime.token.dict.txt --cn-output sime.dict.txt --en-output $(EN_DICT)
+dict: chars.cnt.txt $(UNITS) $(DICT) $(EN_WORDS)
+	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --dict $(DICT) --en-words $(EN_WORDS) --token-output sime.token.dict.txt --cn-output sime.dict.txt --en-output $(EN_DICT)
 
 # Step 3: n-gram count (parallel)
 count: sime.token.dict.txt $(CORPUS)

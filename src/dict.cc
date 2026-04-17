@@ -26,15 +26,7 @@ void Dict::Clear() {
     blob_.clear();
     token_strs_.clear();
     token_set_.clear();
-    token_ids_.clear();
     node_pieces_.clear();
-}
-
-uint32_t Dict::NodeCount() const {
-    if (blob_.size() < sizeof(std::uint32_t)) {
-        return 0;
-    }
-    return *reinterpret_cast<const std::uint32_t*>(blob_.data());
 }
 
 uint32_t Dict::TokenCount() const {
@@ -99,12 +91,7 @@ bool Dict::Load(const std::filesystem::path& path) {
     auto p = reinterpret_cast<const char32_t*>(base);
     for (uint32_t i = 0; i < count; ++i) {
         token_strs_.push_back(p);
-        const char32_t* start = p;
         while (*p++) {}
-        std::u32string key(start, static_cast<std::size_t>(p - 1 - start));
-        if (!key.empty()) {
-            token_ids_[key] = i;
-        }
     }
 
     // Load piece table
@@ -154,12 +141,6 @@ const char32_t* Dict::TokenAt(uint32_t i) const {
         return nullptr;
     }
     return token_strs_[i];
-}
-
-TokenID Dict::TokenFromText(const std::u32string& text) const {
-    auto it = token_ids_.find(text);
-    if (it != token_ids_.end()) return it->second;
-    return NotToken;
 }
 
 std::vector<std::uint32_t> Dict::GetTokens(

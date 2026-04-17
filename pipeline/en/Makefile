@@ -6,6 +6,7 @@ SIME = ../../build
 RAW = CnnDailyMail.sentences.txt
 CORPUS = en.sentences.cut.txt
 MIN_COUNT = 16
+EN_WORDS = ../en_dict.raw
 EN_DICT = sime.en.dict.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.en.token.dict.txt 2>/dev/null || echo 0)
@@ -24,8 +25,8 @@ count.bin: ../count.cc
 	g++ -O3 -std=c++17 $< -o $@
 
 # Step 2: generate token dict + english dict
-dict: chars.cnt.txt
-	$(PYTHON) gen_token_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --token-output sime.en.token.dict.txt --en-output $(EN_DICT)
+dict: chars.cnt.txt $(EN_WORDS)
+	$(PYTHON) gen_token_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --en-words $(EN_WORDS) --token-output sime.en.token.dict.txt --en-output $(EN_DICT)
 
 merge.bin: ../merge.cc
 	g++ -O3 -std=c++17 $< -o $@
