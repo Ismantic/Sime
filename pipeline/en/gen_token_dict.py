@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""从语料词频生成 token 词典（无拼音）
+"""从语料词频生成 en token 词典和英文拼写词典
 
-读入 chars.cnt.txt，只保留 freq >= min_count 的词条，
-按单字/多字分组，各自 Unicode 排序输出。
-
-用法：python3 gen_token_dict.py [--min-count 16] [--cnt chars.cnt.txt] [--output sime.en.token.dict.txt]
+1. chars.cnt.txt 按频次筛选 → sime.en.token.dict.txt
+2. 英文词小写映射 → sime.en.dict.txt
 """
 
 import argparse
 import sys
+
+EXCLUDE = {"▁"}
+
+
+def is_english(word):
+    return all(c.isascii() and c.isalpha() for c in word) and len(word) > 0
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-count", type=int, default=16)
     parser.add_argument("--cnt", default="chars.cnt.txt")
-    parser.add_argument("--output", default="sime.en.token.dict.txt")
+    parser.add_argument("--token-output", default="sime.en.token.dict.txt")
+    parser.add_argument("--en-output", default="sime.en.dict.txt")
     args = parser.parse_args()
 
     freq = {}
@@ -26,29 +31,39 @@ def main():
 
     print(f"corpus tokens: {len(freq)}", file=sys.stderr)
 
-    tokens = [w for w, c in freq.items() if c >= args.min_count]
-
-    chars = sorted([w for w in tokens if len(w) == 1])
-    words = sorted([w for w in tokens if len(w) > 1])
+    # 按频次降序，过 min_count，排除 ▁
+    tokens = []
+    for w, c in sorted(freq.items(), key=lambda x: x[1], reverse=True):
+        if c < args.min_count:
+            continue
+        if w in EXCLUDE:
+            continue
+        if not w.isprintable():
+            continue
+        tokens.append(w)
 
     max_vocab = (1 << 18) - 70
-    total = len(chars) + len(words)
-    if total > max_vocab:
-        print(f"WARNING: vocab {total} exceeds 18-bit limit {max_vocab}, "
-              f"truncating words by frequency", file=sys.stderr)
-        words_with_freq = sorted([(freq[w], w) for w in words], reverse=True)
-        keep = max_vocab - len(chars)
-        words = sorted([w for _, w in words_with_freq[:keep]])
-        total = len(chars) + len(words)
+    if len(tokens) > max_vocab:
+        print(f"WARNING: vocab {len(tokens)} exceeds limit {max_vocab}, truncating",
+              file=sys.stderr)
+        tokens = tokens[:max_vocab]
 
-    with open(args.output, "w") as fout:
-        for w in chars:
+    # sime.en.token.dict.txt
+    with open(args.token_output, "w") as fout:
+        for w in tokens:
             fout.write(w + "\n")
-        for w in words:
-            fout.write(w + "\n")
+    print(f"total tokens: {len(tokens)}", file=sys.stderr)
+    print(f"written to {args.token_output}", file=sys.stderr)
 
-    print(f"total: {total} ({len(chars)} chars + {len(words)} words)", file=sys.stderr)
-    print(f"written to {args.output}", file=sys.stderr)
+    # sime.en.dict.txt
+    en_count = 0
+    with open(args.en_output, "w") as fout:
+        for w in tokens:
+            if is_english(w):
+                fout.write(f"{w} {w} {w}\n")
+                en_count += 1
+    print(f"en tokens: {en_count}", file=sys.stderr)
+    print(f"written to {args.en_output}", file=sys.stderr)
 
 
 if __name__ == "__main__":

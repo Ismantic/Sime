@@ -1,18 +1,23 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 12
+NPROC = 4
 SIME = ../build
 
+RAW = News.sentences.txt
 UNITS = units.20260408.txt
 CORPUS = sentences.cut.txt
+CUT_DICT = dict.txt
 DICT = dict.txt
-PIECES = piece.txt
-EN_DICT = en_dict.cut.txt
+EN_DICT = sime.en.dict.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
 
 all: $(OUT)/sime.dict $(OUT)/sime.raw.cnt
+
+# Step 0: segment raw text
+cut: $(RAW) $(CUT_DICT)
+	$(PYTHON) cut.py --dict $(CUT_DICT) -j $(NPROC) $(RAW) $(CORPUS)
 
 # Step 1: count all tokens in corpus
 chars.cnt: count.bin $(CORPUS)
@@ -24,9 +29,9 @@ count.bin: count.cc
 merge.bin: merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
-# Step 2: generate token dict + pinyin dictionary
-dict: chars.cnt.txt $(UNITS) $(DICT) $(PIECES)
-	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --output sime.dict.txt --token-output sime.token.dict.txt --dict $(DICT) --pieces $(PIECES)
+# Step 2: generate token dict + pinyin/english dictionaries
+dict: chars.cnt.txt $(UNITS) $(DICT)
+	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --dict $(DICT) --token-output sime.token.dict.txt --cn-output sime.dict.txt --en-output $(EN_DICT)
 
 # Step 3: n-gram count (parallel)
 count: sime.token.dict.txt $(CORPUS)
@@ -47,7 +52,7 @@ convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)
 	$(SIME)/sime-converter sime.token.dict.txt $(OUT)/sime.dict --cn sime.dict.txt --en $(EN_DICT)
 
 clean:
-	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.token.dict.txt
+	rm -f count.bin merge.bin chars.cnt.txt sime.dict.txt sime.en.dict.txt sime.token.dict.txt
 	rm -rf $(OUT)
 
-.PHONY: all chars dict count construct convert clean
+.PHONY: all cut chars dict count construct convert clean
