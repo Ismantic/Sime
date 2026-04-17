@@ -119,6 +119,8 @@ void ProcessTextFile(const std::filesystem::path& path,
         std::istringstream iss(line);
         std::string token;
         while (iss >> token) {
+            // Skip ▁ (U+2581) separator token
+            if (token == "\xE2\x96\x81") continue;
             auto it = tokens.ids.find(token);
             if (it != tokens.ids.end()) {
                 feed_ngram(it->second);

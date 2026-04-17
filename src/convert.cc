@@ -33,7 +33,7 @@ bool IsWhitespace(char ch) {
 
 bool IsUnitChar(char ch) {
     auto uc = static_cast<unsigned char>(ch);
-    return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '"' ||
+    return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '/' ||
            (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
            uc >= 0x80;  // allow multi-byte UTF-8 (e.g. ▁ U+2581)
 }
@@ -102,11 +102,11 @@ bool DictConverter::Load(const std::filesystem::path& path) {
             if (!valid || id_group.empty()) continue;
         }
         for (const auto& u : unit_strs) {
-            // Split on apostrophe, register each piece
+            // Split on '/' to get individual pieces
             std::vector<Unit> units;
             std::size_t pos = 0;
             while (pos <= u.size()) {
-                std::size_t next = u.find('\'', pos);
+                std::size_t next = u.find('/', pos);
                 std::string_view seg = std::string_view(u).substr(
                     pos, next == std::string::npos
                              ? std::string::npos
