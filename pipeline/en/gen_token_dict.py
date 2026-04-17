@@ -11,8 +11,18 @@ import sys
 EXCLUDE = {"▁"}
 
 
+def is_chinese(word):
+    return all(0x4E00 <= ord(c) <= 0x9FFF or
+               0x3400 <= ord(c) <= 0x4DBF or
+               0x20000 <= ord(c) <= 0x2FA1F for c in word)
+
+
 def is_english(word):
     return all(c.isascii() and c.isalpha() for c in word) and len(word) > 0
+
+
+def is_punct(word):
+    return all(not c.isalnum() and c.isprintable() for c in word) and len(word) > 0
 
 
 def main():
@@ -21,7 +31,18 @@ def main():
     parser.add_argument("--cnt", default="chars.cnt.txt")
     parser.add_argument("--token-output", default="sime.en.token.dict.txt")
     parser.add_argument("--en-output", default="sime.en.dict.txt")
+    parser.add_argument("--en-words", default="",
+                        help="English word list for filtering (one word per line)")
     args = parser.parse_args()
+
+    # 读英文词表
+    en_words = set()
+    if args.en_words:
+        for line in open(args.en_words):
+            w = line.rstrip("\n")
+            if w:
+                en_words.add(w)
+        print(f"en word list: {len(en_words)}", file=sys.stderr)
 
     freq = {}
     for line in open(args.cnt):
@@ -31,14 +52,17 @@ def main():
 
     print(f"corpus tokens: {len(freq)}", file=sys.stderr)
 
-    # 按频次降序，过 min_count，排除 ▁
+    # 按频次降序，过 min_count，只收中文、标点和词表内英文词
     tokens = []
     for w, c in sorted(freq.items(), key=lambda x: x[1], reverse=True):
         if c < args.min_count:
             continue
         if w in EXCLUDE:
             continue
-        if not w.isprintable():
+        if is_english(w):
+            if not en_words or w not in en_words:
+                continue
+        elif not (is_chinese(w) or is_punct(w)):
             continue
         tokens.append(w)
 

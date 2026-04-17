@@ -37,11 +37,9 @@ public:
     const Node* DoMove(const Node* node, Unit u) const;
     const std::uint32_t* GetToken(const Node* node, std::uint32_t& count) const;
 
-    std::uint32_t NodeCount() const;
     std::uint32_t TokenCount() const;
 
     const char32_t* TokenAt(std::uint32_t i) const;
-    TokenID TokenFromText(const std::u32string& text) const;
 
     const PieceTable& GetPieceTable() const { return piece_; }
 
@@ -70,7 +68,6 @@ private:
     std::vector<const char32_t*> token_strs_;
     PieceTable piece_;
     std::unordered_set<TokenID> token_set_;
-    std::unordered_map<std::u32string, TokenID> token_ids_;
     std::unordered_map<const Node*, std::string> node_pieces_;
 };
 
