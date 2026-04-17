@@ -1,6 +1,4 @@
 #include "sime.h"
-#include "nine.h"
-#include "unit.h"
 #include "ustr.h"
 
 #include <filesystem>
@@ -14,12 +12,10 @@ namespace {
 struct Options {
     std::filesystem::path dict;
     std::filesystem::path cnt;
-    std::filesystem::path nine_model;
     std::size_t n = 5;
     std::size_t extra = 0;  // extra Layer 1 sentences for DecodeNumSentence
     bool sentence = false;
     bool num = false;
-    bool nine = false;
     bool next = false;
     bool separator = true;
 };
@@ -27,7 +23,6 @@ struct Options {
 void PrintUsage() {
     std::cerr << "Usage:\n"
               << "  sime --dict <dict> --cnt <model> [options]\n"
-              << "  sime --nine <nine_model> [options]\n"
               << "\nOptions:\n"
               << "  --dict, -d <path>   Sime dict\n"
               << "  --cnt,  -c <path>   Sime LM model\n"
@@ -36,8 +31,7 @@ void PrintUsage() {
               << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
-              << "  --nine <path>       NineDecoder standalone (digits -> pinyin)\n"
-              << "  --next           Prediction mode (input token IDs, get nextions)\n"
+              << "  --next              Prediction mode (input token IDs, get nextions)\n"
               << "  --no-sep            Disable ' as separator (for English)\n";
 }
 
@@ -60,9 +54,6 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.next = true;
         } else if (arg == "--no-sep") {
             opts.separator = false;
-        } else if (arg == "--nine" && i + 1 < argc) {
-            opts.nine = true;
-            opts.nine_model = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -72,7 +63,7 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             return false;
         }
     }
-    if (!opts.nine && (opts.dict.empty() || opts.cnt.empty())) {
+    if (opts.dict.empty() || opts.cnt.empty()) {
         PrintUsage();
         return false;
     }
@@ -114,45 +105,6 @@ int main(int argc, char** argv) {
     Options opts;
     if (!ParseArgs(argc, argv, opts)) {
         return 1;
-    }
-
-    // --nine: standalone NineDecoder mode
-    if (opts.nine) {
-        sime::NineDecoder nine_decoder;
-        if (!nine_decoder.Load(opts.nine_model)) {
-            std::cerr << "Nine model load failed: " << opts.nine_model << "\n";
-            return 1;
-        }
-        std::cout << "Nine: " << opts.nine_model << "\n"
-                  << "Mode: nine (NineDecoder, digits 2-9)\n"
-                  << "Input digits, :quit to exit.\n";
-
-        std::string line;
-        while (true) {
-            std::cout << "> " << std::flush;
-            if (!std::getline(std::cin, line)) break;
-            if (line == ":quit" || line == ":q") break;
-            if (line.empty()) continue;
-
-            auto results = nine_decoder.Decode(line, opts.n);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                std::string pinyin;
-                for (const auto& u : r.units) {
-                    if (!pinyin.empty()) pinyin += '\'';
-                    const char* text = nine_decoder.GetPieceTable().Decode(u);
-                    if (text) pinyin += text;
-                }
-                std::cout << "  [" << idx << "] " << pinyin
-                          << " (score " << std::fixed << std::setprecision(3)
-                          << r.score << ")\n";
-            }
-        }
-        return 0;
     }
 
     // Sime mode

@@ -10,7 +10,7 @@ State::State(float_t score,
              Scorer::Pos pos,
              const State* backtrace_state,
              TokenID backtrace_token,
-             const std::string* backtrace_pieces)
+             const char* backtrace_pieces)
     : score(score),
       now(now),
       pos(pos),

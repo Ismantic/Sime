@@ -1,10 +1,9 @@
 #include "convert.h"
-#include "common.h"
 #include "ustr.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -16,107 +15,23 @@ namespace sime {
 
 namespace {
 
-struct TrieNodeHeader {
-    std::uint32_t move_count = 0;
-    std::uint32_t count = 0;
-};
-
-struct TrieMove {
-    std::uint32_t unit = 0;
-    std::uint32_t next = 0;
-};
-
-
 bool IsWhitespace(char ch) {
     return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
 bool IsUnitChar(char ch) {
     auto uc = static_cast<unsigned char>(ch);
-    return (ch >= 'a' && ch <= 'z') || ch == '\'' || ch == '/' ||
+    return (ch >= 'a' && ch <= 'z') || ch == '/' ||
            (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
-           uc >= 0x80;  // allow multi-byte UTF-8 (e.g. ▁ U+2581)
+           uc >= 0x80;
 }
 
-} // namespace
-
-bool DictConverter::LoadTokens(const std::filesystem::path& path) {
-    nodes_.clear();
-    order_.clear();
-    metrics_.clear();
-    tokens_.clear();
-    token_ids_.clear();
-    root_ = CreateNode();
-
-    TokenMap map;
-    if (!LoadTokenMap(path, map)) {
-        return false;
-    }
-    tokens_ = std::move(map.tokens);
-    token_ids_ = std::move(map.ids);
-    return true;
-}
-
-bool DictConverter::Load(const std::filesystem::path& path, bool en) {
-    if (root_ == nullptr) {
-        return false;
-    }
-
-    std::ifstream in(path);
-    if (!in.is_open()) {
-        return false;
-    }
-
-    std::string line;
-    std::string token_col;
-    std::vector<std::string> unit_strs;
-    std::size_t line_num = 0;
-    std::size_t loaded = 0;
-    while (std::getline(in, line)) {
-        ++line_num;
-        if (!ParseLine(line, token_col, unit_strs)) {
-            if (!line.empty()) {
-                std::cerr << "warning: skipping invalid line " << line_num
-                          << ": " << line.substr(0, 40) << "\n";
-            }
-            continue;
-        }
-        auto cit = token_ids_.find(token_col);
-        if (cit == token_ids_.end()) continue;
-        std::uint32_t id = cit->second;
-        for (const auto& u : unit_strs) {
-            // Split on '/' to get individual pieces
-            std::vector<Unit> units;
-            std::size_t pos = 0;
-            while (pos <= u.size()) {
-                std::size_t next = u.find('/', pos);
-                std::string_view seg = std::string_view(u).substr(
-                    pos, next == std::string::npos
-                             ? std::string::npos
-                             : next - pos);
-                if (!seg.empty()) {
-                    units.push_back(piece_.Register(seg, en));
-                }
-                if (next == std::string::npos) break;
-                pos = next + 1;
-            }
-            if (units.empty()) continue;
-            InsertUnits(id, units);
-        }
-        ++loaded;
-    }
-    std::cerr << "loaded " << loaded << " entries from " << path << "\n";
-    return true;
-}
-
-bool DictConverter::ParseLine(const std::string& line,
-                              std::string& token_col,
-                              std::vector<std::string>& units) const {
+bool ParseLine(const std::string& line,
+               std::string& token_col,
+               std::vector<std::string>& units) {
     token_col.clear();
     units.clear();
-    if (line.empty() || line[0] == '\n') {
-        return false;
-    }
+    if (line.empty()) return false;
 
     const char* ptr = line.c_str();
 
@@ -145,96 +60,239 @@ bool DictConverter::ParseLine(const std::string& line,
     return !units.empty();
 }
 
-void DictConverter::InsertUnits(std::uint32_t id,
-                                const std::vector<Unit>& units) {
-    if (units.empty() || root_ == nullptr) {
-        return;
-    }
-    Node* node = root_;
-    for (const auto& u : units) {
-        node = InsertMove(node, u);
-    }
-    InsertText(node, id);
+} // namespace
+
+bool DictConverter::LoadTokens(const std::filesystem::path& path) {
+    maps_[0].clear();
+    maps_[1].clear();
+    maps_[2].clear();
+    maps_[3].clear();
+    tokens_.clear();
+    token_ids_.clear();
+
+    TokenMap map;
+    if (!LoadTokenMap(path, map)) return false;
+    tokens_ = std::move(map.tokens);
+    token_ids_ = std::move(map.ids);
+    return true;
 }
 
-DictConverter::Node* DictConverter::CreateNode() {
-    auto node = std::make_unique<Node>();
-    Node* raw = node.get();
-    nodes_.push_back(std::move(node));
-    order_.push_back(raw);
-    return raw;
-}
+bool DictConverter::Load(const std::filesystem::path& path, bool en) {
+    std::ifstream in(path);
+    if (!in.is_open()) return false;
 
-DictConverter::Node* DictConverter::InsertMove(Node* node, Unit u) {
-    auto it = node->moves.find(u.value);
-    if (it != node->moves.end()) {
-        return it->second;
+    std::string line, token_col;
+    std::vector<std::string> unit_strs;
+    std::size_t line_num = 0;
+    std::size_t loaded = 0;
+
+    while (std::getline(in, line)) {
+        ++line_num;
+        if (!ParseLine(line, token_col, unit_strs)) {
+            if (!line.empty()) {
+                std::cerr << "warning: skipping invalid line " << line_num
+                          << ": " << line.substr(0, 40) << "\n";
+            }
+            continue;
+        }
+        auto cit = token_ids_.find(token_col);
+        if (cit == token_ids_.end()) continue;
+        TokenID id = cit->second;
+
+        for (const auto& u : unit_strs) {
+            // Split on '/' to get individual pieces
+            std::vector<std::string> pieces;
+            std::size_t pos = 0;
+            while (pos <= u.size()) {
+                std::size_t next = u.find('/', pos);
+                std::string seg(u, pos, next == std::string::npos
+                                        ? std::string::npos : next - pos);
+                if (!seg.empty()) pieces.push_back(seg);
+                if (next == std::string::npos) break;
+                pos = next + 1;
+            }
+            if (pieces.empty()) continue;
+
+            std::string letter_key = PiecesToLetterKey(pieces);
+            std::string num_key = PiecesToNumKey(pieces);
+            std::string pieces_str = PiecesToString(pieces);
+
+            Item item{id, pieces_str};
+
+            // Separator key (with '): for separated input like xi'an
+            // Non-separator key (without '): for plain input like xian
+            // Only differ for multi-piece entries.
+            std::string sep_letter_key = pieces_str;  // "xi'an"
+            std::string sep_num_key;
+            if (pieces.size() > 1) {
+                // Build num key with separators
+                std::string snk;
+                for (std::size_t pi = 0; pi < pieces.size(); ++pi) {
+                    if (pi > 0) snk += '\'';
+                    snk += Dict::LettersToNums(pieces[pi]);
+                }
+                sep_num_key = snk;
+            }
+
+            if (en) {
+                maps_[Dict::LetterEn][letter_key].push_back(item);
+                if (!num_key.empty())
+                    maps_[Dict::NumEn][num_key].push_back(item);
+                // Separator keys (only if different)
+                if (sep_letter_key != letter_key)
+                    maps_[Dict::LetterEn][sep_letter_key].push_back(item);
+                if (!sep_num_key.empty() && sep_num_key != num_key)
+                    maps_[Dict::NumEn][sep_num_key].push_back(item);
+            } else {
+                maps_[Dict::LetterPinyin][letter_key].push_back(item);
+                if (!num_key.empty())
+                    maps_[Dict::NumPinyin][num_key].push_back(item);
+                // Separator keys (only if different)
+                if (sep_letter_key != letter_key)
+                    maps_[Dict::LetterPinyin][sep_letter_key].push_back(item);
+                if (!sep_num_key.empty() && sep_num_key != num_key)
+                    maps_[Dict::NumPinyin][sep_num_key].push_back(item);
+            }
+        }
+        ++loaded;
     }
-    Node* c = CreateNode();
-    node->moves[u.value] = c;
-    return c;
+    std::cerr << "loaded " << loaded << " entries from " << path << "\n";
+    return true;
 }
 
-void DictConverter::InsertText(Node* node, std::uint32_t id) {
-    node->ids.insert(id);
+std::string DictConverter::PiecesToLetterKey(
+    const std::vector<std::string>& pieces) {
+    std::string key;
+    for (const auto& p : pieces) key += p;
+    return key;
 }
 
-std::size_t DictConverter::Count() const {
-    return tokens_.size();
+std::string DictConverter::PiecesToNumKey(
+    const std::vector<std::string>& pieces) {
+    return Dict::LettersToNums(PiecesToLetterKey(pieces));
 }
 
-std::vector<std::string> DictConverter::Dump() const {
-    std::vector<std::string> result;
-    result.reserve(tokens_.size());
-    for (const auto& entry : tokens_) {
-        result.push_back(entry);
+std::string DictConverter::PiecesToString(
+    const std::vector<std::string>& pieces) {
+    std::string s;
+    for (const auto& p : pieces) {
+        if (!s.empty()) s += '\'';
+        s += p;
     }
-    return result;
+    return s;
 }
 
-std::size_t DictConverter::SerializeTree(std::vector<char>& buffer) {
-    metrics_.clear();
-    const std::uint32_t header = 4 * sizeof(std::uint32_t);
-    std::uint32_t offset = header;
-    for (Node* node : order_) {
-        NodeSize metrics;
-        metrics.size =
-            sizeof(TrieNodeHeader) +
-            node->moves.size() * sizeof(TrieMove) +
-            node->ids.size() * sizeof(std::uint32_t);
-        metrics.i = offset;
-        metrics_[node] = metrics;
-        offset += static_cast<std::uint32_t>(metrics.size);
+// Binary format:
+//   Header: 7 x uint32_t
+//     [0] token_count
+//     [1] token_table_offset
+//     [2..5] section_offsets[4] (each = DAT + side table)
+//     [6] total_size
+//   Token text table (char32_t, null-terminated per token)
+//   4 x { DAT serialized | side table }
+//
+// Side table format:
+//   entry_count: uint32_t
+//   per entry:
+//     item_count: uint16_t
+//     per item:
+//       token_id: uint32_t
+//       pieces_len: uint16_t
+//       pieces_data: char[pieces_len]
+
+bool DictConverter::Write(const std::filesystem::path& output) {
+    constexpr std::size_t HeaderSize = 7 * sizeof(uint32_t);
+    std::vector<char> buffer;
+    buffer.resize(HeaderSize);
+
+    // Token text table
+    auto token_offset = static_cast<uint32_t>(buffer.size());
+    WriteTokenTable(buffer);
+
+    // 4 DAT sections
+    uint32_t section_offsets[Dict::DatCount];
+    for (int t = 0; t < Dict::DatCount; ++t) {
+        section_offsets[t] = static_cast<uint32_t>(buffer.size());
+
+        const auto& map = maps_[t];
+        if (map.empty()) {
+            // Empty DAT: write size=0 DAT + entry_count=0
+            trie::DoubleArray empty_dat;
+            empty_dat.Serialize(buffer);
+            uint32_t zero = 0;
+            std::size_t pos = buffer.size();
+            buffer.resize(pos + sizeof(zero));
+            std::memcpy(buffer.data() + pos, &zero, sizeof(zero));
+            continue;
+        }
+
+        // Build sorted keys and values
+        std::vector<std::string> keys;
+        keys.reserve(map.size());
+        for (const auto& [k, _] : map) keys.push_back(k);
+        // keys already sorted (std::map)
+
+        std::vector<uint32_t> values;
+        values.reserve(keys.size());
+        for (uint32_t i = 0; i < keys.size(); ++i)
+            values.push_back(i);
+
+        // Build and serialize DAT
+        trie::DoubleArray dat;
+        dat.Build(keys, values);
+        dat.Serialize(buffer);
+
+        // Serialize side table
+        WriteSideTable(map, values, keys, buffer);
     }
-    buffer.assign(offset, 0);
-    for (Node* node : order_) {
-        SerializeNode(node, metrics_.at(node), buffer);
-    }
-    return offset - header;
+
+    // Fill header
+    auto token_count = static_cast<uint32_t>(tokens_.size());
+    auto total_size = static_cast<uint32_t>(buffer.size());
+    auto* header = reinterpret_cast<uint32_t*>(buffer.data());
+    header[0] = token_count;
+    header[1] = token_offset;
+    for (int t = 0; t < Dict::DatCount; ++t)
+        header[2 + t] = section_offsets[t];
+    header[6] = total_size;
+
+    // Write file
+    std::ofstream out(output, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) return false;
+    out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    return out.good();
 }
 
-void DictConverter::SerializeNode(const Node* node,
-                                  const NodeSize& metrics,
-                                  std::vector<char>& buffer) {
-    auto* base =
-        reinterpret_cast<TrieNodeHeader*>(buffer.data() + metrics.i);
-    TrieNodeHeader header{};
-    header.count = static_cast<std::uint32_t>(node->ids.size());
-    header.move_count = static_cast<std::uint32_t>(node->moves.size());
-    *base = header;
+void DictConverter::WriteSideTable(
+    const EntryMap& map,
+    const std::vector<uint32_t>& /*dat_values*/,
+    const std::vector<std::string>& dat_keys,
+    std::vector<char>& buffer) {
+    auto entry_count = static_cast<uint32_t>(dat_keys.size());
+    std::size_t pos = buffer.size();
+    buffer.resize(pos + sizeof(entry_count));
+    std::memcpy(buffer.data() + pos, &entry_count, sizeof(entry_count));
 
-    auto* moves = reinterpret_cast<TrieMove*>(base + 1);
-    std::size_t idx = 0;
-    for (const auto& [unit, down] : node->moves) {
-        moves[idx].unit = unit;
-        moves[idx].next = metrics_.at(down).i;
-        ++idx;
-    }
+    for (const auto& key : dat_keys) {
+        const auto& items = map.at(key);
+        auto item_count = static_cast<uint16_t>(items.size());
+        pos = buffer.size();
+        buffer.resize(pos + sizeof(item_count));
+        std::memcpy(buffer.data() + pos, &item_count, sizeof(item_count));
 
-    auto* entries = reinterpret_cast<std::uint32_t*>(moves + node->moves.size());
-    idx = 0;
-    for (auto id : node->ids) {
-        entries[idx++] = id;
+        for (const auto& item : items) {
+            // token_id
+            pos = buffer.size();
+            buffer.resize(pos + sizeof(item.id));
+            std::memcpy(buffer.data() + pos, &item.id, sizeof(item.id));
+            // pieces
+            auto pieces_len = static_cast<uint16_t>(item.pieces.size());
+            pos = buffer.size();
+            buffer.resize(pos + sizeof(pieces_len) + pieces_len);
+            std::memcpy(buffer.data() + pos, &pieces_len, sizeof(pieces_len));
+            std::memcpy(buffer.data() + pos + sizeof(pieces_len),
+                        item.pieces.data(), pieces_len);
+        }
     }
 }
 
@@ -254,38 +312,6 @@ std::size_t DictConverter::WriteTokenTable(std::vector<char>& buffer) {
     buffer.resize(buffer.size() + bytes);
     std::memcpy(buffer.data() + offset, table.data(), bytes);
     return bytes;
-}
-
-bool DictConverter::Write(const std::filesystem::path& output) {
-    piece_.BuildMaps();
-
-    constexpr std::size_t HeaderSize = 4 * sizeof(std::uint32_t);
-    std::vector<char> buffer;
-    auto tree_size = SerializeTree(buffer);
-    WriteTokenTable(buffer);
-    std::uint32_t piece_offset =
-        static_cast<std::uint32_t>(buffer.size());
-    piece_.Serialize(buffer);
-
-    std::uint32_t token_count =
-        static_cast<std::uint32_t>(tokens_.size());
-    std::uint32_t node_count =
-        static_cast<std::uint32_t>(order_.size());
-    std::uint32_t token_offset =
-        static_cast<std::uint32_t>(tree_size + HeaderSize);
-    auto* header = reinterpret_cast<std::uint32_t*>(buffer.data());
-    header[0] = node_count;
-    header[1] = token_count;
-    header[2] = token_offset;
-    header[3] = piece_offset;
-
-    std::ofstream out(output, std::ios::binary | std::ios::trunc);
-    if (!out.is_open()) {
-        return false;
-    }
-    out.write(buffer.data(),
-              static_cast<std::streamsize>(buffer.size()));
-    return out.good();
 }
 
 } // namespace sime

@@ -1,12 +1,12 @@
-#pragma once 
+#pragma once
 
 #include "common.h"
-#include "piece.h"
+#include "trie.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -14,17 +14,22 @@ namespace sime {
 
 class Dict {
 public:
-    struct Move {
-        Unit unit{};
-        std::uint32_t next = 0;
+    enum DatType : int {
+        LetterPinyin = 0,
+        LetterEn = 1,
+        NumPinyin = 2,
+        NumEn = 3,
+        DatCount = 4,
     };
 
-    struct Node {
-        std::uint32_t move_count = 0;
-        std::uint32_t count = 0;
+    struct Item {
+        TokenID id = 0;
+        const char* pieces = nullptr;  // e.g., "ni'hao"
+    };
 
-        const Move* GetMove() const;
-        const std::uint32_t* GetToken() const;
+    struct Entry {
+        const Item* items = nullptr;
+        uint32_t count = 0;
     };
 
     Dict() = default;
@@ -33,42 +38,35 @@ public:
     bool Load(const std::filesystem::path& path);
     void Clear();
 
-    const Node* Root() const;
-    const Node* DoMove(const Node* node, Unit u) const;
-    const std::uint32_t* GetToken(const Node* node, std::uint32_t& count) const;
+    const trie::DoubleArray& Dat(DatType type) const { return dats_[type]; }
+    Entry GetEntry(DatType type, uint32_t index) const;
 
-    std::uint32_t TokenCount() const;
-
-    const char32_t* TokenAt(std::uint32_t i) const;
-
-    const PieceTable& GetPieceTable() const { return piece_; }
-
-    // Walk piece path, BFS subtree, collect token IDs.
-    std::vector<std::uint32_t> GetTokens(
-        std::string_view pieces, std::size_t num) const;
-
-    // Set of all token IDs present in the trie.
+    const char32_t* TokenAt(uint32_t id) const;
+    uint32_t TokenCount() const { return token_count_; }
     const std::unordered_set<TokenID>& TokenSet() const { return token_set_; }
 
-    // Piece path for a trie node (e.g. "ni'hao" for 你好).
-    const std::string& NodePieces(const Node* node) const {
-        static const std::string empty;
-        auto it = node_pieces_.find(node);
-        return it != node_pieces_.end() ? it->second : empty;
-    }
+    // Static pinyin utilities (backed by dict.inc)
+    static bool IsKnownPinyin(const std::string& text);
+    static char LetterToNum(char c);
+    static std::string LettersToNums(std::string_view letters);
 
 private:
-    void BuildTokenIndex();
-    const Node* NodeFrom(std::uint32_t i) const;
-    std::uint32_t RootIndex() const;
-    std::uint32_t TokenIndex() const;
-    std::uint32_t PieceIndex() const;
+    trie::DoubleArray dats_[DatCount];
 
+    // Side table: entries_[type][index] = list of Items
+    struct EntryData {
+        std::vector<TokenID> ids;
+        std::vector<std::string> pieces;  // parallel with ids
+    };
+    std::vector<EntryData> entries_[DatCount];
+    // Flattened Item arrays for GetEntry (built from EntryData)
+    std::vector<std::vector<Item>> items_[DatCount];
+
+    // Token text table
+    uint32_t token_count_ = 0;
     std::vector<char> blob_;
     std::vector<const char32_t*> token_strs_;
-    PieceTable piece_;
     std::unordered_set<TokenID> token_set_;
-    std::unordered_map<const Node*, std::string> node_pieces_;
 };
 
 } // namespace sime

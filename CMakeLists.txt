@@ -18,8 +18,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/dict.cc
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/sime.cc
-    ${NEW_SRC_DIR}/nine.cc
-    ${NEW_SRC_DIR}/piece.cc
+    ${NEW_SRC_DIR}/trie.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})

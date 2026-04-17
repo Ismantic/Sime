@@ -64,7 +64,7 @@ private:
         std::size_t start = 0;
         std::size_t end = 0;
         TokenID id = 0;
-        const std::string* pieces = nullptr;  // piece path from Dict::NodePieces
+        const char* pieces = nullptr;  // piece path, e.g. "ni'hao"
     };
 
     struct Node {
@@ -103,7 +103,6 @@ private:
                      bool separator = true) const;
 
     // Resources
-    const PieceTable& piece() const { return dict_.GetPieceTable(); }
     Dict dict_;
     Scorer scorer_;
     bool ready_ = false;
