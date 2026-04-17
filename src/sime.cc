@@ -9,7 +9,9 @@
 namespace sime {
 
 Sime::Sime(const std::filesystem::path& dict_path,
-                         const std::filesystem::path& model_path) {
+                         const std::filesystem::path& model_path,
+                         bool separator)
+    : separator_(separator) {
     if (!dict_.Load(dict_path)) {
         return;
     }
@@ -273,7 +275,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
 
     std::vector<Node> net;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
-    InitNumNet(start, nums, net, can_tail_expand);
+    InitNumNet(start, nums, net, can_tail_expand, separator_);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -357,7 +359,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     const std::size_t total = start.size() + nums.size();
 
     std::vector<Node> net;
-    InitNumNet(start, nums, net, /*expansion=*/false);
+    InitNumNet(start, nums, net, /*expansion=*/false, separator_);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
@@ -417,7 +419,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    InitNet(lower, net, /*expansion=*/false);
+    InitNet(lower, net, /*expansion=*/false, separator_);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -710,7 +712,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t total = lower.size();
 
     std::vector<Node> net;
-    InitNet(lower, net);
+    InitNet(lower, net, /*expansion=*/true, separator_);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
