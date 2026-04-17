@@ -1,234 +1,189 @@
 #include "dict.h"
-#include "ustr.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <fstream>
 
 namespace sime {
 
-const Dict::Move* Dict::Node::GetMove() const {
-    const char* p = reinterpret_cast<const char*>(this + 1);
-    return reinterpret_cast<const Dict::Move*>(p);
-}
+namespace {
 
-const std::uint32_t* Dict::Node::GetToken() const {
-    const char* p = 
-        reinterpret_cast<const char*>(this + 1) + 
-        sizeof(Dict::Move) * move_count;
-    return reinterpret_cast<const std::uint32_t*>(p);
-}
+struct DictEntry {
+    const char* text;
+    std::uint32_t value;
+};
+
+const DictEntry PinyinDict[] = {
+#include "dict.inc"
+};
+
+constexpr std::size_t PinyinDictSize = sizeof(PinyinDict) / sizeof(PinyinDict[0]);
+
+} // namespace
 
 Dict::~Dict() { Clear(); }
 
 void Dict::Clear() {
+    for (int t = 0; t < DatCount; ++t) {
+        dats_[t] = trie::DoubleArray();
+        entries_[t].clear();
+        items_[t].clear();
+    }
+    token_count_ = 0;
     blob_.clear();
     token_strs_.clear();
     token_set_.clear();
-    node_pieces_.clear();
-}
-
-uint32_t Dict::TokenCount() const {
-    if (blob_.size() < 2 * sizeof(std::uint32_t)) {
-        return 0;
-    }
-    return reinterpret_cast<const std::uint32_t*>(blob_.data())[1];
-}
-
-std::uint32_t Dict::TokenIndex() const {
-    if (blob_.size() < 3 * sizeof(std::uint32_t)) {
-        return 0;
-    }
-    return reinterpret_cast<const std::uint32_t*>(blob_.data())[2];
-}
-
-std::uint32_t Dict::PieceIndex() const {
-    if (blob_.size() < 4 * sizeof(std::uint32_t)) {
-        return 0;
-    }
-    return reinterpret_cast<const std::uint32_t*>(blob_.data())[3];
-}
-
-std::uint32_t Dict::RootIndex() const {
-    return 4U * static_cast<std::uint32_t>(sizeof(std::uint32_t));
-}
-
-const Dict::Node* Dict::NodeFrom(std::uint32_t i) const {
-    if (blob_.empty() || i < RootIndex() || i >= blob_.size()) {
-        return nullptr;
-    }
-    const char* p = blob_.data() + i;
-    return reinterpret_cast<const Dict::Node*>(p);
-}
-
-const Dict::Node* Dict::Root() const {
-    return NodeFrom(RootIndex());
 }
 
 bool Dict::Load(const std::filesystem::path& path) {
     Clear();
 
     std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        return false;
-    }
+    if (!in) return false;
     in.seekg(0, std::ios::end);
-    const std::streamsize size = in.tellg();
+    const auto size = static_cast<std::size_t>(in.tellg());
     in.seekg(0, std::ios::beg);
-    if (size <= 0) {
-        return false;
-    }
-    blob_.resize(static_cast<std::size_t>(size));
-    if (!in.read(blob_.data(), size)) {
+    if (size < 7 * sizeof(uint32_t)) return false;
+
+    blob_.resize(size);
+    if (!in.read(blob_.data(), static_cast<std::streamsize>(size))) {
         Clear();
         return false;
     }
 
-    uint32_t count = TokenCount();
-    token_strs_.reserve(count);
-    const char* base = blob_.data() + TokenIndex();
-    auto p = reinterpret_cast<const char32_t*>(base);
-    for (uint32_t i = 0; i < count; ++i) {
+    // Parse header
+    const auto* header = reinterpret_cast<const uint32_t*>(blob_.data());
+    token_count_ = header[0];
+    uint32_t token_offset = header[1];
+    uint32_t section_offsets[DatCount];
+    for (int t = 0; t < DatCount; ++t)
+        section_offsets[t] = header[2 + t];
+    uint32_t total_size = header[6];
+    if (total_size != size) { Clear(); return false; }
+
+    // Parse token text table
+    token_strs_.reserve(token_count_);
+    auto p = reinterpret_cast<const char32_t*>(blob_.data() + token_offset);
+    for (uint32_t i = 0; i < token_count_; ++i) {
         token_strs_.push_back(p);
         while (*p++) {}
     }
 
-    // Load piece table
-    std::uint32_t pi = PieceIndex();
-    if (pi > 0 && pi < blob_.size()) {
-        if (!piece_.Deserialize(blob_.data() + pi,
-                                blob_.size() - pi)) {
-            Clear();
-            return false;
+    // Parse 4 DAT sections
+    for (int t = 0; t < DatCount; ++t) {
+        std::size_t offset = section_offsets[t];
+        if (offset >= size) continue;
+
+        // Deserialize DAT
+        if (!dats_[t].Deserialize(blob_.data() + offset, size - offset)) {
+            continue;
+        }
+        // Skip past DAT data to side table
+        // DAT serialized size: 4 bytes (size) + size * 10 bytes (units)
+        uint32_t dat_size = 0;
+        std::memcpy(&dat_size, blob_.data() + offset, sizeof(dat_size));
+        offset += sizeof(dat_size) + dat_size * 10;
+
+        if (offset + sizeof(uint32_t) > size) continue;
+
+        // Parse side table
+        uint32_t entry_count = 0;
+        std::memcpy(&entry_count, blob_.data() + offset, sizeof(entry_count));
+        offset += sizeof(entry_count);
+
+        entries_[t].resize(entry_count);
+        items_[t].resize(entry_count);
+
+        for (uint32_t e = 0; e < entry_count; ++e) {
+            if (offset + sizeof(uint16_t) > size) break;
+            uint16_t item_count = 0;
+            std::memcpy(&item_count, blob_.data() + offset, sizeof(item_count));
+            offset += sizeof(item_count);
+
+            auto& entry = entries_[t][e];
+            entry.ids.reserve(item_count);
+            entry.pieces.reserve(item_count);
+
+            auto& item_vec = items_[t][e];
+            item_vec.reserve(item_count);
+
+            for (uint16_t j = 0; j < item_count; ++j) {
+                if (offset + sizeof(TokenID) + sizeof(uint16_t) > size) break;
+
+                TokenID id = 0;
+                std::memcpy(&id, blob_.data() + offset, sizeof(id));
+                offset += sizeof(id);
+
+                uint16_t pieces_len = 0;
+                std::memcpy(&pieces_len, blob_.data() + offset, sizeof(pieces_len));
+                offset += sizeof(pieces_len);
+
+                if (offset + pieces_len > size) break;
+
+                entry.ids.push_back(id);
+                entry.pieces.emplace_back(blob_.data() + offset, pieces_len);
+                offset += pieces_len;
+
+                token_set_.insert(id);
+            }
+
+            // Build Item array for GetEntry
+            for (std::size_t j = 0; j < entry.ids.size(); ++j) {
+                item_vec.push_back({entry.ids[j], entry.pieces[j].c_str()});
+            }
         }
     }
 
-    BuildTokenIndex();
     return true;
 }
 
-const Dict::Node* Dict::DoMove(const Dict::Node* node, Unit u) const {
-    if (node == nullptr || node->move_count == 0) {
-        return nullptr;
-    }
-    const auto* begin = node->GetMove();
-    const auto* end = begin + node->move_count;
-    const auto it = std::lower_bound(
-        begin,
-        end,
-        u.value,
-        [](const Dict::Move& move, std::uint32_t value) {
-            return move.unit.value < value;
-        });
-    if (it == end || it->unit.value != u.value) {
-        return nullptr;
-    }
-    return NodeFrom(it->next);
-}
-
-const std::uint32_t* Dict::GetToken(const Dict::Node* node, uint32_t& count) const {
-    if (node == nullptr) {
-        count = 0;
-        return nullptr;
-    } 
-    count = node->count;
-    return node->GetToken();
+Dict::Entry Dict::GetEntry(DatType type, uint32_t index) const {
+    if (index >= items_[type].size()) return {nullptr, 0};
+    const auto& vec = items_[type][index];
+    return {vec.data(), static_cast<uint32_t>(vec.size())};
 }
 
 const char32_t* Dict::TokenAt(uint32_t i) const {
-    if (i >= token_strs_.size()) {
-        return nullptr;
-    }
+    if (i >= token_strs_.size()) return nullptr;
     return token_strs_[i];
 }
 
-std::vector<std::uint32_t> Dict::GetTokens(
-    std::string_view pieces, std::size_t num) const {
-    std::vector<std::uint32_t> result;
-    if (num == 0) return result;
-
-    // Walk piece path to anchor node
-    const Node* node = Root();
-    if (!node) return result;
-
-    std::size_t pos = 0;
-    while (pos < pieces.size() && node) {
-        if (pieces[pos] == '\'') {
-            ++pos;
-            continue;
-        }
-        std::size_t next = pieces.find('\'', pos);
-        std::string_view seg = pieces.substr(
-            pos, next == std::string_view::npos ? std::string_view::npos
-                                                : next - pos);
-        if (seg.empty()) break;
-        Unit u = piece_.Encode(seg);
-        if (u.value == 0) return result;
-        node = DoMove(node, u);
-        pos = (next == std::string_view::npos) ? pieces.size() : next + 1;
+bool Dict::IsKnownPinyin(const std::string& text) {
+    constexpr uint32_t FinalMask = 0xFFF;
+    std::size_t left = 0;
+    std::size_t right = PinyinDictSize;
+    while (left < right) {
+        std::size_t mid = left + (right - left) / 2;
+        int cmp = std::strcmp(text.c_str(), PinyinDict[mid].text);
+        if (cmp == 0) return (PinyinDict[mid].value & FinalMask) != 0;
+        if (cmp > 0) left = mid + 1;
+        else right = mid;
     }
-    if (!node) return result;
-
-    // BFS subtree, collect tokens
-    std::vector<const Node*> queue;
-    queue.push_back(node);
-    std::size_t head = 0;
-    while (head < queue.size() && result.size() < num) {
-        const Node* cur = queue[head++];
-
-        if (cur != node && cur->count > 0) {
-            const std::uint32_t* tokens = cur->GetToken();
-            for (std::uint32_t i = 0; i < cur->count && result.size() < num; ++i) {
-                result.push_back(tokens[i]);
-            }
-        }
-
-        const auto* moves = cur->GetMove();
-        for (std::uint32_t i = 0; i < cur->move_count; ++i) {
-            const Node* child = DoMove(cur, Unit(moves[i].unit.value));
-            if (child) queue.push_back(child);
-        }
-    }
-    return result;
+    return false;
 }
 
-void Dict::BuildTokenIndex() {
-    token_set_.clear();
-    node_pieces_.clear();
-    const Node* root = Root();
-    if (!root) return;
-
-    struct Frame {
-        const Node* node;
-        std::string pieces;
-    };
-    std::vector<Frame> stack;
-    stack.push_back({root, ""});
-    while (!stack.empty()) {
-        auto [cur, pieces] = stack.back();
-        stack.pop_back();
-        if (!cur) continue;
-
-        if (cur->count > 0) {
-            node_pieces_[cur] = pieces;
-            const std::uint32_t* tokens = cur->GetToken();
-            for (std::uint32_t i = 0; i < cur->count; ++i) {
-                token_set_.insert(static_cast<TokenID>(tokens[i]));
-            }
-        }
-
-        const auto* moves = cur->GetMove();
-        for (std::uint32_t i = 0; i < cur->move_count; ++i) {
-            const Node* child = DoMove(cur, Unit(moves[i].unit.value));
-            if (!child) continue;
-            const char* seg = piece_.Decode(Unit(moves[i].unit.value));
-            std::string child_pieces = pieces;
-            if (!child_pieces.empty()) child_pieces += "'";
-            child_pieces += (seg ? seg : "");
-            stack.push_back({child, std::move(child_pieces)});
-        }
+char Dict::LetterToNum(char c) {
+    switch (c) {
+    case 'a': case 'b': case 'c': return '2';
+    case 'd': case 'e': case 'f': return '3';
+    case 'g': case 'h': case 'i': return '4';
+    case 'j': case 'k': case 'l': return '5';
+    case 'm': case 'n': case 'o': return '6';
+    case 'p': case 'q': case 'r': case 's': return '7';
+    case 't': case 'u': case 'v': return '8';
+    case 'w': case 'x': case 'y': case 'z': return '9';
+    default: return 0;
     }
+}
+
+std::string Dict::LettersToNums(std::string_view letters) {
+    std::string result;
+    for (char ch : letters) {
+        char d = LetterToNum(static_cast<char>(
+            std::tolower(static_cast<unsigned char>(ch))));
+        if (d != 0) result.push_back(d);
+    }
+    return result;
 }
 
 } // namespace sime

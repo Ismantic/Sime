@@ -1,11 +1,8 @@
-// Dump dict token/piece tables and n-gram scores to text files.
+// Dump dict token tables and n-gram scores to text files.
 // Usage: sime-dump --dict <dict.bin> [--cnt <model.bin>] --out <prefix>
-// Produces: prefix.1 (unigram), prefix.2 (bigram), prefix.3 (trigram)
 
-#include "piece.h"
 #include "score.h"
 #include "dict.h"
-#include "unit.h"
 #include "ustr.h"
 
 #include <cstring>
@@ -29,11 +26,22 @@ std::string TokenToText(const sime::Dict& dict, sime::TokenID id) {
     return sime::ustr::FromU32(u32);
 }
 
+const char* DatName(int t) {
+    switch (t) {
+    case 0: return "letter_pinyin";
+    case 1: return "letter_en";
+    case 2: return "num_pinyin";
+    case 3: return "num_en";
+    default: return "unknown";
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
     std::filesystem::path dict_path, model_path, out_prefix;
-    std::string groups_query;
+    std::string query;
+    int query_type = -1;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--dict") == 0 && i + 1 < argc) {
@@ -42,14 +50,15 @@ int main(int argc, char* argv[]) {
             model_path = argv[++i];
         } else if (std::strcmp(argv[i], "--out") == 0 && i + 1 < argc) {
             out_prefix = argv[++i];
-        } else if (std::strcmp(argv[i], "--groups") == 0 && i + 1 < argc) {
-            groups_query = argv[++i];
+        } else if (std::strcmp(argv[i], "--query") == 0 && i + 2 < argc) {
+            query_type = std::atoi(argv[++i]);
+            query = argv[++i];
         }
     }
 
-    if (dict_path.empty() || (out_prefix.empty() && groups_query.empty())) {
+    if (dict_path.empty() || (out_prefix.empty() && query.empty())) {
         std::cerr << "Usage: sime-dump --dict <dict.bin> [--cnt <model.bin>] --out <prefix>\n"
-                  << "       sime-dump --dict <dict.bin> --groups <pieces>\n";
+                  << "       sime-dump --dict <dict.bin> --query <type:0-3> <key>\n";
         return 1;
     }
 
@@ -59,20 +68,26 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // --groups mode: query GetTokens and print results
-    if (!groups_query.empty()) {
-        auto tokens = dict.GetTokens(groups_query, 50);
-        std::cerr << "GetTokens(\"" << groups_query << "\"): "
-                  << tokens.size() << " tokens\n";
-        for (std::size_t i = 0; i < tokens.size(); ++i) {
-            auto tid = static_cast<sime::TokenID>(tokens[i]);
-            std::cout << "  [" << i << "] " << TokenToText(dict, tid)
-                      << " (id: " << tid << ")\n";
+    // --query mode
+    if (!query.empty() && query_type >= 0 && query_type < sime::Dict::DatCount) {
+        auto type = static_cast<sime::Dict::DatType>(query_type);
+        auto results = dict.Dat(type).FindWordsWithPrefix(query, 50);
+        std::cerr << "FindWordsWithPrefix(\"" << query << "\", "
+                  << DatName(query_type) << "): "
+                  << results.size() << " results\n";
+        for (std::size_t i = 0; i < results.size(); ++i) {
+            auto entry = dict.GetEntry(type, results[i].value);
+            for (uint32_t j = 0; j < entry.count; ++j) {
+                std::cout << "  [" << i << "] "
+                          << TokenToText(dict, entry.items[j].id)
+                          << " pieces=" << entry.items[j].pieces
+                          << " (id: " << entry.items[j].id << ")\n";
+            }
         }
         return 0;
     }
 
-    // Dump token table (StartToken onwards, one per line, like sime.token.dict.txt)
+    // Dump token table
     {
         std::string path = out_prefix.string() + ".token";
         std::ofstream out(path);
@@ -88,60 +103,27 @@ int main(int argc, char* argv[]) {
         }
         std::cerr << "token: " << n << " → " << path << "\n";
     }
-    // Dump token+pieces mapping (like sime.dict.txt / en_dict.cut.txt)
-    // Walk trie to recover token → piece path mappings.
-    {
-        std::string path = out_prefix.string() + ".dict";
+
+    // Dump DAT entries
+    for (int t = 0; t < sime::Dict::DatCount; ++t) {
+        auto type = static_cast<sime::Dict::DatType>(t);
+        std::string path = out_prefix.string() + "." + DatName(t);
         std::ofstream out(path);
-        const auto& pt = dict.GetPieceTable();
         std::size_t n = 0;
 
-        // DFS: collect all (token_id, piece_path) pairs
-        struct Frame {
-            const sime::Dict::Node* node;
-            std::string pieces; // accumulated piece path like "ni'hao"
-        };
-        std::vector<Frame> stack;
-        stack.push_back({dict.Root(), ""});
-        while (!stack.empty()) {
-            auto [node, pieces] = stack.back();
-            stack.pop_back();
-            if (!node) continue;
-            // Emit tokens at this node
-            std::uint32_t count = 0;
-            const std::uint32_t* tokens = dict.GetToken(node, count);
-            if (count > 0 && !pieces.empty()) {
-                for (std::uint32_t i = 0; i < count; ++i) {
-                    auto tid = static_cast<sime::TokenID>(tokens[i]);
-                    out << TokenToText(dict, tid) << " " << pieces << "\n";
-                    ++n;
-                }
-            }
-            // Recurse into children
-            const auto* moves = node->GetMove();
-            for (std::uint32_t i = 0; i < node->move_count; ++i) {
-                sime::Unit u(moves[i].unit.value);
-                const char* piece_text = pt.Decode(u);
-                std::string child_pieces = pieces;
-                if (!child_pieces.empty()) child_pieces += "'";
-                child_pieces += (piece_text ? piece_text : "");
-                const auto* child = dict.DoMove(node, u);
-                if (child) stack.push_back({child, child_pieces});
+        // Iterate through all entries by walking the DAT
+        // (we can't easily enumerate all keys, so just report stats)
+        // Actually, we can iterate the side table
+        for (uint32_t idx = 0; ; ++idx) {
+            auto entry = dict.GetEntry(type, idx);
+            if (entry.count == 0 && entry.items == nullptr) break;
+            for (uint32_t j = 0; j < entry.count; ++j) {
+                out << TokenToText(dict, entry.items[j].id) << " "
+                    << entry.items[j].pieces << "\n";
+                ++n;
             }
         }
-        std::cerr << "dict: " << n << " → " << path << "\n";
-    }
-    {
-        const auto& pt = dict.GetPieceTable();
-        std::string path = out_prefix.string() + ".pieces";
-        std::ofstream out(path);
-        for (std::size_t i = 0; i < pt.Size(); ++i) {
-            sime::Unit u(static_cast<std::uint32_t>(i));
-            const char* text = pt.Decode(u);
-            out << i << "\t" << (text ? text : "")
-                << "\t" << (pt.IsPinyin(u) ? "py" : "-") << "\n";
-        }
-        std::cerr << "pieces: " << pt.Size() << " → " << path << "\n";
+        std::cerr << DatName(t) << ": " << n << " → " << path << "\n";
     }
 
     // Dump model if provided
