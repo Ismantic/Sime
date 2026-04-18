@@ -40,13 +40,18 @@ count: sime.token.dict.txt $(CORPUS)
 	./parallel_count.sh -n 3 -d sime.token.dict.txt -o $(OUT)/raw -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
 # Step 4: construct language model (reads $(OUT)/raw.1gram/.2gram/.3gram)
+# -w is the *active* vocab: number of distinct unigrams actually in raw.1gram
+# (each record is 2*uint32 = 8 bytes), which keeps the MKN gamma normalization
+# aligned with the data even if sime.token.dict.txt drifts.
 construct: $(OUT)/raw.3gram sime.token.dict.txt
+	AV=$$(( $$(stat -c%s $(OUT)/raw.1gram) / 8 )); \
+	echo "active vocab = $$AV"; \
 	$(SIME)/sime-construct $(OUT)/raw \
 		-n 3 \
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,2,5 \
-		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),3000000,3000000
+		-w $$AV \
+		-r $$((AV + 3)),3000000,3000000
 
 # Step 5: convert pinyin dict to trie
 convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)

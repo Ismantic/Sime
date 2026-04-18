@@ -128,13 +128,13 @@ def main():
         w = line.rstrip("\n").split("\t")[0]
         if not w or w in dict_seen:
             continue
-        if freq.get(w, 0) < args.min_count:
+        if freq.get(w, 0) < 1:
             dict_dropped += 1
             continue
         dict_tokens.append(w)
         dict_seen.add(w)
     print(f"dict.txt tokens: {len(dict_tokens)} (dropped {dict_dropped} "
-          f"below min_count={args.min_count})", file=sys.stderr)
+          f"below min_count=1)", file=sys.stderr)
 
     # 1b. chars.cnt.txt 按频次降序补充（过 min_count，收中文词、标点和英文词）
     remaining = max_vocab - len(dict_tokens)
