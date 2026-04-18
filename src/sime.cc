@@ -155,14 +155,53 @@ void Sime::InitNumNet(std::string_view start,
     net[total].es.push_back({total, total + 1, SentenceEnd});
 }
 
-std::string Sime::ExtractUnits(const std::vector<Link>& path) {
+std::string Sime::AbbreviatePieces(const char* full_pieces,
+                                   std::string_view input) {
+    std::string result;
+    std::size_t ipos = 0;
+    const char* p = full_pieces;
+    bool first = true;
+    while (*p) {
+        if (!first) result += '\'';
+        first = false;
+        // Current syllable: p up to next '\'' or end
+        const char* syl_end = p;
+        while (*syl_end && *syl_end != '\'') ++syl_end;
+        // Match input chars against syllable chars
+        const char* s = p;
+        std::size_t syl_start = result.size();
+        while (s < syl_end && ipos < input.size() && input[ipos] != '\'') {
+            if (input[ipos] == *s) {
+                result.push_back(input[ipos]);
+                ++ipos;
+                ++s;
+            } else {
+                break;
+            }
+        }
+        if (result.size() == syl_start) {
+            // No chars matched for this syllable — stop
+            if (!first) result.pop_back();  // remove trailing '\''
+            break;
+        }
+        // Skip '\'' in input if present
+        if (ipos < input.size() && input[ipos] == '\'') ++ipos;
+        // Advance pieces past this syllable
+        p = (*syl_end == '\'') ? syl_end + 1 : syl_end;
+    }
+    return result;
+}
+
+std::string Sime::ExtractUnits(const std::vector<Link>& path,
+                               std::string_view input) {
     std::string py;
     for (const auto& link : path) {
         if (link.id == SentenceEnd || link.id == ScoreNotToken ||
             link.id == NotToken) continue;
         if (!link.pieces || link.pieces[0] == '\0') continue;
         if (!py.empty()) py += '\'';
-        py += link.pieces;
+        py += AbbreviatePieces(link.pieces,
+                               input.substr(link.start, link.end - link.start));
     }
     return py;
 }
@@ -207,6 +246,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const std::size_t p = start.size();
     const std::size_t d = nums.size();
     const std::size_t total = p + d;
+    std::string combined_input(start);
+    combined_input += nums;
 
     std::vector<Node> net;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
@@ -230,7 +271,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             auto path = Backtrace(tail[rank], total + 1);
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
-            std::string py = ExtractUnits(path);
+            std::string py = ExtractUnits(path, combined_input);
             results.push_back({std::move(text), std::move(py),
                                ExtractTokens(path),
                                -tail[rank].score, full_cnt});
@@ -258,9 +299,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             }
         }
         std::size_t consumed = edge.end - edge.start;
-        std::size_t distance = (piece_len > consumed) ? (piece_len - consumed)
-                             : (total > edge.end)     ? (total - edge.end)
-                             : 0;
+        std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
         Scorer::Pos epos{};
@@ -297,6 +336,8 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
 
     const std::size_t max_top = num == 0 ? 1 : num;
     const std::size_t total = start.size() + nums.size();
+    std::string combined_input(start);
+    combined_input += nums;
 
     std::vector<Node> net;
     InitNumNet(start, nums, net, /*expansion=*/false);
@@ -313,7 +354,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
         auto path = Backtrace(tail_states[rank], total + 1);
         std::string text = ExtractText(path);
         if (text.empty() || !dedup.insert(text).second) continue;
-        std::string py = ExtractUnits(path);
+        std::string py = ExtractUnits(path, combined_input);
         results.push_back({std::move(text), std::move(py),
                            ExtractTokens(path),
                            -tail_states[rank].score,
@@ -355,7 +396,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    InitNet(lower, net, /*expansion=*/false);
+    InitNet(lower, net, /*expansion=*/true);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -371,7 +412,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
         if (path.empty()) continue;
         std::string text = ExtractText(path);
         if (text.empty() || !dedup.insert(text).second) continue;
-        std::string py = ExtractUnits(path);
+        std::string py = ExtractUnits(path, lower);
         results.push_back({std::move(text), std::move(py),
                            ExtractTokens(path),
                            -tail_states[rank].score, input.size()});
@@ -596,7 +637,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             if (path.empty()) continue;
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
-            std::string py = ExtractUnits(path);
+            std::string py = ExtractUnits(path, lower);
             std::size_t piece_len = 0;
             for (char c : py) {
                 if (c != '\'') ++piece_len;
@@ -628,9 +669,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             }
         }
         std::size_t consumed = edge.end - edge.start;
-        std::size_t distance = (piece_len > consumed) ? (piece_len - consumed)
-                             : (total > edge.end)     ? (total - edge.end)
-                             : 0;
+        std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
         Scorer::Pos epos{};

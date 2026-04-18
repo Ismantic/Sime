@@ -88,7 +88,10 @@ private:
 
     std::u32string ToText(const Link& n) const;
     std::string ExtractText(const std::vector<Link>& path) const;
-    static std::string ExtractUnits(const std::vector<Link>& path);
+    static std::string ExtractUnits(const std::vector<Link>& path,
+                                    std::string_view input);
+    static std::string AbbreviatePieces(const char* full_pieces,
+                                        std::string_view input);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string TextFromU32(std::u32string& u32);
 

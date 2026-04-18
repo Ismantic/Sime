@@ -95,7 +95,8 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefix(
 
 void DoubleArray::CollectWords(std::size_t pos, std::string& word,
                                std::vector<SearchResult>& results,
-                               std::size_t max_num) const {
+                               std::size_t max_num,
+                               bool stop_at_sep) const {
     if (results.size() >= max_num || pos >= size_) return;
 
     if (array_[pos].eow) {
@@ -109,11 +110,12 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
 
     uint32_t base = array_[pos].index;
     for (int ch = 1; ch <= 255; ++ch) {
+        if (stop_at_sep && ch == '\'') continue;
         std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
         if (child >= size_ || child == pos) continue;
         if (array_[child].label != ch || array_[child].parent != pos) continue;
         word.push_back(static_cast<char>(ch));
-        CollectWords(child, word, results, max_num);
+        CollectWords(child, word, results, max_num, stop_at_sep);
         word.pop_back();
         if (results.size() >= max_num) return;
     }
@@ -200,11 +202,11 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
         }
     }
 
-    // Collect all words from surviving states
+    // Collect words, staying within current syllable
     for (const auto& s : states) {
         if (results.size() >= max_num) break;
         std::string word;
-        CollectWords(s.pos, word, results, max_num);
+        CollectWords(s.pos, word, results, max_num, /*stop_at_sep=*/true);
     }
     return results;
 }
@@ -377,10 +379,48 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
 
     RecordMatches(states, 0, results, max_num);
 
+    auto recordLastSyllableMatches = [&](std::size_t input_len) {
+        for (const auto& s : states) {
+            if (results.size() >= max_num) break;
+            if (s.depth != 1) continue;
+            // Bounded DFS looking for eow within the current syllable
+            struct Frame { std::size_t pos; int rem; };
+            std::vector<Frame> stack = {{s.pos, 6}};
+            while (!stack.empty() && results.size() < max_num) {
+                auto [pos, rem] = stack.back();
+                stack.pop_back();
+                if (rem <= 0 || pos >= size_) continue;
+                if (array_[pos].eow) {
+                    std::size_t vp = pos ^ array_[pos].index;
+                    if (vp < size_ && array_[vp].HasValue()) {
+                        uint32_t val = static_cast<uint32_t>(array_[vp].value);
+                        bool dup = false;
+                        for (const auto& r : results) {
+                            if (r.value == val && r.length == input_len) {
+                                dup = true; break;
+                            }
+                        }
+                        if (!dup) results.push_back({val, input_len});
+                    }
+                }
+                uint32_t base = array_[pos].index;
+                for (int ch = 1; ch <= 255; ++ch) {
+                    if (ch == '\'') continue;
+                    std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
+                    if (child >= size_ || child == pos) continue;
+                    if (array_[child].label != ch ||
+                        array_[child].parent != pos) continue;
+                    stack.push_back({child, rem - 1});
+                }
+            }
+        }
+    };
+
     for (std::size_t i = 0; i < str.size() && !states.empty(); ++i) {
         if (results.size() >= max_num) break;
         AdvancePinyin(states, static_cast<uint8_t>(str[i]));
         RecordMatches(states, i + 1, results, max_num);
+        recordLastSyllableMatches(i + 1);
     }
 
     return results;
@@ -397,11 +437,11 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixPinyin(
         AdvancePinyin(states, static_cast<uint8_t>(prefix[i]));
     }
 
-    // Collect all words reachable from any surviving state
+    // Collect words, staying within current syllable (stop at '\'')
     for (const auto& s : states) {
         if (results.size() >= max_num) break;
         std::string word(prefix);
-        CollectWords(s.pos, word, results, max_num);
+        CollectWords(s.pos, word, results, max_num, /*stop_at_sep=*/true);
     }
 
     return results;
