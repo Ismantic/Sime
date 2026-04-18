@@ -84,7 +84,8 @@ public:
 private:
     void CollectWords(std::size_t pos, std::string& word,
                       std::vector<SearchResult>& results,
-                      std::size_t max_num) const;
+                      std::size_t max_num,
+                      bool stop_at_sep = false) const;
 
     // Try following a character from pos. Returns child pos or SIZE_MAX.
     std::size_t TryChild(std::size_t pos, uint8_t ch) const;
