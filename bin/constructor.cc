@@ -66,8 +66,8 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
     }
     opts.input = argv[optind];
 
-    if (opts.num <= 0 || opts.output.empty()) {
-        throw std::runtime_error("invalid arguments: check -n/-o");
+    if (opts.num < 1 || opts.num > 3 || opts.output.empty()) {
+        throw std::runtime_error("invalid arguments: -n must be 1..3, -o required");
     }
     return opts;
 }

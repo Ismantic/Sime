@@ -256,7 +256,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     InitNumNet(start, nums, net, can_tail_expand);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
@@ -345,7 +345,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     InitNumNet(start, nums, net, /*expansion=*/false);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
@@ -402,7 +402,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 
@@ -619,7 +619,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     InitNet(lower, net, /*expansion=*/true);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, Scorer::Pos{}, nullptr, 0);
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
 

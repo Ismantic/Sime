@@ -39,6 +39,12 @@ public:
     void Back(Pos& pos) const;
     float_t UnknownPenalty() const;
 
+    // Initial decoder state: navigates from root through (num-1) <s> tokens
+    // so the first scored word uses the highest-order context. Falls back
+    // to a shallower level (down to root) if <s> padding nodes aren't in
+    // the model.
+    Pos StartPos() const;
+
     // Enumerate successor tokens from context, sorted by cost (best first).
     // context is backed off in-place to the resolved position.
     std::vector<std::pair<TokenID, float_t>> NextTokens(

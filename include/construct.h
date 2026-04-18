@@ -14,6 +14,11 @@ public:
     void Init(std::uint64_t n1, std::uint64_t n2, std::uint64_t n3, std::uint64_t n4);
     float_t Discount(float_t cnt) const;
 
+    // Discount amounts D1 / D2 / D3+ (used to compute MKN gamma).
+    float_t D1() const { return v1_; }
+    float_t D2() const { return v2_; }
+    float_t D3() const { return v3_; }
+
 private:
     float_t v1_ = 0.0;
     float_t v2_ = 0.0;
@@ -21,10 +26,18 @@ private:
 };
 
 struct ConstructOptions {
+    // N-gram order of the model. Supported range: 1..3.
+    // Several hot paths (InsertTrigram, ComputeContinuationCounts,
+    // RunConstruct's input loop) are specialized to this range; extending it
+    // requires generalizing InsertNgram, parent-chain tracking, per-level
+    // continuation count computation, and the merge pipeline's kMaxN.
     int num = 0;
     std::filesystem::path output;
+    // Base path for per-order count files. Reads <input>.1gram, .2gram,
+    // .3gram up to <num>.
     std::filesystem::path input;
     std::uint32_t token_count = 0;
+    // Per-order count cutoffs; cutoffs[k-1] applies to k-grams.
     std::vector<std::uint32_t> cutoffs;
     std::vector<int> prune_reserves;
 };
@@ -32,7 +45,13 @@ struct ConstructOptions {
 class Constructor {
 public:
     explicit Constructor(ConstructOptions opts);
-    void InsertItem(const std::vector<TokenID>& ids, std::uint32_t cnt);
+
+    // Feed raw counts at each order. Must be called in sorted token order
+    // per order, and in order 1 -> 2 -> 3 overall.
+    void InsertUnigram(TokenID w, std::uint32_t cnt);
+    void InsertBigram(TokenID u, TokenID v, std::uint32_t cnt);
+    void InsertTrigram(TokenID u, TokenID v, TokenID w, std::uint32_t cnt);
+
     void Finalize();
     void Prune(const std::vector<int>& reserves);
     void Write(const std::filesystem::path& path) const;
@@ -59,8 +78,12 @@ private:
 
     bool IsBreaker(TokenID i) const;
 
+    // Walk sorted parent arrays and set .down pointers on l1 / l2 nodes.
+    void FixDownPointers();
+
     template <typename Level>
-    int CutLevel(NodeLevel& up_level, Level& current, int threshold);
+    int CutLevel(NodeLevel& up_level, Level& current, int threshold,
+                 bool protect_specials = false);
 
     void CountCnt();
     void Cut();
@@ -82,7 +105,7 @@ private:
 
     template <typename DownLevel>
     void DiscountLevel(NodeLevel& level, DownLevel& down_level, NeyDiscounter& disc,
-                       bool use_context);
+                       bool use_context, int parent_lvl);
 
     ConstructOptions opts_;
     std::vector<NodeLevel> node_levels_;
@@ -90,6 +113,11 @@ private:
     std::vector<std::array<std::uint64_t, 5>> nt_;
     std::vector<std::uint32_t> cuts_;
     std::vector<NeyDiscounter> discounters_;
+
+    // Parent token arrays parallel to node_levels_[2] and leaves_.
+    // Filled during InsertBigram / InsertTrigram, consumed by FixDownPointers.
+    std::vector<TokenID> bigram_parents_;          // parent l1 id per l2 entry
+    std::vector<std::array<TokenID, 2>> leaf_parents_;  // parent (u, v) per leaf
 
     // Prune
     struct NodeScore {
