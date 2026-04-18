@@ -18,7 +18,8 @@ def is_chinese(word):
 
 
 def is_english(word):
-    return all(c.isascii() and c.isalpha() for c in word) and len(word) > 0
+    return (all(c.isascii() and (c.isalpha() or c == "'") for c in word)
+            and len(word) > 0 and word[0].isalpha())
 
 
 def is_punct(word):

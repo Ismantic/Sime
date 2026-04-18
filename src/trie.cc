@@ -153,7 +153,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
                 AdvancePinyin(tmp, static_cast<uint8_t>(*lp));
                 next.insert(next.end(), tmp.begin(), tmp.end());
             }
-            // Dedup
+            // Dedup and limit state count
             std::sort(next.begin(), next.end(),
                       [](const PinyinState& a, const PinyinState& b) {
                           return a.pos < b.pos;
@@ -162,6 +162,8 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
                                    [](const PinyinState& a, const PinyinState& b) {
                                        return a.pos == b.pos;
                                    }), next.end());
+            constexpr std::size_t MaxT9States = 4096;
+            if (next.size() > MaxT9States) next.resize(MaxT9States);
             states = std::move(next);
         }
         RecordMatches(states, i + 1, results, max_num);
@@ -198,6 +200,8 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
                                    [](const PinyinState& a, const PinyinState& b) {
                                        return a.pos == b.pos;
                                    }), next.end());
+            constexpr std::size_t MaxT9States = 4096;
+            if (next.size() > MaxT9States) next.resize(MaxT9States);
             states = std::move(next);
         }
     }
@@ -268,9 +272,11 @@ std::size_t DoubleArray::TryChild(std::size_t pos, uint8_t ch) const {
 void DoubleArray::FindSepDescendants(std::size_t pos,
                                      std::vector<std::size_t>& out,
                                      int max_depth) const {
-    if (max_depth <= 0 || pos >= size_) return;
+    constexpr std::size_t MaxSeps = 256;
+    if (max_depth <= 0 || pos >= size_ || out.size() >= MaxSeps) return;
     uint32_t base = array_[pos].index;
     for (int ch = 1; ch <= 255; ++ch) {
+        if (out.size() >= MaxSeps) return;
         std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
         if (child >= size_ || child == pos) continue;
         if (array_[child].label != ch || array_[child].parent != pos)
@@ -306,8 +312,10 @@ void DoubleArray::RecordMatches(const std::vector<PinyinState>& states,
 
 void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
                                 uint8_t ch) const {
-    // depth: 0=boundary, 1=initial letter matched, 2+=deep in syllable
-    // Syllable skip only when depth==1 (abbreviation = initial letter only)
+    auto canSkip = [&](const PinyinState& s) -> bool {
+        return s.depth == 1;
+    };
+
     std::vector<PinyinState> next;
 
     for (const auto& s : states) {
@@ -320,8 +328,8 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
             if (sep != SIZE_MAX) {
                 next.push_back({sep, 0});
             }
-            // 2. Syllable skip to '\'' (only if depth==1: initial abbreviation)
-            if (s.depth == 1) {
+            // 2. Syllable skip to '\''
+            if (canSkip(s)) {
                 std::vector<std::size_t> seps;
                 FindSepDescendants(s.pos, seps, 6);
                 for (auto sp : seps) {
@@ -343,8 +351,8 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
                     next.push_back({after_sep, 1});  // new syllable, first char
                 }
             }
-            // 3. Syllable skip (only if depth==1: initial abbreviation)
-            if (s.depth == 1) {
+            // 3. Syllable skip
+            if (canSkip(s)) {
                 std::vector<std::size_t> seps;
                 FindSepDescendants(s.pos, seps, 6);
                 for (auto sp : seps) {
@@ -367,6 +375,10 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
                                return a.pos == b.pos;
                            }), next.end());
 
+    // Cap state count to prevent combinatorial explosion (T9)
+    constexpr std::size_t MaxStates = 2048;
+    if (next.size() > MaxStates) next.resize(MaxStates);
+
     states = std::move(next);
 }
 
@@ -382,7 +394,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
     auto recordLastSyllableMatches = [&](std::size_t input_len) {
         for (const auto& s : states) {
             if (results.size() >= max_num) break;
-            if (s.depth != 1) continue;
+            if (s.depth == 0) continue;
             // Bounded DFS looking for eow within the current syllable
             struct Frame { std::size_t pos; int rem; };
             std::vector<Frame> stack = {{s.pos, 6}};
