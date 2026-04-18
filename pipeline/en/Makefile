@@ -31,14 +31,14 @@ dict: chars.cnt.txt $(EN_WORDS)
 merge.bin: ../merge.cc
 	g++ -O3 -std=c++17 $< -o $@
 
-# Step 2: n-gram count (parallel)
+# Step 2: n-gram count (parallel) -- emits $(OUT)/raw.1gram .. raw.3gram
 count: sime.en.token.dict.txt $(CORPUS)
 	mkdir -p $(OUT)
-	../parallel_count.sh -n 3 -d sime.en.token.dict.txt -o $(OUT)/raw.3gram -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
+	../parallel_count.sh -n 3 -d sime.en.token.dict.txt -o $(OUT)/raw -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
-# Step 3: construct language model
+# Step 3: construct language model (reads $(OUT)/raw.1gram/.2gram/.3gram)
 construct: $(OUT)/raw.3gram sime.en.token.dict.txt
-	$(SIME)/sime-construct $(OUT)/raw.3gram \
+	$(SIME)/sime-construct $(OUT)/raw \
 		-n 3 \
 		-o $(OUT)/sime.en.raw.cnt \
 		-c 0,2,5 \

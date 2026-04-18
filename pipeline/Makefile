@@ -1,12 +1,12 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 2
+NPROC = 3
 SIME = ../build
 
 RAW = News.sentences.txt
 UNITS = units.20260408.txt
-CORPUS = sentences.cut.txt
+CORPUS = sentences.500w.cut.txt
 CUT_DICT = dict.txt
 DICT = dict.txt
 EN_WORDS = en_dict.raw
@@ -34,14 +34,14 @@ merge.bin: merge.cc
 dict: chars.cnt.txt $(UNITS) $(DICT) $(EN_WORDS)
 	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --dict $(DICT) --en-words $(EN_WORDS) --token-output sime.token.dict.txt --cn-output sime.dict.txt --en-output $(EN_DICT)
 
-# Step 3: n-gram count (parallel)
+# Step 3: n-gram count (parallel) -- emits $(OUT)/raw.1gram .. raw.3gram
 count: sime.token.dict.txt $(CORPUS)
 	mkdir -p $(OUT)
-	./parallel_count.sh -n 3 -d sime.token.dict.txt -o $(OUT)/raw.3gram -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
+	./parallel_count.sh -n 3 -d sime.token.dict.txt -o $(OUT)/raw -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
-# Step 4: construct language model
+# Step 4: construct language model (reads $(OUT)/raw.1gram/.2gram/.3gram)
 construct: $(OUT)/raw.3gram sime.token.dict.txt
-	$(SIME)/sime-construct $(OUT)/raw.3gram \
+	$(SIME)/sime-construct $(OUT)/raw \
 		-n 3 \
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,2,5 \

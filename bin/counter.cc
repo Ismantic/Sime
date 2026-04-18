@@ -8,8 +8,9 @@
 namespace {
 
 void PrintUsage() {
-    std::cerr << "sime-count -n <num> -d <token_dict> -o <output> -s <swapfile> "
-                 "[-c count_size] inputfiles...\n";
+    std::cerr << "sime-count -n <max_order> -d <token_dict> -o <output_prefix> "
+                 "-s <swap_prefix> [-c count_size] inputfiles...\n"
+                 "Emits <output_prefix>.1gram .. .<N>gram (one file per order).\n";
 }
 
 sime::CountOptions ParseArgs(int argc, char* argv[]) {

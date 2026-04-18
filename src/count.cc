@@ -20,7 +20,7 @@ namespace sime {
 
 namespace {
 
-template <std::size_t N> 
+template <std::size_t N>
 constexpr std::size_t GroupSize() {
     return N * sizeof(TokenID) + sizeof(Cnt);
 }
@@ -40,8 +40,8 @@ struct RunRange {
 };
 
 template <std::size_t N>
-void FlushCounts(std::map<Item<N>, Cnt>& counts, 
-                 std::fstream& swap, 
+void FlushCounts(std::map<Item<N>, Cnt>& counts,
+                 std::fstream& swap,
                  std::vector<RunRange<N>>& runs) {
     if (counts.empty()) {
         return;
@@ -58,103 +58,9 @@ void FlushCounts(std::map<Item<N>, Cnt>& counts,
 }
 
 template <std::size_t N>
-void ProcessTextFile(const std::filesystem::path& path,
-                     const TokenMap& tokens,
-                     std::size_t count_max,
-                     std::fstream& swap,
-                     std::vector<RunRange<N>>& runs) {
-    std::ifstream input(path);
-    if (!input.is_open()) {
-        throw std::runtime_error("Failed to open input file: " + path.string());
-    }
-    std::map<Item<N>, Cnt> counts;
-    Item<N> gram{};
-
-    auto feed = [&](TokenID id) {
-        if constexpr (N == 1) {
-            gram[0] = id;
-            ++counts[gram];
-            if (counts.size() >= count_max) {
-                FlushCounts(counts, swap, runs);
-            }
-        }
-    };
-
-    // For N > 1, we need a history buffer
-    std::array<TokenID, N> history{};
-    std::size_t filled = 0;
-
-    auto feed_ngram = [&](TokenID id) {
-        if constexpr (N == 1) {
-            feed(id);
-        } else {
-            if (filled < N - 1) {
-                history[filled++] = id;
-                return;
-            }
-            for (std::size_t i = 0; i < N - 1; ++i) {
-                gram[i] = history[i];
-            }
-            gram[N - 1] = id;
-            ++counts[gram];
-            if (counts.size() >= count_max) {
-                FlushCounts(counts, swap, runs);
-            }
-            for (std::size_t i = 0; i < N - 2; ++i) {
-                history[i] = history[i + 1];
-            }
-            history[N - 2] = id;
-        }
-    };
-
-    std::string line;
-    std::size_t line_count = 0;
-    while (std::getline(input, line)) {
-        if (line.empty()) {
-            continue;
-        }
-
-        feed_ngram(SentenceStart);
-
-        std::istringstream iss(line);
-        std::string token;
-        while (iss >> token) {
-            // Skip ▁ (U+2581) separator token
-            if (token == "\xE2\x96\x81") continue;
-            auto it = tokens.ids.find(token);
-            if (it != tokens.ids.end()) {
-                feed_ngram(it->second);
-            } else {
-                // Unknown token: reset ngram context instead of
-                // feeding UnknownToken, which would pollute the LM
-                // with useless ngrams.
-                feed_ngram(SentenceEnd);
-                filled = 0;
-                feed_ngram(SentenceStart);
-            }
-        }
-
-        feed_ngram(SentenceEnd);
-        filled = 0;
-
-        constexpr std::size_t ProgressInterval = 200000;
-        if (++line_count % ProgressInterval == 0) {
-            std::cerr << "  " << line_count << " lines, "
-                      << counts.size() << " ngrams, "
-                      << runs.size() << " flushes\n";
-        }
-    }
-
-    std::cerr << "  " << line_count << " lines, "
-              << counts.size() << " ngrams, "
-              << runs.size() << " flushes\n";
-    FlushCounts(counts, swap, runs);
-}
-
-template <std::size_t N>
 class RunReader {
 public:
-    RunReader(const std::filesystem::path& path, 
+    RunReader(const std::filesystem::path& path,
               RunRange<N> range)
         : file_(path, std::ios::binary),
           remaining_(range.end >= range.start ? range.end - range.start : 0) {
@@ -172,7 +78,7 @@ public:
                         static_cast<std::streamsize>(N * sizeof(TokenID)))) {
             return false;
         }
-        if (!file_.read(reinterpret_cast<char*>(&current_.cnt), 
+        if (!file_.read(reinterpret_cast<char*>(&current_.cnt),
                         static_cast<std::streamsize>(sizeof(Cnt)))) {
             return false;
         }
@@ -189,8 +95,8 @@ private:
 };
 
 template <std::size_t N>
-void MergeRuns(const std::filesystem::path& swap_path, 
-               const std::vector<RunRange<N>>& runs, 
+void MergeRuns(const std::filesystem::path& swap_path,
+               const std::vector<RunRange<N>>& runs,
                const std::filesystem::path& output_path) {
     std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
     if (!out.is_open()) {
@@ -259,14 +165,154 @@ void MergeRuns(const std::filesystem::path& swap_path,
 }
 
 template <std::size_t N>
-void RunImpl(const CountOptions& options) {
-    std::fstream swap(options.swap,
-                      std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
-    if (!swap.is_open()) {
-        throw std::runtime_error("Failed to open swap file: " + options.swap.string());
-    }
+struct Bucket {
+    std::map<Item<N>, Cnt> counts;
+    std::fstream swap;
     std::vector<RunRange<N>> runs;
-    runs.reserve(16);
+    std::filesystem::path swap_path;
+    std::filesystem::path output_path;
+    std::size_t count_max = 0;
+    bool active = false;
+
+    void Init(std::filesystem::path out, std::filesystem::path swp, std::size_t cap) {
+        output_path = std::move(out);
+        swap_path = std::move(swp);
+        count_max = cap;
+        swap.open(swap_path,
+                  std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
+        if (!swap.is_open()) {
+            throw std::runtime_error("Failed to open swap file: " + swap_path.string());
+        }
+        runs.reserve(16);
+        active = true;
+    }
+
+    void Feed(const Item<N>& gram) {
+        ++counts[gram];
+        if (counts.size() >= count_max) {
+            FlushCounts(counts, swap, runs);
+        }
+    }
+
+    void Finish() {
+        if (!active) return;
+        FlushCounts(counts, swap, runs);
+        swap.close();
+        MergeRuns<N>(swap_path, runs, output_path);
+    }
+};
+
+std::filesystem::path WithSuffix(const std::filesystem::path& base,
+                                 const std::string& suffix) {
+    return base.string() + suffix;
+}
+
+void ProcessOneFile(const std::filesystem::path& path,
+                    const TokenMap& tokens,
+                    int max_order,
+                    Bucket<1>* b1,
+                    Bucket<2>* b2,
+                    Bucket<3>* b3) {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        throw std::runtime_error("Failed to open input file: " + path.string());
+    }
+
+    // Per-order sliding windows. Each order uses (order-1) <s> tokens as
+    // left padding, matching KenLM (corpus_count.cc::StartSentence). This
+    // lets the first real word be scored via the highest-order context.
+    std::array<TokenID, 2> b2w{}; std::size_t b2_filled = 0;
+    std::array<TokenID, 3> b3w{}; std::size_t b3_filled = 0;
+
+    auto start_sentence = [&]() {
+        if (max_order >= 2) {
+            b2w[0] = SentenceStart;
+            b2_filled = 1;
+        }
+        if (max_order >= 3) {
+            b3w[0] = SentenceStart;
+            b3w[1] = SentenceStart;
+            b3_filled = 2;
+        }
+        // Unigram <s> once per sentence.
+        if (max_order >= 1 && b1) {
+            b1->Feed(Item<1>{SentenceStart});
+        }
+        // Padding bigram (<s>, <s>) once per sentence, so that trigram
+        // (<s>, <s>, w) has a proper parent bigram node in the Trie.
+        if (max_order >= 3 && b2) {
+            b2->Feed(Item<2>{SentenceStart, SentenceStart});
+        }
+    };
+
+    auto feed_word = [&](TokenID id) {
+        if (max_order >= 1 && b1) {
+            b1->Feed(Item<1>{id});
+        }
+        if (max_order >= 2 && b2) {
+            if (b2_filled < 2) {
+                b2w[b2_filled++] = id;
+            } else {
+                b2w[0] = b2w[1];
+                b2w[1] = id;
+            }
+            if (b2_filled == 2) {
+                b2->Feed(Item<2>{b2w[0], b2w[1]});
+            }
+        }
+        if (max_order >= 3 && b3) {
+            if (b3_filled < 3) {
+                b3w[b3_filled++] = id;
+            } else {
+                b3w[0] = b3w[1];
+                b3w[1] = b3w[2];
+                b3w[2] = id;
+            }
+            if (b3_filled == 3) {
+                b3->Feed(Item<3>{b3w[0], b3w[1], b3w[2]});
+            }
+        }
+    };
+
+    std::string line;
+    std::size_t line_count = 0;
+    while (std::getline(input, line)) {
+        if (line.empty()) {
+            continue;
+        }
+
+        start_sentence();
+
+        std::istringstream iss(line);
+        std::string token;
+        while (iss >> token) {
+            // Skip ▁ (U+2581) separator token
+            if (token == "\xE2\x96\x81") continue;
+            auto it = tokens.ids.find(token);
+            if (it != tokens.ids.end()) {
+                feed_word(it->second);
+            } else {
+                feed_word(UnknownToken);
+            }
+        }
+
+        feed_word(SentenceEnd);
+
+        constexpr std::size_t ProgressInterval = 200000;
+        if (++line_count % ProgressInterval == 0) {
+            std::cerr << "  " << line_count << " lines\n";
+        }
+    }
+
+    std::cerr << "  total " << line_count << " lines\n";
+}
+
+} // namespace
+
+void RunCount(const CountOptions& options) {
+    if (options.num < 1 || options.num > 3) {
+        throw std::invalid_argument("num must be in [1, 3]");
+    }
 
     TokenMap tokens;
     if (!LoadTokenMap(options.dict, tokens)) {
@@ -274,29 +320,52 @@ void RunImpl(const CountOptions& options) {
     }
     std::cerr << "loaded " << tokens.ids.size() << " tokens from dict\n";
 
+    // Divide the budget across active orders so aggregate memory stays bounded.
+    std::size_t per_bucket = std::max<std::size_t>(
+        options.count_max / static_cast<std::size_t>(options.num),
+        static_cast<std::size_t>(1024));
+
+    Bucket<1> b1;
+    Bucket<2> b2;
+    Bucket<3> b3;
+
+    if (options.num >= 1) {
+        b1.Init(WithSuffix(options.output, ".1gram"),
+                WithSuffix(options.swap, ".1"),
+                per_bucket);
+    }
+    if (options.num >= 2) {
+        b2.Init(WithSuffix(options.output, ".2gram"),
+                WithSuffix(options.swap, ".2"),
+                per_bucket);
+    }
+    if (options.num >= 3) {
+        b3.Init(WithSuffix(options.output, ".3gram"),
+                WithSuffix(options.swap, ".3"),
+                per_bucket);
+    }
+
     for (const auto& input : options.inputs) {
         std::cerr << "processing " << input.string() << " ...\n";
-        ProcessTextFile<N>(input, tokens, options.count_max, swap, runs);
+        ProcessOneFile(input, tokens, options.num,
+                       options.num >= 1 ? &b1 : nullptr,
+                       options.num >= 2 ? &b2 : nullptr,
+                       options.num >= 3 ? &b3 : nullptr);
     }
 
-    swap.close();
-    std::cerr << "merging " << runs.size() << " runs ...\n";
-    MergeRuns<N>(options.swap, runs, options.output);
+    if (options.num >= 1) {
+        std::cerr << "merging 1-grams -> " << b1.output_path.string() << "\n";
+        b1.Finish();
+    }
+    if (options.num >= 2) {
+        std::cerr << "merging 2-grams -> " << b2.output_path.string() << "\n";
+        b2.Finish();
+    }
+    if (options.num >= 3) {
+        std::cerr << "merging 3-grams -> " << b3.output_path.string() << "\n";
+        b3.Finish();
+    }
     std::cerr << "done\n";
-}
-
-} // namespace sime
-
-void RunCount(const CountOptions& options) {
-    if (options.num == 1) {
-        RunImpl<1>(options);
-    } else if (options.num == 2) {
-        RunImpl<2>(options);
-    } else if (options.num == 3) {
-        RunImpl<3>(options);
-    } else {
-        throw std::invalid_argument("Only 1-Gram, 2-Gram, or 3-Gram are supported");
-    }
 }
 
 } // namespace sime

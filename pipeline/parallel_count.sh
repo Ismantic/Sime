@@ -1,7 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: parallel_count.sh -n <ngram> -d <dict> -o <output> -c <count_max> [-j nproc] <corpus>
+# Usage: parallel_count.sh -n <max_order> -d <dict> -o <output_prefix> \
+#                          [-c count_max] [-j nproc] <corpus>
+#
+# Emits <output_prefix>.1gram .. .<N>gram (one merged file per order).
 
 NGRAM=""
 DICT=""
@@ -22,7 +25,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$NGRAM" || -z "$DICT" || -z "$OUTPUT" || -z "$CORPUS" ]]; then
-    echo "usage: parallel_count.sh -n <ngram> -d <dict> -o <output> [-c count_max] [-j nproc] <corpus>" >&2
+    echo "usage: parallel_count.sh -n <max_order> -d <dict> -o <output_prefix> [-c count_max] [-j nproc] <corpus>" >&2
     exit 1
 fi
 
@@ -53,12 +56,12 @@ cleanup() {
 trap cleanup INT TERM
 
 pids=()
-outputs=()
+chunk_prefixes=()
 for i in "${!CHUNKS[@]}"; do
     chunk="${CHUNKS[$i]}"
-    out="$OUTDIR/ngram.$i"
-    swap="$OUTDIR/swap.$i"
-    outputs+=("$out")
+    out="$OUTDIR/ngram.$i"        # sime-count writes $out.1gram .. .Ngram
+    swap="$OUTDIR/swap.$i"        # ... and $swap.1 .. .N
+    chunk_prefixes+=("$out")
     "$SIME" -n "$NGRAM" -d "$DICT" -s "$swap" -o "$out" -c "$PER_PROC_MAX" "$chunk" &
     pids+=($!)
 done
@@ -72,15 +75,28 @@ if [[ $failed -ne 0 ]]; then
     exit 1
 fi
 
-# Merge
-echo "=== Merging ===" >&2
+# Merge per order
 MERGE_BIN="$(dirname "$0")/merge.bin"
-if [[ -x "$MERGE_BIN" ]]; then
-    "$MERGE_BIN" -n "$NGRAM" -o "$OUTPUT" "${outputs[@]}"
-else
-    python3 "$(dirname "$0")/merge_ngram.py" -n "$NGRAM" -o "$OUTPUT" "${outputs[@]}"
-fi
+merge_order() {
+    local order=$1
+    local suffix=".${order}gram"
+    local inputs=()
+    for pfx in "${chunk_prefixes[@]}"; do
+        inputs+=("${pfx}${suffix}")
+    done
+    echo "=== Merging order $order ===" >&2
+    if [[ -x "$MERGE_BIN" ]]; then
+        "$MERGE_BIN" -n "$order" -o "${OUTPUT}${suffix}" "${inputs[@]}"
+    else
+        python3 "$(dirname "$0")/merge_ngram.py" -n "$order" \
+            -o "${OUTPUT}${suffix}" "${inputs[@]}"
+    fi
+}
+
+for order in $(seq 1 "$NGRAM"); do
+    merge_order "$order"
+done
 
 # Clean up intermediate files
-rm -f "$OUTDIR"/chunk.* "$OUTDIR"/ngram.* "$OUTDIR"/swap.*
-echo "=== Done: $OUTPUT ===" >&2
+rm -f "$OUTDIR"/chunk.* "$OUTDIR"/ngram.*.[0-9]gram "$OUTDIR"/swap.*.[0-9]
+echo "=== Done: ${OUTPUT}.1gram .. ${OUTPUT}.${NGRAM}gram ===" >&2

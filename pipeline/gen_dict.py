@@ -120,15 +120,21 @@ def main():
     # ── Step 1: sime.token.dict.txt ──
     max_vocab = (1 << 18) - 70  # 262074
 
-    # 1a. dict.txt 全部词
+    # 1a. dict.txt 过 min_count（必须在 corpus 中出现足够多次才收）
     dict_tokens = []
     dict_seen = set()
+    dict_dropped = 0
     for line in open(args.dict):
         w = line.rstrip("\n").split("\t")[0]
-        if w and w not in dict_seen:
-            dict_tokens.append(w)
-            dict_seen.add(w)
-    print(f"dict.txt tokens: {len(dict_tokens)}", file=sys.stderr)
+        if not w or w in dict_seen:
+            continue
+        if freq.get(w, 0) < args.min_count:
+            dict_dropped += 1
+            continue
+        dict_tokens.append(w)
+        dict_seen.add(w)
+    print(f"dict.txt tokens: {len(dict_tokens)} (dropped {dict_dropped} "
+          f"below min_count={args.min_count})", file=sys.stderr)
 
     # 1b. chars.cnt.txt 按频次降序补充（过 min_count，收中文词、标点和英文词）
     remaining = max_vocab - len(dict_tokens)
