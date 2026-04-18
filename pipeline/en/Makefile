@@ -37,13 +37,17 @@ count: sime.en.token.dict.txt $(CORPUS)
 	../parallel_count.sh -n 3 -d sime.en.token.dict.txt -o $(OUT)/raw -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 
 # Step 3: construct language model (reads $(OUT)/raw.1gram/.2gram/.3gram)
+# -w is derived from raw.1gram (record size = 2*uint32 = 8 bytes) so the MKN
+# gamma normalization matches the data regardless of dict/corpus alignment.
 construct: $(OUT)/raw.3gram sime.en.token.dict.txt
+	AV=$$(( $$(stat -c%s $(OUT)/raw.1gram) / 8 )); \
+	echo "active vocab = $$AV"; \
 	$(SIME)/sime-construct $(OUT)/raw \
 		-n 3 \
 		-o $(OUT)/sime.en.raw.cnt \
 		-c 0,2,5 \
-		-w $(VOCAB) \
-		-r $$(($(VOCAB) + 3)),2000000,2000000
+		-w $$AV \
+		-r $$((AV + 3)),2000000,2000000
 
 # Step 4: convert token dict to dict
 convert: sime.en.token.dict.txt $(EN_DICT)
