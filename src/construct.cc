@@ -126,9 +126,19 @@ void Constructor::InsertBigram(TokenID u, TokenID v, std::uint32_t cnt) {
 
 void Constructor::InsertTrigram(TokenID u, TokenID v, TokenID w, std::uint32_t cnt) {
     if (opts_.num < 3) return;
-    if (cnt > cuts_[opts_.num]) {
+    // KenLM convention (adjust_counts.cc:227): never cut n-grams whose
+    // leftmost token is <s> / </s> / <unk>, regardless of count. Keeps the
+    // (<s>, *, *) and (<s>, <s>, *) subtrees intact so the decoder's initial
+    // context has trigram coverage.
+    bool protect = (u == SentenceStart ||
+                    u == SentenceEnd ||
+                    u == UnknownToken);
+    bool keep = (cnt > cuts_[opts_.num]) || protect;
+    if (keep) {
         leaves_.push_back(Leave{w, static_cast<float_t>(cnt), 0.0, 0});
         leaf_parents_.push_back({u, v});
+        // If we kept a low-count trigram via protection, CountCnt will
+        // pick it up via the leaves_ iteration, so don't double-count here.
     } else if (cnt >= 1 && cnt <= 4) {
         // Filtered trigrams still count toward n-of-n for discount estimation.
         nt_[opts_.num][cnt] += 1;
@@ -213,7 +223,7 @@ void Constructor::AppendTails() {
 
 template <typename Level>
 int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold,
-                          bool protect_specials) {
+                          const std::vector<bool>& protect_mask) {
     if (threshold <= 0) {
         return static_cast<int>(current.size());
     }
@@ -222,16 +232,14 @@ int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold,
     auto up_last = up_level.end();
     for (int idx = 0; idx < static_cast<int>(current.size()); ++idx) {
         bool keep = false;
-        bool is_special = protect_specials &&
-            (current[idx].id == SentenceStart ||
-             current[idx].id == SentenceEnd ||
-             current[idx].id == UnknownToken);
+        bool is_protected = (idx < static_cast<int>(protect_mask.size()) &&
+                             protect_mask[idx]);
         if constexpr (std::is_same_v<Level, LeaveLevel>) {
-            keep = is_special ||
+            keep = is_protected ||
                    (static_cast<int>(current[idx].cnt) > threshold) ||
                    (idx + 1 == static_cast<int>(current.size()));
         } else {
-            keep = is_special ||
+            keep = is_protected ||
                    (static_cast<int>(current[idx].cnt) > threshold) ||
                    (idx + 1 == static_cast<int>(current.size())) ||
                    (current[idx + 1].down != current[idx].down);
@@ -251,20 +259,62 @@ int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold,
     return write;
 }
 
+namespace {
+
+inline bool IsSpecialFirstToken(TokenID id) {
+    return id == SentenceStart || id == SentenceEnd || id == UnknownToken;
+}
+
+}  // namespace
+
 void Constructor::Cut() {
     for (int lvl = opts_.num; lvl > 0; --lvl) {
         if (cuts_[lvl] <= 0) {
             continue;
         }
         auto& up_level = node_levels_[lvl - 1];
-        // KenLM convention: never prune <s> / </s> / <unk> at unigram level.
-        bool protect = (lvl == 1);
+
+        // KenLM convention (adjust_counts.cc:227): never cut n-grams whose
+        // leftmost token is a special (<s>/</s>/<unk>). For level=1 that's
+        // the node's own id; for higher orders that's the ancestor chain's
+        // first token.
+        std::vector<bool> protect_mask;
+        if (lvl == 1) {
+            auto& l1 = node_levels_[1];
+            protect_mask.assign(l1.size(), false);
+            for (std::size_t i = 0; i < l1.size(); ++i) {
+                protect_mask[i] = IsSpecialFirstToken(l1[i].id);
+            }
+        } else if (lvl == 2) {
+            // Bigram at l2: first token = parent l1 node's id.
+            auto& l1 = node_levels_[1];
+            auto& l2 = node_levels_[2];
+            protect_mask.assign(l2.size(), false);
+            std::size_t up = 0;
+            for (std::size_t i = 0; i + 1 < l2.size(); ++i) {
+                while (up + 1 < l1.size() && l1[up + 1].down <= i) ++up;
+                protect_mask[i] = IsSpecialFirstToken(l1[up].id);
+            }
+        } else if (lvl == 3) {
+            // Trigram at leaves: first token = grandparent l1 node's id.
+            // Walk l1 and l2 cursors in parallel while iterating leaves.
+            auto& l1 = node_levels_[1];
+            auto& l2 = node_levels_[2];
+            protect_mask.assign(leaves_.size(), false);
+            std::size_t up2 = 0, up1 = 0;
+            for (std::size_t i = 0; i + 1 < leaves_.size(); ++i) {
+                while (up2 + 1 < l2.size() && l2[up2 + 1].down <= i) ++up2;
+                while (up1 + 1 < l1.size() && l1[up1 + 1].down <= up2) ++up1;
+                protect_mask[i] = IsSpecialFirstToken(l1[up1].id);
+            }
+        }
+
         if (lvl == opts_.num) {
-            int new_size = CutLevel(up_level, leaves_, cuts_[lvl], protect);
+            int new_size = CutLevel(up_level, leaves_, cuts_[lvl], protect_mask);
             leaves_.resize(static_cast<std::size_t>(new_size));
         } else {
             auto& level = node_levels_[lvl];
-            int new_size = CutLevel(up_level, level, cuts_[lvl], protect);
+            int new_size = CutLevel(up_level, level, cuts_[lvl], protect_mask);
             level.resize(static_cast<std::size_t>(new_size));
         }
     }

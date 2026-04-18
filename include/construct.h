@@ -88,7 +88,7 @@ private:
 
     template <typename Level>
     int CutLevel(NodeLevel& up_level, Level& current, int threshold,
-                 bool protect_specials = false);
+                 const std::vector<bool>& protect_mask = {});
 
     void CountCnt();
     void Cut();
