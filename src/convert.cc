@@ -21,7 +21,7 @@ bool IsWhitespace(char ch) {
 
 bool IsUnitChar(char ch) {
     auto uc = static_cast<unsigned char>(ch);
-    return (ch >= 'a' && ch <= 'z') || ch == '/' ||
+    return (ch >= 'a' && ch <= 'z') || ch == '/' || ch == '\'' ||
            (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
            uc >= 0x80;
 }

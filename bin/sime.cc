@@ -17,6 +17,7 @@ struct Options {
     bool sentence = false;
     bool num = false;
     bool next = false;
+    bool en = false;
 };
 
 void PrintUsage() {
@@ -30,7 +31,8 @@ void PrintUsage() {
               << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
-              << "  --next              Prediction mode (input token IDs, get nextions)\n";
+              << "  --next              Prediction mode (input token IDs, get nextions)\n"
+              << "  --en                English prefix completion mode\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -50,6 +52,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.num = true;
         } else if (arg == "--next") {
             opts.next = true;
+        } else if (arg == "--en") {
+            opts.en = true;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -111,6 +115,33 @@ int main(int argc, char** argv) {
     }
     std::cout << "Dict: " << opts.dict << "\n"
               << "Model: " << opts.cnt << "\n";
+
+    if (opts.en) {
+        std::cout << "Mode: en (English prefix completion)\n"
+                  << "Input prefix, :quit to exit.\n";
+
+        std::string line;
+        while (true) {
+            std::cout << "> " << std::flush;
+            if (!std::getline(std::cin, line)) break;
+            if (line == ":quit" || line == ":q") break;
+            if (line.empty()) continue;
+
+            auto results = engine.GetTokens(line, opts.n);
+            if (results.empty()) {
+                std::cout << "  (no candidates)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& r = results[idx];
+                std::cout << "  [" << idx << "] " << r.text
+                          << " (score " << std::fixed
+                          << std::setprecision(3) << r.score
+                          << ", id: " << r.tokens[0] << ")\n";
+            }
+        }
+        return 0;
+    }
 
     if (opts.next) {
         std::cout << "Mode: next (prediction)\n"

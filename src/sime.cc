@@ -181,7 +181,7 @@ std::string Sime::AbbreviatePieces(const char* full_pieces,
         }
         if (result.size() == syl_start) {
             // No chars matched for this syllable — stop
-            if (!first) result.pop_back();  // remove trailing '\''
+            if (!result.empty()) result.pop_back();  // remove trailing '\''
             break;
         }
         // Skip '\'' in input if present
@@ -189,6 +189,8 @@ std::string Sime::AbbreviatePieces(const char* full_pieces,
         // Advance pieces past this syllable
         p = (*syl_end == '\'') ? syl_end + 1 : syl_end;
     }
+    // If nothing matched, return full pieces as-is
+    if (result.empty()) return full_pieces;
     return result;
 }
 
@@ -676,7 +678,10 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         Scorer::Pos enext{};
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext) - dist_penalty;
 
-        std::string edge_py = edge.pieces ? edge.pieces : "";
+        std::string edge_py = edge.pieces
+            ? AbbreviatePieces(edge.pieces,
+                  std::string_view(lower).substr(edge.start, edge.end - edge.start))
+            : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            ExtractTokens({edge}),
                            score, edge.end});
@@ -724,6 +729,60 @@ std::vector<DecodeResult> Sime::NextGroups(
         if (!seen.insert(text).second) continue;
 
         results.push_back({std::move(text), {}, {tid}, -pro, 0});
+    }
+
+    return results;
+}
+
+std::vector<DecodeResult> Sime::GetTokens(
+    std::string_view prefix,
+    std::size_t num) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || num == 0 || prefix.empty()) return results;
+
+    // Search the English DAT for prefix matches
+    auto matches = dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(prefix, num * 4);
+
+    // Collect candidates with unigram scores
+    struct Candidate {
+        std::string text;
+        TokenID id;
+        float_t score;
+    };
+    std::vector<Candidate> candidates;
+
+    for (const auto& r : matches) {
+        auto entry = dict_.GetEntry(Dict::LetterEn, r.value);
+        for (uint32_t i = 0; i < entry.count; ++i) {
+            TokenID tid = entry.items[i].id;
+            const char32_t* chars = dict_.TokenAt(tid);
+            if (!chars || chars[0] == 0) continue;
+
+            std::u32string u32;
+            for (std::size_t j = 0; chars[j] != 0; ++j)
+                u32.push_back(chars[j]);
+            std::string text = TextFromU32(u32);
+
+            // Unigram score
+            Scorer::Pos pos{};
+            Scorer::Pos next{};
+            float_t cost = scorer_.ScoreMove(pos, tid, next);
+
+            candidates.push_back({std::move(text), tid, cost});
+        }
+    }
+
+    // Sort by cost ascending (lower cost = higher probability)
+    std::sort(candidates.begin(), candidates.end(),
+              [](const auto& a, const auto& b) { return a.score < b.score; });
+
+    // Dedup and collect
+    std::unordered_set<std::string> seen;
+    for (auto& c : candidates) {
+        if (results.size() >= num) break;
+        if (!seen.insert(c.text).second) continue;
+        results.push_back({std::move(c.text), {}, {c.id}, -c.score,
+                           prefix.size()});
     }
 
     return results;

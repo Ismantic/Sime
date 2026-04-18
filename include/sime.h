@@ -38,6 +38,12 @@ public:
         const std::vector<TokenID>& context,
         std::size_t num = 10) const;
 
+    // English prefix completion: return tokens starting with prefix,
+    // sorted by unigram score.
+    std::vector<DecodeResult> GetTokens(
+        std::string_view prefix,
+        std::size_t num = 10) const;
+
     // Num-key decode (T9/nine-key).
     // `start` is the confirmed prefix (letters, possibly with `'`
     // separators). Supports both pinyin and English prefixes.
