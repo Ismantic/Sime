@@ -148,7 +148,10 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
     }
 
     r = Pos{};
-    return cost + node_levels_[0].data[0].pro;
+    // Unknown token: use a fixed high penalty instead of <unk>'s
+    // inflated unigram score (which accumulates all OOV occurrences).
+    constexpr float_t UnknownCost = 20.0;
+    return cost + UnknownCost;
 }
 
 float_t Scorer::UnknownPenalty() const {
