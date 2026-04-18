@@ -64,6 +64,11 @@ private:
         float_t pro = 0.0;
         float_t bow = 0.0;
         std::uint32_t ctx = 0;
+        // Pre-cut sum of children's ctx at the level below. Populated by
+        // ComputeContinuationCounts before Cut/Prune, used by DiscountLevel
+        // as the MKN "denominator" for lower orders so gamma's normalizer
+        // term reflects lost continuation mass. Not persisted to disk.
+        std::uint32_t ctx_sum = 0;
     };
 
     struct Leave {
@@ -124,6 +129,10 @@ private:
         float_t score = 0.0;
         std::uint32_t index = 0;
         bool has_down = false;
+        // KenLM-style protection: n-grams whose leftmost token is a special
+        // (<s>/<unk>/</s>) are exempt from entropy pruning so the decoder's
+        // initial trigram context and OOV backoff stay intact.
+        bool protect = false;
         bool operator<(const NodeScore& other) const;
     };
 
