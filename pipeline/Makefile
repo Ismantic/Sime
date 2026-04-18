@@ -1,7 +1,7 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 4
+NPROC = 2
 SIME = ../build
 
 RAW = News.sentences.txt

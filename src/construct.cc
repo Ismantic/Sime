@@ -454,6 +454,17 @@ void Constructor::Discount() {
 
     ComputeContinuationCounts();
 
+    // Zero out <unk>'s count and continuation count before discounting
+    // (KenLM convention: <unk> gets prob=0, all its probability comes
+    // from the uniform backoff at root).
+    for (auto& node : node_levels_[1]) {
+        if (node.id == UnknownToken) {
+            node.cnt = 0.0;
+            node.ctx = 0;
+            break;
+        }
+    }
+
     for (int lvl = opts_.num - 1; lvl >= 0; --lvl) {
         auto& level = node_levels_[lvl];
         bool use_context = lvl < opts_.num - 1;
@@ -463,8 +474,22 @@ void Constructor::Discount() {
             DiscountLevel(level, node_levels_[lvl+1], discounters_[lvl+1], use_context);
         }
     }
+
+    // <unk> uninterpolated prob = 0.0 (stored as very high cost).
+    // Its effective probability comes entirely from root's uniform backoff.
+    for (auto& node : node_levels_[1]) {
+        if (node.id == UnknownToken) {
+            node.pro = 99.0f;
+            break;
+        }
+    }
+
+    // Root uniform probability: 1 / (token_count - 1), excluding <s>
+    // which never appears as a predicted word.
     Node& root = node_levels_[0][0];
-    float_t base = 1.0 / std::max<std::uint32_t>(opts_.token_count, 1);
+    std::uint32_t effective_vocab = (opts_.token_count > 1)
+        ? opts_.token_count - 1 : 1;
+    float_t base = 1.0 / effective_vocab;
     root.pro = -std::log(base);
     root.pro = static_cast<float>(root.pro);
 }
@@ -481,9 +506,13 @@ float_t Constructor::CalcNodeBow(int level,
     float_t sum_down = 0.0;
     float_t sum_backoff = 0.0;
     for (std::size_t idx = begin; idx < end; ++idx) {
+        // Skip <unk> and </s> — they don't participate in backoff
+        // weight computation (KenLM convention).
+        TokenID tid = down_level[idx].id;
+        if (tid == UnknownToken || tid == SentenceEnd) continue;
         float_t pro = std::exp(-down_level[idx].pro);
         sum_down += pro;
-        words[level + 1] = down_level[idx].id;
+        words[level + 1] = tid;
         sum_backoff += GetPro(level, words + 2);
     }
     if (sum_down >= 1.0 || sum_backoff >= 1.0) {

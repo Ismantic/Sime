@@ -125,7 +125,12 @@ void ProcessTextFile(const std::filesystem::path& path,
             if (it != tokens.ids.end()) {
                 feed_ngram(it->second);
             } else {
-                feed_ngram(UnknownToken);
+                // Unknown token: reset ngram context instead of
+                // feeding UnknownToken, which would pollute the LM
+                // with useless ngrams.
+                feed_ngram(SentenceEnd);
+                filled = 0;
+                feed_ngram(SentenceStart);
             }
         }
 
