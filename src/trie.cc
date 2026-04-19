@@ -121,7 +121,57 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
     }
 }
 
-// --- T9 digit expansion ---
+// -----------------------------------------------------------------------
+// Pinyin / T9 state machine — "syllable-boundary skipping"
+// -----------------------------------------------------------------------
+//
+// DAT keys are stored as literal Pinyin with apostrophe separators
+// ("zhong'guo" for 中国). These functions let abbreviated, non-separated,
+// or mid-syllable input match the same keys without duplicating entries.
+// See `private/SyllableBoundarySkipping.md` for the technique writeup.
+//
+// Pieces and how they compose (the functions appear below in this order,
+// except for the T9 drivers that come first and reuse everything):
+//
+//   PinyinState { pos, depth }
+//     DAT cursor + chars consumed in current syllable. depth=0 means just
+//     past '\'', 1 means only the initial, >=2 means deep. A set of states
+//     runs in parallel because the same input may parse several ways
+//     (e.g. "xian" = "xian" or "xi'an").
+//
+//   FindSepDescendants(pos, out, max_depth)
+//     Bounded DFS from `pos` collecting every '\'' node within one syllable
+//     (depth bound = max Pinyin syllable length). Used by AdvancePinyin to
+//     find the start of the next syllable when skipping forward.
+//
+//   RecordMatches(states, input_len, results, max_num)
+//     Record any state whose `pos` is an end-of-word — the input matched a
+//     stored key exactly.
+//
+//   AdvancePinyin(states, ch)
+//     One state-machine step. Per state: (a) direct child match, (b) skip a
+//     stored '\'' then match, (c) bounded DFS to find '\'' descendants and
+//     match beyond them — (c) only when depth==1, enforcing the "only the
+//     initial can abbreviate" convention. Input '\'' is handled symmetrically.
+//
+//   PrefixSearchPinyin(input, max_num)
+//     Lattice-lookup driver. Calls AdvancePinyin one input char at a time;
+//     after each step, RecordMatches + a bounded "last syllable eow" DFS
+//     (so "zg" → 中国 hits even though `zg` is not itself an eow node).
+//     Emits edges at every consumed length — used for decoder lattice.
+//
+//   FindWordsWithPrefixPinyin(prefix, max_num)
+//     Tail-expansion driver. Advances through the whole prefix first, then
+//     CollectWords from surviving states staying within the current syllable
+//     (stop_at_sep=true) — used when the user is typing mid-syllable and
+//     wants candidates that complete it.
+//
+//   PrefixSearchT9 / FindWordsWithPrefixT9
+//     Same shape, but each input digit is expanded to its candidate letters
+//     (2→abc, 3→def, …) and every expansion is advanced in parallel. The
+//     letter-keyed DAT serves nine-key input without a separate table.
+//
+// -----------------------------------------------------------------------
 
 std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     std::string_view digits, CharExpander expand,
