@@ -71,12 +71,6 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
     discounters_.resize(opts_.num + 1);
 }
 
-bool Constructor::IsBreaker(TokenID i) const {
-    // Only <s> is excluded from root's aggregate count. </s> is counted
-    // normally; it appears as an n-gram suffix in the corpus.
-    return i == SentenceStart;
-}
-
 template <typename Level>
 std::size_t Constructor::CutLevelByMark(std::vector<Node>& ups, Level& current, float_t mark_value) {
     if (current.empty()) {
@@ -111,9 +105,7 @@ std::size_t Constructor::CutLevelByMark(std::vector<Node>& ups, Level& current, 
 
 void Constructor::InsertUnigram(TokenID w, std::uint32_t cnt) {
     if (opts_.num < 1) return;
-    if (!IsBreaker(w)) {
-        node_levels_[0][0].cnt += cnt;
-    }
+    node_levels_[0][0].cnt += cnt;
     // down set later in FixDownPointers.
     node_levels_[1].push_back(Node{w, 0, static_cast<float_t>(cnt), 0.0, 0.0, 0});
 }
@@ -126,19 +118,9 @@ void Constructor::InsertBigram(TokenID u, TokenID v, std::uint32_t cnt) {
 
 void Constructor::InsertTrigram(TokenID u, TokenID v, TokenID w, std::uint32_t cnt) {
     if (opts_.num < 3) return;
-    // KenLM convention (adjust_counts.cc:227): never cut n-grams whose
-    // leftmost token is <s> / </s> / <unk>, regardless of count. Keeps the
-    // (<s>, *, *) and (<s>, <s>, *) subtrees intact so the decoder's initial
-    // context has trigram coverage.
-    bool protect = (u == SentenceStart ||
-                    u == SentenceEnd ||
-                    u == UnknownToken);
-    bool keep = (cnt > cuts_[opts_.num]) || protect;
-    if (keep) {
+    if (cnt > cuts_[opts_.num]) {
         leaves_.push_back(Leave{w, static_cast<float_t>(cnt), 0.0, 0});
         leaf_parents_.push_back({u, v});
-        // If we kept a low-count trigram via protection, CountCnt will
-        // pick it up via the leaves_ iteration, so don't double-count here.
     } else if (cnt >= 1 && cnt <= 4) {
         // Filtered trigrams still count toward n-of-n for discount estimation.
         nt_[opts_.num][cnt] += 1;
@@ -259,14 +241,6 @@ int Constructor::CutLevel(NodeLevel& up_level, Level& current, int threshold,
     return write;
 }
 
-namespace {
-
-inline bool IsSpecialFirstToken(TokenID id) {
-    return id == SentenceStart || id == SentenceEnd || id == UnknownToken;
-}
-
-}  // namespace
-
 void Constructor::Cut() {
     for (int lvl = opts_.num; lvl > 0; --lvl) {
         if (cuts_[lvl] <= 0) {
@@ -274,40 +248,10 @@ void Constructor::Cut() {
         }
         auto& up_level = node_levels_[lvl - 1];
 
-        // KenLM convention (adjust_counts.cc:227): never cut n-grams whose
-        // leftmost token is a special (<s>/</s>/<unk>). For level=1 that's
-        // the node's own id; for higher orders that's the ancestor chain's
-        // first token.
+        // No special-token protection: the LM contains only real vocabulary
+        // tokens (no <s>/</s>/<unk>). Cut runs purely on count thresholds
+        // plus the "keep if it has children" rule in CutLevel.
         std::vector<bool> protect_mask;
-        if (lvl == 1) {
-            auto& l1 = node_levels_[1];
-            protect_mask.assign(l1.size(), false);
-            for (std::size_t i = 0; i < l1.size(); ++i) {
-                protect_mask[i] = IsSpecialFirstToken(l1[i].id);
-            }
-        } else if (lvl == 2) {
-            // Bigram at l2: first token = parent l1 node's id.
-            auto& l1 = node_levels_[1];
-            auto& l2 = node_levels_[2];
-            protect_mask.assign(l2.size(), false);
-            std::size_t up = 0;
-            for (std::size_t i = 0; i + 1 < l2.size(); ++i) {
-                while (up + 1 < l1.size() && l1[up + 1].down <= i) ++up;
-                protect_mask[i] = IsSpecialFirstToken(l1[up].id);
-            }
-        } else if (lvl == 3) {
-            // Trigram at leaves: first token = grandparent l1 node's id.
-            // Walk l1 and l2 cursors in parallel while iterating leaves.
-            auto& l1 = node_levels_[1];
-            auto& l2 = node_levels_[2];
-            protect_mask.assign(leaves_.size(), false);
-            std::size_t up2 = 0, up1 = 0;
-            for (std::size_t i = 0; i + 1 < leaves_.size(); ++i) {
-                while (up2 + 1 < l2.size() && l2[up2 + 1].down <= i) ++up2;
-                while (up1 + 1 < l1.size() && l1[up1 + 1].down <= up2) ++up1;
-                protect_mask[i] = IsSpecialFirstToken(l1[up1].id);
-            }
-        }
 
         if (lvl == opts_.num) {
             int new_size = CutLevel(up_level, leaves_, cuts_[lvl], protect_mask);
@@ -344,13 +288,10 @@ void Constructor::DiscountLevel(NodeLevel& level,
         Node& node = level[idx];
         Node& next = level[idx + 1];
 
-        // <s> as a history has no continuation-count predecessors, so its
-        // children would all clamp to ~0 if we used ctx. Fall back to raw
-        // counts for <s>'s subtree (standard KenLM <s>-bigram fix).
+        // Path B doesn't emit <s>/</s>, so the KenLM <s>-raw-count branch
+        // isn't reachable. Plain MKN: lower orders use continuation counts,
+        // highest order uses raw counts.
         bool lower_order = use_context;
-        if (use_context && node.id == SentenceStart) {
-            lower_order = false;
-        }
 
         // Compute gamma's numerator and denominator from the kept children.
         std::uint64_t n1 = 0, n2 = 0, n3p = 0;
@@ -447,55 +388,102 @@ void Constructor::DiscountLevel(NodeLevel& level,
     }
 }
 
-float_t Constructor::CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words) {
-    float_t ph = 1.0;
-    for (int i = 1; i < level; ++i) {
-        ph *= GetPro(i, words.data() + level - i + 1);
-    }
+float_t Constructor::CalcScore(int level,
+                               std::vector<int>& indices,
+                               std::vector<TokenID>& words) {
+    // Relative entropy contribution of removing this single n-gram (h, w).
+    // Mirrors SRILM NgramLM.cc::pruneProbs (Stolcke 1998 Eq. 6):
+    //
+    //   gamma'(h) = (numerator + P(w|h))    /   (denominator + P(w|h'))
+    //   deltaProb = log P(w|h') + log gamma'(h) - log P(w|h)
+    //   deltaH    = -P(h) * [ P(w|h) * deltaProb
+    //                        + numerator * (log gamma'(h) - log gamma(h)) ]
+    //
+    // where numerator = 1 - sum_{kept} P(w'|h),
+    //       denominator = 1 - sum_{kept} P(w'|h')  (backoff query at shorter
+    //       history), which are exactly Sime's prune_cache_pa_ / pb_.
+    //
+    // Returns the KL contribution -deltaH (>= 0); caller sorts ascending and
+    // prunes the smallest contributors.
+
     const Node& up = node_levels_[level - 1][indices[level - 1]];
-    float_t bow = std::exp(-up.bow);
-    float_t phw = 0.0;
+    // up.bow stores -log gamma(h), so log gamma(h) = -up.bow.
+    float_t log_gamma_old = -up.bow;
+
+    // P(w|h): stored probability at this n-gram entry.
+    float_t p_orig;
     if (level == opts_.num) {
-        const Leave& leaf = leaves_[indices[level]];
-        phw = std::exp(-leaf.pro);
+        p_orig = std::exp(-leaves_[indices[level]].pro);
     } else {
-        const Node& node = node_levels_[level][indices[level]];
-        phw = std::exp(-node.pro);
+        p_orig = std::exp(-node_levels_[level][indices[level]].pro);
     }
-    float_t ph_w = GetPro(level - 1, words.data() + 2);
-    if (prune_cache_level_ != level - 1 || prune_cache_index_ != indices[level - 1]) {
+    if (p_orig <= 0.0) return 0.0;
+    float_t log_p_orig = std::log(p_orig);
+
+    // P(w|h_shorter) via the LM's backoff query.
+    float_t p_backoff = GetPro(level - 1, words.data() + 2);
+    if (p_backoff <= 0.0) return 0.0;
+    float_t log_p_backoff = std::log(p_backoff);
+
+    // Cache numerator / denominator for all siblings sharing this history.
+    if (prune_cache_level_ != level - 1 ||
+        prune_cache_index_ != indices[level - 1]) {
         prune_cache_level_ = level - 1;
         prune_cache_index_ = indices[level - 1];
         prune_cache_pa_ = 1.0;
         prune_cache_pb_ = 1.0;
         std::size_t begin = up.down;
-        std::size_t end = node_levels_[level - 1][indices[level - 1] + 1].down;
-        for (std::size_t down_idx = begin; down_idx < end; ++down_idx) {
-            float_t pro = 0.0;
-            TokenID wid = 0;
+        std::size_t end =
+            node_levels_[level - 1][indices[level - 1] + 1].down;
+        for (std::size_t j = begin; j < end; ++j) {
+            float_t p_child;
+            TokenID wid;
             if (level == opts_.num) {
-                const Leave& leaf = leaves_[down_idx];
-                pro = std::exp(-leaf.pro);
-                wid = leaf.id;
+                p_child = std::exp(-leaves_[j].pro);
+                wid = leaves_[j].id;
             } else {
-                const Node& node = node_levels_[level][down_idx];
-                pro = std::exp(-node.pro);
-                wid = node.id;
+                p_child = std::exp(-node_levels_[level][j].pro);
+                wid = node_levels_[level][j].id;
             }
-            prune_cache_pa_ -= pro;
+            prune_cache_pa_ -= p_child;
             words[level] = wid;
-            float_t pro_back = GetPro(level - 1, words.data() + 2);
-            prune_cache_pb_ -= pro_back;
+            prune_cache_pb_ -= GetPro(level - 1, words.data() + 2);
         }
     }
-    float_t pa = prune_cache_pa_;
-    float_t pb = prune_cache_pb_;
-    if (pa <= 0.0 || pb <= 0.0) {
-        return 0.0;
+    float_t num = prune_cache_pa_;
+    float_t den = prune_cache_pb_;
+    if (num <= 1e-12 || den <= 1e-12) return 0.0;
+
+    // gamma' after removing this (h, w): the removed ngram joins the "unseen"
+    // mass, so both numerator and denominator gain its probability share.
+    float_t num_new = num + p_orig;
+    float_t den_new = den + p_backoff;
+    if (num_new <= 0.0 || den_new <= 0.0) return 0.0;
+    float_t log_gamma_new = std::log(num_new) - std::log(den_new);
+
+    // deltaProb = log p_new(w|h) - log p_old(w|h)
+    //           = log P(w|h') + log gamma'(h) - log P(w|h)
+    float_t log_delta_prob = log_p_backoff + log_gamma_new - log_p_orig;
+
+    // p_hist = P(h) estimated from the current LM, joint of the history
+    // tokens: prod_{k=1..level-1} P(words[k] | words[1..k-1]).
+    float_t p_hist = 1.0;
+    for (int k = 1; k < level; ++k) {
+        p_hist *= GetPro(k, words.data() + 1);
     }
-    float_t phw_backoff = bow * ph_w;
-    float_t score = phw * (std::log(phw) - std::log(phw_backoff));
-    return std::max(score, 0.0);
+
+    // SRILM pruneProbs stores deltaEntropy with this sign convention: it is
+    // the (non-negative) relative-entropy increase caused by pruning, and
+    // ngrams with the smallest value are the safest to drop. The inner sum
+    // is typically negative (log p' - log p < 0 dominates), and the leading
+    // `-p_hist` flips it to the positive KL value.
+    float_t delta_entropy = -p_hist * (
+        p_orig * log_delta_prob +
+        num * (log_gamma_new - log_gamma_old)
+    );
+
+    // Negative values come from numerical noise; clamp to 0.
+    return std::max(delta_entropy, 0.0);
 }
 
 void Constructor::PruneLevel(int level) {
@@ -532,38 +520,16 @@ void Constructor::PruneLevel(int level) {
             const Node& node = node_levels_[level][idx];
             has_down = ((node_levels_[level][idx + 1].down - node.down) > 0);
         }
-        // KenLM convention (adjust_counts.cc:227): n-grams whose leftmost
-        // token is a special (<s>/<unk>/</s>) are exempt from pruning.
-        // For higher orders this is crucial for (<s>, *) and (<s>, <s>, *):
-        // their raw-count denominator is the whole sentence count, so alpha
-        // is tiny and CalcScore undervalues them, otherwise nearly all
-        // sentence-initial trigrams get pruned.
-        bool protect = false;
-        if (level >= 1) {
-            TokenID first = words[1];
-            protect = (first == SentenceStart ||
-                       first == SentenceEnd ||
-                       first == UnknownToken);
-        }
         float_t dist = has_down ? 0.0 : CalcScore(level, indices, words);
         candidates.push_back(
-            NodeScore{dist, static_cast<std::uint32_t>(idx), has_down, protect});
+            NodeScore{dist, static_cast<std::uint32_t>(idx), has_down});
     }
     std::sort(candidates.begin(), candidates.end());
     int cuts = std::min(prune_cutoffs_[level], static_cast<int>(candidates.size()));
     float_t mark = 0.0;
     for (int i = 0; i < cuts; ++i) {
         if (candidates[i].has_down) continue;
-        if (candidates[i].protect) continue;
-        // Also protect specials at unigram level regardless of first-token
-        // rule above (e.g., an <unk> unigram's words[1] is <unk> already, so
-        // the above catches it; this is kept as belt-and-suspenders).
-        if (level == 1) {
-            TokenID id = node_levels_[1][candidates[i].index].id;
-            if (id == SentenceStart || id == SentenceEnd || id == UnknownToken) {
-                continue;
-            }
-        }
+        // No special-token protection: closed IME vocabulary, no <unk>.
         if (level == opts_.num) {
             leaves_[candidates[i].index].pro = mark;
         } else {
@@ -834,16 +800,9 @@ void Constructor::Finalize() {
     // ctx first so CountCnt can estimate low-order discount params from
     // continuation counts (see KenLM AdjustCounts).
     ComputeContinuationCounts();
-    // Zero <unk> early -- its count shouldn't skew discount param estimation,
-    // and we want alpha(<unk>) = 0 so the natural P_I(<unk>) = gamma(root)/V
-    // comes out right at lvl=0.
-    for (auto& node : node_levels_[1]) {
-        if (node.id == UnknownToken) {
-            node.cnt = 0.0;
-            node.ctx = 0;
-            break;
-        }
-    }
+    // Closed-vocabulary IME: count.cc drops OOV tokens entirely (no <unk>
+    // is ever emitted), so no id 0 / sentinel appears in the LM. Queries
+    // for unknown ids naturally backoff to root uniform = gamma(root)/V.
     CountCnt();
     Cut();
     // Discount now produces interpolated MKN: stores P_I in pro and MKN gamma

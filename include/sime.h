@@ -80,6 +80,10 @@ private:
     static constexpr std::size_t NodeSize = 40;
     static constexpr std::size_t BeamSize = 60;
     static constexpr float_t DistancePenalty = 1.8;
+    // Per-syllable penalty for incomplete pinyin matches. Applied as a
+    // post-processing re-score on Layer 1 / Layer 2 so that fully-typed
+    // syllables outrank abbreviated ones when LM costs are otherwise close.
+    static constexpr float_t PinyinMatchPenalty = 3.0;
 
     // Lattice building
     void InitNet(std::string_view input,

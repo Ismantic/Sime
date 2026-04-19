@@ -83,25 +83,9 @@ void Scorer::Reset() {
 }
 
 Scorer::Pos Scorer::StartPos() const {
-    // Descend from root through (num-1) <s> tokens. If any step fails
-    // (e.g., <s> entry missing due to a unigram-only model), fall back
-    // to whatever depth we reached.
-    Pos cur{};
-    if (num_ < 1 || node_levels_.empty()) return cur;
-    for (int step = 1; step < num_; ++step) {
-        std::uint32_t level = cur.level;
-        if (level >= static_cast<std::uint32_t>(num_)) break;
-        const auto& lv = node_levels_[level];
-        std::size_t node_index = (level == 0) ? 0 : cur.index;
-        if (node_index + 1 >= lv.size) break;
-        auto begin = lv.data[node_index].down;
-        auto end = lv.data[node_index + 1].down;
-        auto down_idx = GetNode(static_cast<int>(level + 1), begin, end, SentenceStart);
-        if (down_idx == end) break;
-        cur.level = level + 1;
-        cur.index = static_cast<std::uint32_t>(down_idx);
-    }
-    return cur;
+    // Path B: no <s>/</s> in the model. Decoder starts at root; first word
+    // is scored via unigram continuation (interpolated MKN).
+    return Pos{};
 }
 
 void Scorer::Back(Pos& pos) const {
@@ -130,7 +114,7 @@ float_t Scorer::ScoreMove(Pos s, TokenID w, Pos& r) const {
     std::uint32_t index = s.index;
 
     float_t cost = 0.0;
-    if (w == ScoreNotToken) {
+    if (w == NotToken) {
         r = Pos{};
         return cost;
     }

@@ -14,11 +14,7 @@
 namespace {
 
 std::string TokenToText(const sime::Dict& dict, sime::TokenID id) {
-    if (id == sime::SentenceStart) return "<s>";
-    if (id == sime::SentenceEnd) return "</s>";
-    if (id == sime::UnknownToken) return "<unk>";
     if (id == sime::NotToken) return "<not>";
-    if (id == sime::ScoreNotToken) return "<skip>";
     const char32_t* chars = dict.TokenAt(id);
     if (!chars || chars[0] == 0) return "<?" + std::to_string(id) + ">";
     std::u32string u32;

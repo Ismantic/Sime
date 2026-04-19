@@ -10,12 +10,13 @@
 namespace sime {
 
 using TokenID = std::uint32_t;
+
+// id space (closed-vocabulary IME):
+//   0            NotToken   — "not a real LM token": default/empty slot,
+//                             decoder end-of-input marker, skip-score marker
+//   1 .. N       dict tokens in sime.token.dict.txt line order
 constexpr TokenID NotToken = 0;
-constexpr TokenID SentenceStart = 10;
-constexpr TokenID SentenceEnd = 11;
-constexpr TokenID UnknownToken = 12;
-constexpr TokenID StartToken = 70;
-constexpr TokenID ScoreNotToken = StartToken - 1;
+constexpr TokenID StartToken = 1;
 
 using float_t = double;
 

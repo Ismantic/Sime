@@ -8,6 +8,45 @@
 
 namespace sime {
 
+namespace {
+
+// Count syllables in `pieces` whose letters are not fully present in
+// `input_slice`. When `input_is_digits` is true, compare pieces letters
+// against their T9 digit form instead. Used to penalize abbreviated or
+// tail-expanded matches relative to fully-typed ones.
+std::size_t CountSyllableMismatch(const char* pieces,
+                                  std::string_view input_slice,
+                                  bool input_is_digits) {
+    if (!pieces) return 0;
+    std::size_t mismatch = 0;
+    std::size_t ipos = 0;
+    const char* p = pieces;
+    while (*p) {
+        const char* syl_end = p;
+        while (*syl_end && *syl_end != '\'') ++syl_end;
+        std::size_t syl_len = static_cast<std::size_t>(syl_end - p);
+
+        while (ipos < input_slice.size() && input_slice[ipos] == '\'') ++ipos;
+
+        std::size_t matched = 0;
+        while (matched < syl_len && ipos < input_slice.size() &&
+               input_slice[ipos] != '\'') {
+            char expected = input_is_digits
+                ? Dict::LetterToNum(p[matched])
+                : p[matched];
+            if (input_slice[ipos] != expected) break;
+            ++matched;
+            ++ipos;
+        }
+        if (matched < syl_len) ++mismatch;
+
+        p = (*syl_end == '\'') ? syl_end + 1 : syl_end;
+    }
+    return mismatch;
+}
+
+} // namespace
+
 Sime::Sime(const std::filesystem::path& dict_path,
                          const std::filesystem::path& model_path) {
     if (!dict_.Load(dict_path)) {
@@ -72,7 +111,7 @@ void Sime::InitNumNet(std::string_view start,
         // === Prefix letter columns ===
         if (s < p) {
             if (start[s] == '\'') {
-                net[s].es.push_back({s, s + 1, ScoreNotToken});
+                net[s].es.push_back({s, s + 1, NotToken});
                 continue;
             }
 
@@ -103,7 +142,7 @@ void Sime::InitNumNet(std::string_view start,
         const std::size_t dpos = s - p;
 
         if (nums[dpos] == '\'') {
-            net[s].es.push_back({s, s + 1, ScoreNotToken});
+            net[s].es.push_back({s, s + 1, NotToken});
             continue;
         }
 
@@ -152,7 +191,7 @@ void Sime::InitNumNet(std::string_view start,
     for (std::size_t i = 0; i < total; ++i) {
         PruneNode(net[i].es);
     }
-    net[total].es.push_back({total, total + 1, SentenceEnd});
+    net[total].es.push_back({total, total + 1, NotToken});
 }
 
 std::string Sime::AbbreviatePieces(const char* full_pieces,
@@ -198,8 +237,7 @@ std::string Sime::ExtractUnits(const std::vector<Link>& path,
                                std::string_view input) {
     std::string py;
     for (const auto& link : path) {
-        if (link.id == SentenceEnd || link.id == ScoreNotToken ||
-            link.id == NotToken) continue;
+        if (link.id == NotToken) continue;
         if (!link.pieces || link.pieces[0] == '\0') continue;
         if (!py.empty()) py += '\'';
         py += AbbreviatePieces(link.pieces,
@@ -227,7 +265,7 @@ std::vector<TokenID> Sime::ExtractTokens(
     const std::vector<Link>& path) const {
     std::vector<TokenID> ids;
     for (const auto& link : path) {
-        if (link.id == ScoreNotToken || link.id == NotToken) continue;
+        if (link.id == NotToken) continue;
         ids.push_back(link.id);
     }
     return ids;
@@ -261,32 +299,56 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     Process(net);
 
     std::unordered_set<std::string> dedup;
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
 
     // === Layer 1: Full sentence N-best ===
+    // Scan the whole beam, re-score with fragment penalty (letter links
+    // compared directly, T9 digit links compared via LetterToNum), sort
+    // by combined score, then take top (1 + extra).
     {
         const auto tail = net[total + 1].states.GetStates();
-        const std::size_t full_limit = 1 + extra;
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
         const std::size_t full_cnt = start.size() + d;
-        for (std::size_t rank = 0;
-             rank < scan && results.size() < full_limit; ++rank) {
+        std::vector<DecodeResult> l1;
+        l1.reserve(scan);
+        for (std::size_t rank = 0; rank < scan; ++rank) {
             auto path = Backtrace(tail[rank], total + 1);
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractUnits(path, combined_input);
-            results.push_back({std::move(text), std::move(py),
-                               ExtractTokens(path),
-                               -tail[rank].score, full_cnt});
+
+            std::size_t mismatch = 0;
+            for (const auto& link : path) {
+                if (link.id == NotToken || !link.pieces) continue;
+                bool is_t9 = (link.start >= p);
+                auto slice = std::string_view(combined_input).substr(
+                    link.start, link.end - link.start);
+                mismatch += CountSyllableMismatch(link.pieces, slice, is_t9);
+            }
+            float_t frag_penalty =
+                static_cast<float_t>(mismatch) * PinyinMatchPenalty;
+
+            l1.push_back({std::move(text), std::move(py),
+                          ExtractTokens(path),
+                          -tail[rank].score - frag_penalty, full_cnt});
+        }
+        std::sort(l1.begin(), l1.end(),
+                  [](const DecodeResult& a, const DecodeResult& b) {
+                      return a.score > b.score;
+                  });
+        const std::size_t full_limit = 1 + extra;
+        for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
+             ++i) {
+            results.push_back(std::move(l1[i]));
         }
     }
 
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: unigram alternatives at column 0 ===
-    const float_t penalty_per_unit =
-        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
     for (const auto& edge : net[0].es) {
-        if (edge.id == ScoreNotToken || edge.id == SentenceEnd) continue;
+        if (edge.id == NotToken) continue;
 
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
@@ -294,19 +356,21 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
-        std::size_t piece_len = 0;
-        if (edge.pieces) {
-            for (const char* c = edge.pieces; *c; ++c) {
-                if (*c != '\'') ++piece_len;
-            }
-        }
-        std::size_t consumed = edge.end - edge.start;
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
+
+        bool is_t9 = (edge.start >= p);
+        auto slice = std::string_view(combined_input).substr(
+            edge.start, edge.end - edge.start);
+        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, is_t9);
+        float_t frag_penalty =
+            static_cast<float_t>(mismatch) * PinyinMatchPenalty;
+
         Scorer::Pos epos{};
         Scorer::Pos enext{};
-        float_t score = -scorer_.ScoreMove(epos, edge.id, enext) - dist_penalty;
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
+                        - dist_penalty - frag_penalty;
 
         std::string edge_py = edge.pieces ? edge.pieces : "";
         std::size_t cnt = edge.end;
@@ -436,7 +500,7 @@ void Sime::InitNet(std::string_view input,
 
     for (std::size_t s = 0; s < total; ++s) {
         if (input[s] == '\'') {
-            net[s].es.push_back({s, s + 1, ScoreNotToken});
+            net[s].es.push_back({s, s + 1, NotToken});
             continue;
         }
 
@@ -499,7 +563,7 @@ void Sime::InitNet(std::string_view input,
         PruneNode(net[i].es);
     }
 
-    net[total].es.push_back({total, total + 1, SentenceEnd});
+    net[total].es.push_back({total, total + 1, NotToken});
 }
 
 void Sime::PruneNode(std::vector<Link>& edges) const {
@@ -525,7 +589,7 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
         scored.reserve(indices.size());
         for (auto idx : indices) {
             const auto& e = edges[idx];
-            if (e.id == ScoreNotToken || e.id == SentenceEnd) {
+            if (e.id == NotToken) {
                 scored.push_back({0.0, idx});
                 continue;
             }
@@ -591,7 +655,7 @@ std::vector<Sime::Link> Sime::Backtrace(
 }
 
 std::u32string Sime::ToText(const Link& n) const {
-    if (n.id == ScoreNotToken || n.id == NotToken) {
+    if (n.id == NotToken) {
         return {};
     }
     std::u32string buffer;
@@ -624,22 +688,25 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     Process(net);
 
     std::unordered_set<std::string> dedup;
-
-    // === Layer 1: Full sentence N-best ===
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
+
+    // === Layer 1: Full sentence N-best ===
+    // Scan the whole beam, re-score with distance + fragment penalties,
+    // sort by the combined score, then take top (1 + extra).
     {
         const auto tail = net.back().states.GetStates();
-        const std::size_t full_limit = 1 + extra;
         const std::size_t scan =
             std::min<std::size_t>(BeamSize, tail.size());
-        for (std::size_t rank = 0;
-             rank < scan && results.size() < full_limit; ++rank) {
+        std::vector<DecodeResult> l1;
+        l1.reserve(scan);
+        for (std::size_t rank = 0; rank < scan; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::string text = ExtractText(path);
             if (text.empty() || !dedup.insert(text).second) continue;
             std::string py = ExtractUnits(path, lower);
+
             std::size_t piece_len = 0;
             for (char c : py) {
                 if (c != '\'') ++piece_len;
@@ -647,9 +714,30 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             std::size_t distance = (piece_len > total) ? (piece_len - total) : 0;
             float_t dist_penalty =
                 static_cast<float_t>(distance) * penalty_per_unit;
-            results.push_back({std::move(text), std::move(py),
-                               ExtractTokens(path),
-                               -tail[rank].score - dist_penalty, input.size()});
+
+            std::size_t mismatch = 0;
+            for (const auto& link : path) {
+                if (link.id == NotToken || !link.pieces) continue;
+                auto slice = std::string_view(lower).substr(
+                    link.start, link.end - link.start);
+                mismatch += CountSyllableMismatch(link.pieces, slice, false);
+            }
+            float_t frag_penalty =
+                static_cast<float_t>(mismatch) * PinyinMatchPenalty;
+
+            l1.push_back({std::move(text), std::move(py),
+                          ExtractTokens(path),
+                          -tail[rank].score - dist_penalty - frag_penalty,
+                          input.size()});
+        }
+        std::sort(l1.begin(), l1.end(),
+                  [](const DecodeResult& a, const DecodeResult& b) {
+                      return a.score > b.score;
+                  });
+        const std::size_t full_limit = 1 + extra;
+        for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
+             ++i) {
+            results.push_back(std::move(l1[i]));
         }
     }
 
@@ -657,30 +745,30 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
     // === Layer 2: word/char alternatives at position 0 ===
     for (const auto& edge : net[0].es) {
-        if (edge.id == SentenceEnd) continue;
+        if (edge.id == NotToken) continue;
 
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
         std::string text_utf8 = TextFromU32(text_u32);
         if (!dedup.insert(text_utf8).second) continue;
 
-        std::size_t piece_len = 0;
-        if (edge.pieces) {
-            for (const char* c = edge.pieces; *c; ++c) {
-                if (*c != '\'') ++piece_len;
-            }
-        }
-        std::size_t consumed = edge.end - edge.start;
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
+
+        auto slice = std::string_view(lower).substr(
+            edge.start, edge.end - edge.start);
+        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, false);
+        float_t frag_penalty =
+            static_cast<float_t>(mismatch) * PinyinMatchPenalty;
+
         Scorer::Pos epos{};
         Scorer::Pos enext{};
-        float_t score = -scorer_.ScoreMove(epos, edge.id, enext) - dist_penalty;
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
+                        - dist_penalty - frag_penalty;
 
         std::string edge_py = edge.pieces
-            ? AbbreviatePieces(edge.pieces,
-                  std::string_view(lower).substr(edge.start, edge.end - edge.start))
+            ? AbbreviatePieces(edge.pieces, slice)
             : "";
         results.push_back({std::move(text_utf8), std::move(edge_py),
                            ExtractTokens({edge}),

@@ -218,31 +218,16 @@ void ProcessOneFile(const std::filesystem::path& path,
         throw std::runtime_error("Failed to open input file: " + path.string());
     }
 
-    // Per-order sliding windows. Each order uses (order-1) <s> tokens as
-    // left padding, matching KenLM (corpus_count.cc::StartSentence). This
-    // lets the first real word be scored via the highest-order context.
+    // Per-order sliding windows. No <s>/</s> padding: Sime (libime-style)
+    // treats IME input as fragments, not full sentences. Each sentence in
+    // the corpus is a standalone segment; we just reset the windows at
+    // sentence boundaries so n-grams don't cross sentences.
     std::array<TokenID, 2> b2w{}; std::size_t b2_filled = 0;
     std::array<TokenID, 3> b3w{}; std::size_t b3_filled = 0;
 
-    auto start_sentence = [&]() {
-        if (max_order >= 2) {
-            b2w[0] = SentenceStart;
-            b2_filled = 1;
-        }
-        if (max_order >= 3) {
-            b3w[0] = SentenceStart;
-            b3w[1] = SentenceStart;
-            b3_filled = 2;
-        }
-        // Unigram <s> once per sentence.
-        if (max_order >= 1 && b1) {
-            b1->Feed(Item<1>{SentenceStart});
-        }
-        // Padding bigram (<s>, <s>) once per sentence, so that trigram
-        // (<s>, <s>, w) has a proper parent bigram node in the Trie.
-        if (max_order >= 3 && b2) {
-            b2->Feed(Item<2>{SentenceStart, SentenceStart});
-        }
+    auto reset_windows = [&]() {
+        b2_filled = 0;
+        b3_filled = 0;
     };
 
     auto feed_word = [&](TokenID id) {
@@ -281,7 +266,7 @@ void ProcessOneFile(const std::filesystem::path& path,
             continue;
         }
 
-        start_sentence();
+        reset_windows();
 
         std::istringstream iss(line);
         std::string token;
@@ -292,11 +277,12 @@ void ProcessOneFile(const std::filesystem::path& path,
             if (it != tokens.ids.end()) {
                 feed_word(it->second);
             } else {
-                feed_word(UnknownToken);
+                // OOV: corpus/dict mismatch. IME output is closed-vocabulary,
+                // so we never emit <unk>. Just break the sliding windows so
+                // bigrams/trigrams don't span the dropped token.
+                reset_windows();
             }
         }
-
-        feed_word(SentenceEnd);
 
         constexpr std::size_t ProgressInterval = 200000;
         if (++line_count % ProgressInterval == 0) {

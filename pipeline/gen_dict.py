@@ -87,6 +87,8 @@ def main():
                         help="English dict output")
     parser.add_argument("--en-words", default="",
                         help="English word list for filtering (one word per line)")
+    parser.add_argument("--punct", default="",
+                        help="Punctuation whitelist (one per line)")
     args = parser.parse_args()
 
     # ── 读英文词表 ──
@@ -117,57 +119,64 @@ def main():
         units[word] = line
     print(f"pinyin entries: {len(units)}", file=sys.stderr)
 
-    # ── Step 1: sime.token.dict.txt ──
+    # ── Step 1: sime.token.dict.txt (closed vocabulary, whitelist only) ──
     max_vocab = (1 << 18) - 70  # 262074
 
-    # 1a. dict.txt 过 min_count（必须在 corpus 中出现足够多次才收）
-    dict_tokens = []
-    dict_seen = set()
-    dict_dropped = 0
+    all_tokens = []
+    all_seen = set()
+
+    # 1a. 中文白名单（dict.txt）: corpus 里至少出现 1 次
+    cn_kept = cn_dropped = 0
     for line in open(args.dict):
         w = line.rstrip("\n").split("\t")[0]
-        if not w or w in dict_seen:
+        if not w or w in all_seen:
             continue
         if freq.get(w, 0) < 1:
-            dict_dropped += 1
+            cn_dropped += 1
             continue
-        dict_tokens.append(w)
-        dict_seen.add(w)
-    print(f"dict.txt tokens: {len(dict_tokens)} (dropped {dict_dropped} "
-          f"below min_count=1)", file=sys.stderr)
+        all_tokens.append(w)
+        all_seen.add(w)
+        cn_kept += 1
+    print(f"CN whitelist (dict.txt): kept {cn_kept}, dropped {cn_dropped} "
+          f"(freq<1)", file=sys.stderr)
 
-    # 1b. chars.cnt.txt 按频次降序补充（过 min_count，收中文词、标点和英文词）
-    remaining = max_vocab - len(dict_tokens)
-    fill_tokens = []
-    if remaining > 0:
-        for w, cnt in sorted(freq.items(), key=lambda x: x[1], reverse=True):
-            if remaining <= 0:
-                break
-            if cnt < args.min_count:
-                continue
-            if w in dict_seen:
-                continue
-            if is_english(w):
-                if not en_words or w not in en_words:
-                    continue
-            elif not (is_chinese(w) or is_punct(w)):
-                continue
-            fill_tokens.append(w)
-            dict_seen.add(w)
-            remaining -= 1
-    print(f"fill tokens from corpus: {len(fill_tokens)}", file=sys.stderr)
+    # 1b. 英文白名单（en_words）: corpus 里至少出现 min_count 次
+    en_kept = en_dropped = 0
+    for w in en_words:
+        if not w or w in all_seen:
+            continue
+        if freq.get(w, 0) < args.min_count:
+            en_dropped += 1
+            continue
+        all_tokens.append(w)
+        all_seen.add(w)
+        en_kept += 1
+    print(f"EN whitelist (en_words): kept {en_kept}, dropped {en_dropped} "
+          f"(freq<{args.min_count})", file=sys.stderr)
 
-    total = len(dict_tokens) + len(fill_tokens)
-    if total > max_vocab:
-        fill_tokens = fill_tokens[:max_vocab - len(dict_tokens)]
-        total = len(dict_tokens) + len(fill_tokens)
+    # 1c. 标点白名单（punct.txt）: corpus 里至少出现 1 次
+    pn_kept = pn_dropped = 0
+    if args.punct:
+        for line in open(args.punct):
+            w = line.rstrip("\n")
+            if not w or w in all_seen:
+                continue
+            if freq.get(w, 0) < 1:
+                pn_dropped += 1
+                continue
+            all_tokens.append(w)
+            all_seen.add(w)
+            pn_kept += 1
+    print(f"Punct whitelist: kept {pn_kept}, dropped {pn_dropped} (freq<1)",
+          file=sys.stderr)
 
-    all_tokens = dict_tokens + fill_tokens
+    if len(all_tokens) > max_vocab:
+        all_tokens = all_tokens[:max_vocab]
     with open(args.token_output, "w") as fout:
         for w in all_tokens:
             fout.write(w + "\n")
-    print(f"total tokens: {total} (dict:{len(dict_tokens)} + fill:{len(fill_tokens)})",
-          file=sys.stderr)
+    print(f"total tokens: {len(all_tokens)} "
+          f"(cn:{cn_kept} + en:{en_kept} + punct:{pn_kept})", file=sys.stderr)
     print(f"written to {args.token_output}", file=sys.stderr)
 
     # ── Step 2: sime.dict.txt (中文拼音词典) ──

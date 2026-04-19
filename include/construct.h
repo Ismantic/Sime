@@ -81,8 +81,6 @@ private:
     using NodeLevel = std::vector<Node>;
     using LeaveLevel = std::vector<Leave>;
 
-    bool IsBreaker(TokenID i) const;
-
     // Walk sorted parent arrays and set .down pointers on l1 / l2 nodes.
     void FixDownPointers();
 
@@ -129,10 +127,6 @@ private:
         float_t score = 0.0;
         std::uint32_t index = 0;
         bool has_down = false;
-        // KenLM-style protection: n-grams whose leftmost token is a special
-        // (<s>/<unk>/</s>) are exempt from entropy pruning so the decoder's
-        // initial trigram context and OOV backoff stay intact.
-        bool protect = false;
         bool operator<(const NodeScore& other) const;
     };
 
