@@ -134,6 +134,9 @@ private:
     std::size_t CutLevelByMark(std::vector<Node>& ups, Level& current, float_t mark_value);
 
     void PruneLevel(int level);
+    // Alternative level-2 pruning that ranks bigrams by count-weighted PMI
+    // (collocation strength). Trigram and higher levels still use Stolcke KL.
+    void PruneBigramByPMI();
     float_t CalcScore(int level, std::vector<int>& indices, std::vector<TokenID>& words);
 
     std::vector<int> prune_sizes_;

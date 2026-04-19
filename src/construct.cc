@@ -41,10 +41,7 @@ float_t NeyDiscounter::Discount(float_t cnt) const {
 }
 
 bool Constructor::NodeScore::operator<(const NodeScore& other) const {
-    if (has_down == other.has_down) {
-        return score < other.score;
-    }
-    return !has_down && other.has_down;
+    return score < other.score;
 }
 
 Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
@@ -520,7 +517,12 @@ void Constructor::PruneLevel(int level) {
             const Node& node = node_levels_[level][idx];
             has_down = ((node_levels_[level][idx + 1].down - node.down) > 0);
         }
-        float_t dist = has_down ? 0.0 : CalcScore(level, indices, words);
+        // Unprunable nodes (those with surviving children) sort to the tail
+        // via a +inf sentinel so the natural ascending order places them
+        // after all CalcScore-ranked candidates.
+        float_t dist = has_down
+            ? std::numeric_limits<float_t>::max()
+            : CalcScore(level, indices, words);
         candidates.push_back(
             NodeScore{dist, static_cast<std::uint32_t>(idx), has_down});
     }
@@ -544,6 +546,83 @@ void Constructor::PruneLevel(int level) {
         auto new_size = CutLevelByMark(node_levels_[level - 1], node_levels_[level], mark);
         node_levels_[level].resize(new_size);
         prune_sizes_[level] = static_cast<int>(new_size);
+    }
+}
+
+void Constructor::PruneBigramByPMI() {
+    constexpr int level = 2;
+    if (opts_.num < 2) return;
+    if (prune_cutoffs_.empty() || prune_cutoffs_[level] <= 0) return;
+    int n = prune_sizes_[level] - 1;
+    if (n <= 0) return;
+    int cuts = std::min(prune_cutoffs_[level], n);
+
+    auto& l1 = node_levels_[1];
+    auto& l2 = node_levels_[2];
+
+    // count_back[v] = Σ_u count(u, v). Dense vector keyed by token id.
+    std::vector<std::uint64_t> count_back(opts_.token_count + 1, 0);
+    for (int idx = 0; idx < n; ++idx) {
+        TokenID v = l2[idx].id;
+        if (v < count_back.size()) {
+            count_back[v] += static_cast<std::uint64_t>(l2[idx].cnt);
+        }
+    }
+
+    std::vector<NodeScore> cands;
+    cands.reserve(static_cast<std::size_t>(n));
+
+    // No has_down carve-out: cascade deletion below takes any orphan
+    // trigram children along with the bigram so the structural invariant
+    // (every trigram has a parent bigram) is preserved.
+    std::size_t up_idx = 0;
+    for (int idx = 0; idx < n; ++idx) {
+        while (up_idx + 1 < l1.size() &&
+               l1[up_idx + 1].down <= static_cast<std::uint32_t>(idx)) {
+            ++up_idx;
+        }
+        float_t cnt_uv = l2[idx].cnt;
+        float_t cnt_u = l1[up_idx].cnt;
+        TokenID v = l2[idx].id;
+        float_t cnt_back_v = (v < count_back.size())
+            ? static_cast<float_t>(count_back[v]) : 0.0;
+        float_t score;
+        if (cnt_u <= 0.0 || cnt_back_v <= 0.0 || cnt_uv <= 0.0) {
+            score = 0.0;
+        } else {
+            // S(u, v) = count(u, v)^2 / (count(u) * count_back(v))
+            score = (cnt_uv * cnt_uv) /
+                    (cnt_u * cnt_back_v);
+        }
+        cands.push_back(NodeScore{score, static_cast<std::uint32_t>(idx),
+                                  false});
+    }
+    std::sort(cands.begin(), cands.end());
+
+    constexpr float_t mark = 0.0;
+    for (int i = 0; i < cuts; ++i) {
+        std::uint32_t idx = cands[i].index;
+        l2[idx].pro = mark;
+        // Cascade: mark all trigram children so they're removed too.
+        if (opts_.num >= 3) {
+            std::uint32_t begin = l2[idx].down;
+            std::uint32_t end = l2[idx + 1].down;
+            for (std::uint32_t j = begin; j < end; ++j) {
+                if (j < leaves_.size()) {
+                    leaves_[j].pro = mark;
+                }
+            }
+        }
+    }
+    auto new_l2_size = CutLevelByMark(l1, l2, mark);
+    l2.resize(new_l2_size);
+    prune_sizes_[level] = static_cast<int>(new_l2_size);
+
+    // Cascade into leaves: cut marked trigrams, update new l2's .down.
+    if (opts_.num >= 3) {
+        auto new_leaf_size = CutLevelByMark(l2, leaves_, mark);
+        leaves_.resize(new_leaf_size);
+        prune_sizes_[opts_.num] = static_cast<int>(new_leaf_size);
     }
 }
 
@@ -644,8 +723,9 @@ void Constructor::Discount() {
     // Set root uniform *before* running DiscountLevel at lvl=0: GetPro falls
     // back to exp(-root.pro) for n=0, and lvl=0 interpolation reads it.
     Node& root = node_levels_[0][0];
-    std::uint32_t effective_vocab = (opts_.token_count > 1)
-        ? opts_.token_count - 1 : 1;
+    // Tokens are numbered from StartToken (=1); token_count is the count of
+    // real vocabulary entries, so the uniform prior is 1/token_count.
+    std::uint32_t effective_vocab = std::max<std::uint32_t>(opts_.token_count, 1);
     float_t base = 1.0 / effective_vocab;
     root.pro = static_cast<float>(-std::log(base));
 
@@ -828,8 +908,25 @@ void Constructor::Prune(const std::vector<int>& reserves) {
         prune_cutoffs_[lvl] = std::max(0, remaining - reserve);
     }
 
-    for (int level = opts_.num; level > 0; --level) {
-        PruneLevel(level);
+    // New order for a 3-gram IME model:
+    //   1. Prune bigrams by PMI, cascade-deleting their trigram children.
+    //      This escapes the `has_down` lock that Stolcke-pruned trigrams
+    //      impose on bigrams, so universal-suffix bigrams like (X, 的) can
+    //      actually be killed.
+    //   2. If the cascade left more trigrams than the reserve allows, run
+    //      the usual Stolcke pass on the survivors.
+    //   3. Unigrams are never pruned (reserve covers the full vocab).
+    if (opts_.num >= 2) {
+        PruneBigramByPMI();
+    }
+    if (opts_.num >= 3) {
+        int remaining = prune_sizes_[opts_.num] - 1;
+        int reserve = (opts_.num <= static_cast<int>(reserves.size()))
+            ? reserves[static_cast<std::size_t>(opts_.num - 1)] : 0;
+        if (remaining > reserve) {
+            prune_cutoffs_[opts_.num] = remaining - reserve;
+            PruneLevel(opts_.num);
+        }
     }
     // Entropy pruning removed entries; rerun Discount so gamma(h) and P_I(w|h)
     // are recomputed over the surviving set (nt_ stays as pre-prune stats,
