@@ -217,7 +217,7 @@ void Sime::showPredictions(InputContext *ic) {
         return;
     }
 
-    auto results = sime_->NextGroups(st->context_ids,
+    auto results = sime_->NextTokens(st->context_ids,
         static_cast<std::size_t>(*config_.pageSize));
 
     if (results.empty()) {

@@ -795,7 +795,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     return results;
 }
 
-std::vector<DecodeResult> Sime::NextGroups(
+std::vector<DecodeResult> Sime::NextTokens(
     const std::vector<TokenID>& context,
     std::size_t num,
     bool en) const {
@@ -850,14 +850,11 @@ std::vector<DecodeResult> Sime::NextGroups(
 
 std::vector<DecodeResult> Sime::GetTokens(
     std::string_view prefix,
-    std::size_t num) const {
+    std::size_t num,
+    bool en) const {
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0 || prefix.empty()) return results;
 
-    // Search the English DAT for prefix matches
-    auto matches = dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(prefix, num * 4);
-
-    // Collect candidates with unigram scores
     struct Candidate {
         std::string text;
         TokenID id;
@@ -865,32 +862,44 @@ std::vector<DecodeResult> Sime::GetTokens(
     };
     std::vector<Candidate> candidates;
 
-    for (const auto& r : matches) {
-        auto entry = dict_.GetEntry(Dict::LetterEn, r.value);
-        for (uint32_t i = 0; i < entry.count; ++i) {
-            TokenID tid = entry.items[i].id;
-            const char32_t* chars = dict_.TokenAt(tid);
-            if (!chars || chars[0] == 0) continue;
+    auto collect = [&](Dict::DatType type,
+                       const std::vector<trie::SearchResult>& matches) {
+        for (const auto& r : matches) {
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                TokenID tid = entry.items[i].id;
+                const char32_t* chars = dict_.TokenAt(tid);
+                if (!chars || chars[0] == 0) continue;
 
-            std::u32string u32;
-            for (std::size_t j = 0; chars[j] != 0; ++j)
-                u32.push_back(chars[j]);
-            std::string text = TextFromU32(u32);
+                std::u32string u32;
+                for (std::size_t j = 0; chars[j] != 0; ++j)
+                    u32.push_back(chars[j]);
+                std::string text = TextFromU32(u32);
 
-            // Unigram score
-            Scorer::Pos pos{};
-            Scorer::Pos next{};
-            float_t cost = scorer_.ScoreMove(pos, tid, next);
+                Scorer::Pos pos{};
+                Scorer::Pos next{};
+                float_t cost = scorer_.ScoreMove(pos, tid, next);
 
-            candidates.push_back({std::move(text), tid, cost});
+                candidates.push_back({std::move(text), tid, cost});
+            }
         }
+    };
+
+    collect(Dict::LetterEn,
+            dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(prefix, num * 4));
+    if (!en) {
+        // Mixed mode: also search the pinyin DAT. Plain prefix match is
+        // exactly what we want — user typed a literal pinyin prefix (possibly
+        // with '\'' syllable separators) and wants every token whose stored
+        // pinyin starts with it, including deeper multi-syllable completions.
+        collect(Dict::LetterPinyin,
+                dict_.Dat(Dict::LetterPinyin)
+                    .FindWordsWithPrefix(prefix, num * 4));
     }
 
-    // Sort by cost ascending (lower cost = higher probability)
     std::sort(candidates.begin(), candidates.end(),
               [](const auto& a, const auto& b) { return a.score < b.score; });
 
-    // Dedup and collect
     std::unordered_set<std::string> seen;
     for (auto& c : candidates) {
         if (results.size() >= num) break;

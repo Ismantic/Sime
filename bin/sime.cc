@@ -18,7 +18,8 @@ struct Options {
     bool num = false;
     bool next = false;     // prediction mode (Chinese or mixed)
     bool next_en = false;  // prediction mode, filter to English only
-    bool en = false;       // English prefix completion (only meaningful alone)
+    bool en = false;       // pure English prefix completion
+    bool mix = false;      // mixed (English + pinyin) prefix completion
 };
 
 void PrintUsage() {
@@ -34,7 +35,8 @@ void PrintUsage() {
               << "  --num               Num-key mode (digits 2-9)\n"
               << "  --next              Prediction mode (input pinyin, get next-word suggestions)\n"
               << "  --next-en           Prediction mode, filter suggestions to English only\n"
-              << "  --en                English prefix completion mode\n";
+              << "  --en                English-only prefix completion mode\n"
+              << "  --mix               Mixed (English + pinyin) prefix completion mode\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -58,6 +60,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.next_en = true;
         } else if (arg == "--en") {
             opts.en = true;
+        } else if (arg == "--mix") {
+            opts.mix = true;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -78,6 +82,10 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
     }
     if (opts.next && opts.next_en) {
         std::cerr << "--next and --next-en are mutually exclusive.\n";
+        return false;
+    }
+    if (opts.en && opts.mix) {
+        std::cerr << "--en and --mix are mutually exclusive.\n";
         return false;
     }
     if (opts.n == 0) {
@@ -172,7 +180,7 @@ int main(int argc, char** argv) {
             for (auto tid : context_ids) std::cout << " " << tid;
             std::cout << "\n";
 
-            auto nextions = engine.NextGroups(context_ids, opts.n, opts.next_en);
+            auto nextions = engine.NextTokens(context_ids, opts.n, opts.next_en);
             if (nextions.empty()) {
                 std::cout << "  (no nextions)\n";
             } else {
@@ -190,8 +198,10 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    if (opts.en) {
-        std::cout << "Mode: en (English prefix completion)\n"
+    if (opts.en || opts.mix) {
+        std::cout << "Mode: "
+                  << (opts.en ? "en (English-only" : "mix (English + pinyin")
+                  << " prefix completion)\n"
                   << "Input prefix, :quit to exit.\n";
 
         std::string line;
@@ -201,7 +211,7 @@ int main(int argc, char** argv) {
             if (line == ":quit" || line == ":q") break;
             if (line.empty()) continue;
 
-            auto results = engine.GetTokens(line, opts.n);
+            auto results = engine.GetTokens(line, opts.n, opts.en);
             if (results.empty()) {
                 std::cout << "  (no candidates)\n";
                 continue;

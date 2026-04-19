@@ -36,16 +36,18 @@ public:
     // Prediction: given confirmed token IDs as context, suggest next words.
     // When `en` is true, only English tokens are returned (for the English
     // IME's prediction slot); Chinese tokens are filtered out.
-    std::vector<DecodeResult> NextGroups(
+    std::vector<DecodeResult> NextTokens(
         const std::vector<TokenID>& context,
         std::size_t num = 10,
         bool en = false) const;
 
-    // English prefix completion: return tokens starting with prefix,
-    // sorted by unigram score.
+    // Prefix completion: return tokens starting with `prefix`, sorted by
+    // unigram score. Default searches both English and pinyin DATs (mixed
+    // mode). When `en` is true, only the English DAT is searched.
     std::vector<DecodeResult> GetTokens(
         std::string_view prefix,
-        std::size_t num = 10) const;
+        std::size_t num = 10,
+        bool en = false) const;
 
     // Num-key decode (T9/nine-key).
     // `start` is the confirmed prefix (letters, possibly with `'`
