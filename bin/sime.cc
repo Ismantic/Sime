@@ -76,6 +76,10 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
                   << "use --next-en instead.\n";
         return false;
     }
+    if (opts.next && opts.next_en) {
+        std::cerr << "--next and --next-en are mutually exclusive.\n";
+        return false;
+    }
     if (opts.n == 0) {
         opts.n = 1;
     }

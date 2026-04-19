@@ -271,6 +271,19 @@ std::vector<TokenID> Sime::ExtractTokens(
     return ids;
 }
 
+std::size_t Sime::CountPathMismatch(const std::vector<Link>& path,
+                                    std::string_view input,
+                                    std::size_t t9_boundary) {
+    std::size_t mismatch = 0;
+    for (const auto& link : path) {
+        if (link.id == NotToken || !link.pieces) continue;
+        bool is_t9 = link.start >= t9_boundary;
+        auto slice = input.substr(link.start, link.end - link.start);
+        mismatch += CountSyllableMismatch(link.pieces, slice, is_t9);
+    }
+    return mismatch;
+}
+
 std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
@@ -298,6 +311,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     net[0].states.Insert(init);
     Process(net);
 
+    // See DecodeSentence: Layer 1 dedups with a local set so beam members
+    // that don't make the 1+extra cut remain eligible for Layer 2.
     std::unordered_set<std::string> dedup;
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
@@ -312,20 +327,14 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         const std::size_t full_cnt = start.size() + d;
         std::vector<DecodeResult> l1;
         l1.reserve(scan);
+        std::unordered_set<std::string> l1_seen;
         for (std::size_t rank = 0; rank < scan; ++rank) {
             auto path = Backtrace(tail[rank], total + 1);
             std::string text = ExtractText(path);
-            if (text.empty() || !dedup.insert(text).second) continue;
+            if (text.empty() || !l1_seen.insert(text).second) continue;
             std::string py = ExtractUnits(path, combined_input);
 
-            std::size_t mismatch = 0;
-            for (const auto& link : path) {
-                if (link.id == NotToken || !link.pieces) continue;
-                bool is_t9 = (link.start >= p);
-                auto slice = std::string_view(combined_input).substr(
-                    link.start, link.end - link.start);
-                mismatch += CountSyllableMismatch(link.pieces, slice, is_t9);
-            }
+            std::size_t mismatch = CountPathMismatch(path, combined_input, p);
             float_t frag_penalty =
                 static_cast<float_t>(mismatch) * PinyinMatchPenalty;
 
@@ -340,6 +349,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         const std::size_t full_limit = 1 + extra;
         for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
              ++i) {
+            dedup.insert(l1[i].text);
             results.push_back(std::move(l1[i]));
         }
     }
@@ -687,6 +697,10 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     net[0].states.Insert(init);
     Process(net);
 
+    // `dedup` tracks texts already emitted in `results`; Layer 2 checks
+    // against it to avoid duplicating a candidate that made it into Layer 1.
+    // Layer 1 uses its own local dedup during beam scan so that beam members
+    // that don't make the final 1+extra cut remain eligible for Layer 2.
     std::unordered_set<std::string> dedup;
     const float_t penalty_per_unit =
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
@@ -700,11 +714,12 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             std::min<std::size_t>(BeamSize, tail.size());
         std::vector<DecodeResult> l1;
         l1.reserve(scan);
+        std::unordered_set<std::string> l1_seen;
         for (std::size_t rank = 0; rank < scan; ++rank) {
             auto path = Backtrace(tail[rank], net.size() - 1);
             if (path.empty()) continue;
             std::string text = ExtractText(path);
-            if (text.empty() || !dedup.insert(text).second) continue;
+            if (text.empty() || !l1_seen.insert(text).second) continue;
             std::string py = ExtractUnits(path, lower);
 
             std::size_t piece_len = 0;
@@ -715,13 +730,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             float_t dist_penalty =
                 static_cast<float_t>(distance) * penalty_per_unit;
 
-            std::size_t mismatch = 0;
-            for (const auto& link : path) {
-                if (link.id == NotToken || !link.pieces) continue;
-                auto slice = std::string_view(lower).substr(
-                    link.start, link.end - link.start);
-                mismatch += CountSyllableMismatch(link.pieces, slice, false);
-            }
+            std::size_t mismatch = CountPathMismatch(path, lower, total + 1);
             float_t frag_penalty =
                 static_cast<float_t>(mismatch) * PinyinMatchPenalty;
 
@@ -737,6 +746,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         const std::size_t full_limit = 1 + extra;
         for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
              ++i) {
+            dedup.insert(l1[i].text);
             results.push_back(std::move(l1[i]));
         }
     }

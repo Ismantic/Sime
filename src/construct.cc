@@ -586,14 +586,11 @@ void Constructor::PruneBigramByPMI() {
         TokenID v = l2[idx].id;
         float_t cnt_back_v = (v < count_back.size())
             ? static_cast<float_t>(count_back[v]) : 0.0;
-        float_t score;
-        if (cnt_u <= 0.0 || cnt_back_v <= 0.0 || cnt_uv <= 0.0) {
-            score = 0.0;
-        } else {
-            // S(u, v) = count(u, v)^2 / (count(u) * count_back(v))
-            score = (cnt_uv * cnt_uv) /
-                    (cnt_u * cnt_back_v);
-        }
+        // cnt_u / cnt_uv are always > 0 post-Cut; cnt_back_v is the sum of
+        // all surviving (·, v) bigram counts which is also > 0 because this
+        // very bigram contributes to it.
+        // S(u, v) = count(u, v)^2 / (count(u) * count_back(v))
+        float_t score = (cnt_uv * cnt_uv) / (cnt_u * cnt_back_v);
         cands.push_back(NodeScore{score, static_cast<std::uint32_t>(idx),
                                   false});
     }

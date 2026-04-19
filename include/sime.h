@@ -86,7 +86,7 @@ private:
     // Per-syllable penalty for incomplete pinyin matches. Applied as a
     // post-processing re-score on Layer 1 / Layer 2 so that fully-typed
     // syllables outrank abbreviated ones when LM costs are otherwise close.
-    static constexpr float_t PinyinMatchPenalty = 3.0;
+    static constexpr float_t PinyinMatchPenalty = 3.2;
 
     // Lattice building
     void InitNet(std::string_view input,
@@ -107,6 +107,12 @@ private:
                                         std::string_view input);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string TextFromU32(std::u32string& u32);
+    // Sum CountSyllableMismatch over every scoring link in `path`.
+    // `t9_boundary` splits letter columns [0, boundary) from T9-digit
+    // columns [boundary, ...); 0 means the whole path is letter input.
+    static std::size_t CountPathMismatch(const std::vector<Link>& path,
+                                         std::string_view input,
+                                         std::size_t t9_boundary);
 
     // Num-key lattice
     void InitNumNet(std::string_view start,
