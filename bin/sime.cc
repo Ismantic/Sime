@@ -16,8 +16,9 @@ struct Options {
     std::size_t extra = 0;  // extra Layer 1 sentences for DecodeNumSentence
     bool sentence = false;
     bool num = false;
-    bool next = false;
-    bool en = false;
+    bool next = false;     // prediction mode (Chinese or mixed)
+    bool next_en = false;  // prediction mode, filter to English only
+    bool en = false;       // English prefix completion (only meaningful alone)
 };
 
 void PrintUsage() {
@@ -31,9 +32,9 @@ void PrintUsage() {
               << "                      (top sentence always returned; default 0)\n"
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
-              << "  --next              Prediction mode (input token IDs, get nextions)\n"
-              << "  --en                Without --next: English prefix completion mode.\n"
-              << "                      With --next: filter predictions to English only.\n";
+              << "  --next              Prediction mode (input pinyin, get next-word suggestions)\n"
+              << "  --next-en           Prediction mode, filter suggestions to English only\n"
+              << "  --en                English prefix completion mode\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -53,6 +54,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.num = true;
         } else if (arg == "--next") {
             opts.next = true;
+        } else if (arg == "--next-en") {
+            opts.next_en = true;
         } else if (arg == "--en") {
             opts.en = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -66,6 +69,11 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
     }
     if (opts.dict.empty() || opts.cnt.empty()) {
         PrintUsage();
+        return false;
+    }
+    if (opts.next && opts.en) {
+        std::cerr << "--next --en combo is no longer supported; "
+                  << "use --next-en instead.\n";
         return false;
     }
     if (opts.n == 0) {
@@ -117,9 +125,9 @@ int main(int argc, char** argv) {
     std::cout << "Dict: " << opts.dict << "\n"
               << "Model: " << opts.cnt << "\n";
 
-    if (opts.next) {
+    if (opts.next || opts.next_en) {
         std::cout << "Mode: next (prediction"
-                  << (opts.en ? ", English only" : "") << ")\n"
+                  << (opts.next_en ? ", English only" : "") << ")\n"
                   << "Input pinyin to decode, top result added to context.\n"
                   << ":reset to clear context, :quit to exit.\n";
 
@@ -160,7 +168,7 @@ int main(int argc, char** argv) {
             for (auto tid : context_ids) std::cout << " " << tid;
             std::cout << "\n";
 
-            auto nextions = engine.NextGroups(context_ids, opts.n, opts.en);
+            auto nextions = engine.NextGroups(context_ids, opts.n, opts.next_en);
             if (nextions.empty()) {
                 std::cout << "  (no nextions)\n";
             } else {
