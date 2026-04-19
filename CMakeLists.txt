@@ -19,6 +19,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/sime.cc
     ${NEW_SRC_DIR}/trie.cc
+    ${NEW_SRC_DIR}/cut.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})
@@ -41,12 +42,16 @@ target_link_libraries(sime PRIVATE sime_core)
 add_executable(sime-dump ${NEW_ROOT}/bin/dump.cc)
 target_link_libraries(sime-dump PRIVATE sime_core)
 
+add_executable(sime-cut ${NEW_ROOT}/bin/cutter.cc)
+target_link_libraries(sime-cut PRIVATE sime_core)
+
 
 set(_sime_targets
     sime-count
     sime-construct
     sime-converter
     sime-dump
+    sime-cut
     sime
 )
 
