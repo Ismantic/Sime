@@ -32,7 +32,8 @@ void PrintUsage() {
               << "  --sentence, -s      Sentence mode (partial match)\n"
               << "  --num               Num-key mode (digits 2-9)\n"
               << "  --next              Prediction mode (input token IDs, get nextions)\n"
-              << "  --en                English prefix completion mode\n";
+              << "  --en                Without --next: English prefix completion mode.\n"
+              << "                      With --next: filter predictions to English only.\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -116,35 +117,9 @@ int main(int argc, char** argv) {
     std::cout << "Dict: " << opts.dict << "\n"
               << "Model: " << opts.cnt << "\n";
 
-    if (opts.en) {
-        std::cout << "Mode: en (English prefix completion)\n"
-                  << "Input prefix, :quit to exit.\n";
-
-        std::string line;
-        while (true) {
-            std::cout << "> " << std::flush;
-            if (!std::getline(std::cin, line)) break;
-            if (line == ":quit" || line == ":q") break;
-            if (line.empty()) continue;
-
-            auto results = engine.GetTokens(line, opts.n);
-            if (results.empty()) {
-                std::cout << "  (no candidates)\n";
-                continue;
-            }
-            for (std::size_t idx = 0; idx < results.size(); ++idx) {
-                const auto& r = results[idx];
-                std::cout << "  [" << idx << "] " << r.text
-                          << " (score " << std::fixed
-                          << std::setprecision(3) << r.score
-                          << ", id: " << r.tokens[0] << ")\n";
-            }
-        }
-        return 0;
-    }
-
     if (opts.next) {
-        std::cout << "Mode: next (prediction)\n"
+        std::cout << "Mode: next (prediction"
+                  << (opts.en ? ", English only" : "") << ")\n"
                   << "Input pinyin to decode, top result added to context.\n"
                   << ":reset to clear context, :quit to exit.\n";
 
@@ -185,7 +160,7 @@ int main(int argc, char** argv) {
             for (auto tid : context_ids) std::cout << " " << tid;
             std::cout << "\n";
 
-            auto nextions = engine.NextGroups(context_ids, opts.n);
+            auto nextions = engine.NextGroups(context_ids, opts.n, opts.en);
             if (nextions.empty()) {
                 std::cout << "  (no nextions)\n";
             } else {
@@ -198,6 +173,33 @@ int main(int argc, char** argv) {
                     for (auto tid : s.tokens) std::cout << " " << tid;
                     std::cout << ")\n";
                 }
+            }
+        }
+        return 0;
+    }
+
+    if (opts.en) {
+        std::cout << "Mode: en (English prefix completion)\n"
+                  << "Input prefix, :quit to exit.\n";
+
+        std::string line;
+        while (true) {
+            std::cout << "> " << std::flush;
+            if (!std::getline(std::cin, line)) break;
+            if (line == ":quit" || line == ":q") break;
+            if (line.empty()) continue;
+
+            auto results = engine.GetTokens(line, opts.n);
+            if (results.empty()) {
+                std::cout << "  (no candidates)\n";
+                continue;
+            }
+            for (std::size_t idx = 0; idx < results.size(); ++idx) {
+                const auto& r = results[idx];
+                std::cout << "  [" << idx << "] " << r.text
+                          << " (score " << std::fixed
+                          << std::setprecision(3) << r.score
+                          << ", id: " << r.tokens[0] << ")\n";
             }
         }
         return 0;

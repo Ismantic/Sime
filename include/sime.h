@@ -34,9 +34,12 @@ public:
                                              std::size_t extra = 0) const;
 
     // Prediction: given confirmed token IDs as context, suggest next words.
+    // When `en` is true, only English tokens are returned (for the English
+    // IME's prediction slot); Chinese tokens are filtered out.
     std::vector<DecodeResult> NextGroups(
         const std::vector<TokenID>& context,
-        std::size_t num = 10) const;
+        std::size_t num = 10,
+        bool en = false) const;
 
     // English prefix completion: return tokens starting with prefix,
     // sorted by unigram score.

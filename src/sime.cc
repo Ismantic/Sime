@@ -787,7 +787,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
 std::vector<DecodeResult> Sime::NextGroups(
     const std::vector<TokenID>& context,
-    std::size_t num) const {
+    std::size_t num,
+    bool en) const {
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0) return results;
 
@@ -798,8 +799,22 @@ std::vector<DecodeResult> Sime::NextGroups(
         pos = next;
     }
 
-    auto next_tokens = scorer_.NextTokens(pos, num * 4);
+    // When filtering to English only, widen the scorer pool — many top
+    // predictions will be Chinese and get dropped.
+    const std::size_t pool = en ? num * 16 : num * 4;
+    auto next_tokens = scorer_.NextTokens(pos, pool);
     const auto& ts = dict_.TokenSet();
+
+    // English tokens in Sime's corpora are ASCII-letter words (possibly
+    // containing an apostrophe, e.g. don't, 's), or SentencePiece-style
+    // pieces prefixed with U+2581 (word boundary). Contraction pieces like
+    // "'s" / "'re" start with the apostrophe, so accept it too.
+    auto is_english = [](const char32_t* chars) {
+        char32_t c = chars[0];
+        if (c == 0x2581) return true;
+        if (c == U'\'') return true;
+        return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z');
+    };
 
     std::unordered_set<std::string> seen;
     for (const auto& [tid, pro] : next_tokens) {
@@ -809,6 +824,7 @@ std::vector<DecodeResult> Sime::NextGroups(
 
         const char32_t* chars = dict_.TokenAt(tid);
         if (!chars || chars[0] == 0) continue;
+        if (en && !is_english(chars)) continue;
 
         std::u32string u32;
         for (std::size_t i = 0; chars[i] != 0; ++i)
