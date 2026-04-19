@@ -892,37 +892,40 @@ void Constructor::Finalize() {
 }
 
 void Constructor::Prune(const std::vector<int>& reserves) {
+    // reserves[0] = bigram reserve, reserves[1] = trigram reserve.
+    // Unigrams are never pruned (full vocabulary is kept).
     prune_sizes_.assign(opts_.num + 1, 0);
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
         prune_sizes_[lvl] = static_cast<int>(node_levels_[lvl].size());
     }
     prune_sizes_[opts_.num] = static_cast<int>(leaves_.size());
 
+    auto reserve_for = [&](int lvl) -> int {
+        // lvl=2 -> reserves[0], lvl=3 -> reserves[1]
+        std::size_t slot = static_cast<std::size_t>(lvl - 2);
+        if (slot >= reserves.size()) return 0;
+        return reserves[slot];
+    };
+
     prune_cutoffs_.assign(opts_.num + 1, 0);
-    for (int lvl = 1; lvl <= opts_.num; ++lvl) {
+    for (int lvl = 2; lvl <= opts_.num; ++lvl) {
         int remaining = prune_sizes_[lvl] - 1;
-        int reserve = 0;
-        if (lvl <= static_cast<int>(reserves.size())) {
-            reserve = reserves[static_cast<std::size_t>(lvl - 1)];
-        }
-        prune_cutoffs_[lvl] = std::max(0, remaining - reserve);
+        prune_cutoffs_[lvl] = std::max(0, remaining - reserve_for(lvl));
     }
 
-    // New order for a 3-gram IME model:
+    // Order for a 3-gram IME model:
     //   1. Prune bigrams by PMI, cascade-deleting their trigram children.
     //      This escapes the `has_down` lock that Stolcke-pruned trigrams
     //      impose on bigrams, so universal-suffix bigrams like (X, 的) can
     //      actually be killed.
     //   2. If the cascade left more trigrams than the reserve allows, run
     //      the usual Stolcke pass on the survivors.
-    //   3. Unigrams are never pruned (reserve covers the full vocab).
     if (opts_.num >= 2) {
         PruneBigramByPMI();
     }
     if (opts_.num >= 3) {
         int remaining = prune_sizes_[opts_.num] - 1;
-        int reserve = (opts_.num <= static_cast<int>(reserves.size()))
-            ? reserves[static_cast<std::size_t>(opts_.num - 1)] : 0;
+        int reserve = reserve_for(opts_.num);
         if (remaining > reserve) {
             prune_cutoffs_[opts_.num] = remaining - reserve;
             PruneLevel(opts_.num);

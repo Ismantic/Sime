@@ -44,6 +44,8 @@ count: sime.token.dict.txt $(CORPUS)
 # -w is the *active* vocab: number of distinct unigrams actually in raw.1gram
 # (each record is 2*uint32 = 8 bytes), which keeps the MKN gamma normalization
 # aligned with the data even if sime.token.dict.txt drifts.
+# -r sets the bigram and trigram reserves for entropy pruning; unigrams are
+# never pruned so no unigram slot is exposed.
 construct: $(OUT)/raw.3gram sime.token.dict.txt
 	AV=$$(( $$(stat -c%s $(OUT)/raw.1gram) / 8 )); \
 	echo "active vocab = $$AV"; \
@@ -52,7 +54,7 @@ construct: $(OUT)/raw.3gram sime.token.dict.txt
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,1,2 \
 		-w $$AV \
-		-r $$((AV + 3)),2500000,1000000
+		-r 2500000,1000000
 
 # Step 5: convert pinyin dict to trie
 convert: sime.token.dict.txt sime.dict.txt $(EN_DICT)

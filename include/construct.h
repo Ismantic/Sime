@@ -39,6 +39,9 @@ struct ConstructOptions {
     std::uint32_t token_count = 0;
     // Per-order count cutoffs; cutoffs[k-1] applies to k-grams.
     std::vector<std::uint32_t> cutoffs;
+    // Post-cut reserves for bigram/trigram entropy pruning.
+    // prune_reserves[0] = bigram reserve, prune_reserves[1] = trigram reserve.
+    // Unigrams are never pruned.
     std::vector<int> prune_reserves;
 };
 
