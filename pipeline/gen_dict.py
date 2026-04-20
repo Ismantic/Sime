@@ -19,6 +19,36 @@ def is_chinese(word):
                0x20000 <= ord(c) <= 0x2FA1F for c in word)
 
 
+def is_standard_chinese(word, blacklist):
+    """严格版：所有字符必须在 CJK Unified (U+4E00-U+9FFF) 内，
+    且不在日文 shinjitai 黑名单里。用于剔除 CJK Ext A/B、日文汉字等污染。"""
+    if not word:
+        return False
+    for c in word:
+        o = ord(c)
+        if not (0x4E00 <= o <= 0x9FFF):
+            return False
+        if c in blacklist:
+            return False
+    return True
+
+
+def load_char_blacklist(path):
+    """黑名单文件，每行：<char>\\t<comment>；以 # 开头的行是注释。"""
+    s = set()
+    if not path:
+        return s
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            c = line.split("\t")[0].strip()
+            if c:
+                s.add(c[0])
+    return s
+
+
 def is_english(word):
     return (all(c.isascii() and (c.isalpha() or c == "'") for c in word)
             and len(word) > 0 and word[0].isalpha())
@@ -89,7 +119,14 @@ def main():
                         help="English word list for filtering (one word per line)")
     parser.add_argument("--punct", default="",
                         help="Punctuation whitelist (one per line)")
+    parser.add_argument("--jp-blacklist", default="",
+                        help="Japanese shinjitai blacklist (char\\tequiv)")
     args = parser.parse_args()
+
+    # ── 读日文字黑名单 ──
+    jp_blacklist = load_char_blacklist(args.jp_blacklist)
+    if jp_blacklist:
+        print(f"JP char blacklist: {len(jp_blacklist)}", file=sys.stderr)
 
     # ── 读英文词表 ──
     en_words = set()
@@ -126,21 +163,28 @@ def main():
     all_seen = set()
 
     # 1a. 中文白名单（dict.txt）: corpus 里至少出现 1 次
-    cn_kept = cn_dropped = 0
+    # 字符必须全部落在 CJK Unified (U+4E00-U+9FFF)，且不在日文黑名单内
+    cn_kept = cn_dropped_freq = cn_dropped_nonstd = 0
     cn_removed = []
     for line in open(args.dict):
         w = line.rstrip("\n").split("\t")[0]
         if not w or w in all_seen:
             continue
-        if freq.get(w, 0) < 1:
-            cn_dropped += 1
+        if not is_standard_chinese(w, jp_blacklist):
+            cn_dropped_nonstd += 1
+            cn_removed.append(w)
+            continue
+        if freq.get(w, 0) < 3:
+            cn_dropped_freq += 1
             cn_removed.append(w)
             continue
         all_tokens.append(w)
         all_seen.add(w)
         cn_kept += 1
-    print(f"CN whitelist (dict.txt): kept {cn_kept}, dropped {cn_dropped} "
-          f"(freq<1)", file=sys.stderr)
+    print(f"CN whitelist (dict.txt): kept {cn_kept}, "
+          f"dropped {cn_dropped_freq} (freq<3), "
+          f"dropped {cn_dropped_nonstd} (non-standard char)",
+          file=sys.stderr)
 
     with open("dict.remove", "w") as f:
         for w in cn_removed:
@@ -149,12 +193,14 @@ def main():
           file=sys.stderr)
 
     # 1b. 英文白名单（en_words）: corpus 里至少出现 min_count 次
-    en_kept = en_dropped = 0
-    for w in en_words:
-        if not w or w in all_seen:
-            continue
-        if freq.get(w, 0) < args.min_count:
-            en_dropped += 1
+    # 按语料频率从高到低排序，保证 max_vocab 截断时砍掉的是低频词
+    en_candidates = [(freq[w], w) for w in en_words
+                     if w and freq.get(w, 0) >= args.min_count]
+    en_dropped = len(en_words) - len(en_candidates)
+    en_candidates.sort(reverse=True)
+    en_kept = 0
+    for _, w in en_candidates:
+        if w in all_seen:
             continue
         all_tokens.append(w)
         all_seen.add(w)
