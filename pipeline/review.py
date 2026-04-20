@@ -55,23 +55,20 @@ def main():
     if args.num:
         cmd.extend(["--num", "-s"])
 
+    input_text = "\n".join(queries) + "\n:quit\n"
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stderr=subprocess.DEVNULL,
     )
-    input_text = "\n".join(queries) + "\n:quit\n"
-    stdout, _ = proc.communicate(input_text)
+    stdout, _ = proc.communicate(input_text.encode())
 
-    # Parse output
     predictions = []
-    for line in stdout.split("\n"):
+    for line in stdout.decode(errors="replace").split("\n"):
         line = line.strip()
         if "[0]" in line:
             text = line.split("[0]", 1)[1].strip()
-            # Remove [pinyin] bracket and (score ...)
             if " [" in text:
                 text = text[:text.index(" [")]
             text = text.split("(score")[0].strip()

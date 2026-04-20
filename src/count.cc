@@ -8,7 +8,6 @@
 #include <map>
 #include <memory>
 #include <queue>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -268,12 +267,18 @@ void ProcessOneFile(const std::filesystem::path& path,
 
         reset_windows();
 
-        std::istringstream iss(line);
-        std::string token;
-        while (iss >> token) {
+        std::size_t pos = 0;
+        const std::size_t len = line.size();
+        while (pos < len) {
+            // skip spaces
+            while (pos < len && line[pos] == ' ') ++pos;
+            if (pos >= len) break;
+            std::size_t start = pos;
+            while (pos < len && line[pos] != ' ') ++pos;
+            std::string_view token(line.data() + start, pos - start);
             // Skip ▁ (U+2581) separator token
             if (token == "\xE2\x96\x81") continue;
-            auto it = tokens.ids.find(token);
+            auto it = tokens.ids.find(std::string(token));
             if (it != tokens.ids.end()) {
                 feed_word(it->second);
             } else {

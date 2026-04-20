@@ -1,10 +1,10 @@
 PYTHON = python3
 MIN_COUNT = 16
 COUNT_MAX = 83886080
-NPROC = 3
+NPROC = 12
 SIME = ../build
 
-RAW = News.sentences.txt
+RAW = sentences.txt
 UNITS = units.20260408.txt
 CORPUS = sentences.cut.txt
 CUT_DICT = dict.txt
@@ -36,7 +36,7 @@ dict: chars.cnt.txt $(UNITS) $(DICT) $(EN_WORDS) $(PUNCT)
 	$(PYTHON) gen_dict.py --min-count $(MIN_COUNT) --cnt chars.cnt.txt --units $(UNITS) --dict $(DICT) --en-words $(EN_WORDS) --punct $(PUNCT) --token-output sime.token.dict.txt --cn-output sime.dict.txt --en-output $(EN_DICT)
 
 # Step 3: n-gram count (parallel) -- emits $(OUT)/raw.1gram .. raw.3gram
-count: sime.token.dict.txt $(CORPUS)
+count: sime.token.dict.txt $(CORPUS) merge.bin
 	mkdir -p $(OUT)
 	./parallel_count.sh -n 3 -d sime.token.dict.txt -o $(OUT)/raw -c $(COUNT_MAX) -j $(NPROC) $(CORPUS)
 

@@ -35,7 +35,7 @@ mkdir -p "$OUTDIR"
 
 # Split corpus
 echo "=== Splitting corpus into $NPROC chunks ===" >&2
-split -n "l/$NPROC" "$CORPUS" "$OUTDIR/chunk."
+split -n "r/$NPROC" "$CORPUS" "$OUTDIR/chunk."
 CHUNKS=("$OUTDIR"/chunk.*)
 echo "Split into ${#CHUNKS[@]} chunks" >&2
 
@@ -46,16 +46,18 @@ if [[ $PER_PROC_MAX -lt 1024 ]]; then
 fi
 echo "=== Counting n-grams (count_max per proc: $PER_PROC_MAX) ===" >&2
 
+all_pids=()
+
 cleanup() {
     echo "Interrupted, killing child processes..." >&2
-    for pid in "${pids[@]}"; do
+    for pid in "${all_pids[@]}"; do
         kill "$pid" 2>/dev/null
     done
+    wait 2>/dev/null
     exit 1
 }
-trap cleanup INT TERM
+trap cleanup INT TERM HUP
 
-pids=()
 chunk_prefixes=()
 for i in "${!CHUNKS[@]}"; do
     chunk="${CHUNKS[$i]}"
@@ -63,11 +65,11 @@ for i in "${!CHUNKS[@]}"; do
     swap="$OUTDIR/swap.$i"        # ... and $swap.1 .. .N
     chunk_prefixes+=("$out")
     "$SIME" -n "$NGRAM" -d "$DICT" -s "$swap" -o "$out" -c "$PER_PROC_MAX" "$chunk" &
-    pids+=($!)
+    all_pids+=($!)
 done
 
 failed=0
-for pid in "${pids[@]}"; do
+for pid in "${all_pids[@]}"; do
     wait "$pid" || failed=1
 done
 if [[ $failed -ne 0 ]]; then
@@ -75,7 +77,7 @@ if [[ $failed -ne 0 ]]; then
     exit 1
 fi
 
-# Merge per order
+# Merge per order (parallel)
 MERGE_BIN="$(dirname "$0")/merge.bin"
 merge_order() {
     local order=$1
@@ -93,8 +95,13 @@ merge_order() {
     fi
 }
 
+all_pids=()
 for order in $(seq 1 "$NGRAM"); do
-    merge_order "$order"
+    merge_order "$order" &
+    all_pids+=($!)
+done
+for pid in "${all_pids[@]}"; do
+    wait "$pid" || { echo "merge failed" >&2; exit 1; }
 done
 
 # Clean up intermediate files

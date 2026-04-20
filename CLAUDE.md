@@ -21,6 +21,7 @@ Build outputs in `./build/`:
 - `sime-construct` — Modified Kneser-Ney LM builder (pipeline step 4)
 - `sime-converter` — pinyin Trie builder (pipeline step 5)
 - `sime-dump` — inspect a built `.cnt` LM file
+- `sime-cut` — Chinese text segmenter using the LM + dict
 
 The Android app uses its own Gradle/NDK build (see `Android/BUILD.md`), not the root CMake. The C++ engine under `src/` and `include/` is compiled via `Android/app/src/main/jni/CMakeLists.txt`.
 
@@ -60,18 +61,19 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 
 **Core library** (`sime_core`): `include/` has headers, `src/` has implementations.
 
-- **Common types** (`common.h`): shared enums, token-ID constants, pinyin encoding primitives.
-- **Pinyin dictionary** (`dict.h/cc` + `dict.inc`): embedded pinyin syllable table (`dict.inc` is generated, compiled in).
-- **Trie** (`trie.h/cc`): binary pinyin-to-character prefix Trie with `ArrayUnit` nodes, loaded from `.dict` files produced by `sime-converter`.
+- **Common types** (`common.h`): `TokenID`, `TokenMap`, `LoadTokenMap`. Token IDs start at 1 (`StartToken`); 0 is `NotToken`.
+- **Dict** (`dict.h/cc` + `dict.inc`): pinyin dictionary with 4 double-array tries (`LetterPinyin`, `LetterEn`, `NumPinyin`, `NumEn`). `dict.inc` is the embedded pinyin syllable table.
+- **Trie** (`trie.h/cc`): generic `DoubleArray` with exact/prefix/pinyin-aware/T9 search modes. Used by both `Dict` and `Cutter`.
 - **Counting** (`count.h/cc`): external-sort n-gram counter used by `sime-count`.
 - **Construction** (`construct.h/cc`): Modified Kneser-Ney smoothing + entropy pruning used by `sime-construct`.
 - **Conversion** (`convert.h/cc`): builds the pinyin Trie; driver for `sime-converter`.
 - **Scorer** (`score.h/cc`): n-gram LM probability lookups with backoff.
 - **Decoder** (`sime.h/cc`): lattice construction + Viterbi beam search for both full-keyboard pinyin and T9/nine-key input (`DecodeNumStr`, `DecodeNumSentence`). Key constants: `NodeSize=40`, `BeamSize=60`.
 - **State** (`state.h/cc`): beam search state heap.
+- **Cutter** (`cut.h/cc`): Chinese text segmenter reusing the Sime LM + dict via a byte-level DAT and Viterbi beam search.
 - **UTF-8** (`ustr.h/cc`): UTF-8 string utilities.
 
-**CLI tools** (`bin/`): each tool is a thin entry point linking `sime_core` — `counter.cc`, `constructor.cc`, `converter.cc`, `dump.cc`, `sime.cc`.
+**CLI tools** (`bin/`): each tool is a thin entry point linking `sime_core`.
 
 **Platform layers**:
 - `Linux/fcitx5/` — Fcitx5 engine plugin (`sime.cc`, `sime-state.cc`)
@@ -79,33 +81,15 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 
 ## Language Model Conventions
 
-**Path B convention (aligned with libime)**: the training pipeline does **not**
-emit `<s>` / `</s>` tokens. The corpus is treated as a stream of fragments;
-each line/sentence simply resets the sliding window so n-grams don't cross
-boundaries. Only `<unk>` (id 12) carries special meaning.
+No `<s>`/`</s>` sentence boundary tokens. The corpus is treated as a stream of fragments; each line resets the sliding window so n-grams don't cross boundaries. Decoder starts beam from root; first word is scored via unigram continuation probability.
 
-Implications:
-- `sime-count` never writes records containing token ids 10 or 11.
-- Decoder starts beam from root (`Scorer::StartPos()` returns `Pos{}`); first
-  word is scored via unigram continuation probability.
-- Cut/Prune only protect `<unk>` at unigram level.
-- `<s>` / `</s>` constants exist in `common.h` but are no longer referenced by
-  the training / scoring path.
+**MKN smoothing**: interpolated Modified Kneser-Ney. Stored `pro` is `P_I(w|h)` (already interpolated), stored `bow` is MKN gamma `γ(h)`. Query semantics match KenLM's backoff-form storage via the "interpolated-fits-in-backoff" trick.
 
-**MKN smoothing**: interpolated Modified Kneser-Ney. Stored `pro` is `P_I(w|h)`
-(already interpolated), stored `bow` is MKN gamma `γ(h)`. Query semantics
-match KenLM's backoff-form storage via the "interpolated-fits-in-backoff"
-trick.
-
-**Entropy pruning**: Stolcke 1998 relative-entropy formula, aligned with
-SRILM `NgramLM.cc::pruneProbs`. `CalcScore` computes `-ΔH` per removable
-n-gram including the `P(h)` weighting and the `numerator·Δlog γ` term.
+**Entropy pruning**: Stolcke 1998 relative-entropy formula, aligned with SRILM `NgramLM.cc::pruneProbs`.
 
 ## Token ID Conventions
 
-Special tokens: `NotToken=0`, `SentenceStart=10`, `SentenceEnd=11`,
-`UnknownToken=12`. Vocabulary tokens start at ID 70 (`StartToken`). Under
-Path B only `UnknownToken` is actually emitted into the LM.
+`NotToken=0` (empty/sentinel), `StartToken=1` (first real vocabulary token). Dict tokens are numbered sequentially from 1 in `sime.token.dict.txt` line order. `CutUnkToken = (uint32_t)-1` is used only by `Cutter` for OOV fragments.
 
 ## Compiler Settings
 

@@ -120,25 +120,33 @@ def main():
     print(f"pinyin entries: {len(units)}", file=sys.stderr)
 
     # ── Step 1: sime.token.dict.txt (closed vocabulary, whitelist only) ──
-    max_vocab = (1 << 18) - 70  # 262074
+    max_vocab = (1 << 18) - 50
 
     all_tokens = []
     all_seen = set()
 
     # 1a. 中文白名单（dict.txt）: corpus 里至少出现 1 次
     cn_kept = cn_dropped = 0
+    cn_removed = []
     for line in open(args.dict):
         w = line.rstrip("\n").split("\t")[0]
         if not w or w in all_seen:
             continue
         if freq.get(w, 0) < 1:
             cn_dropped += 1
+            cn_removed.append(w)
             continue
         all_tokens.append(w)
         all_seen.add(w)
         cn_kept += 1
     print(f"CN whitelist (dict.txt): kept {cn_kept}, dropped {cn_dropped} "
           f"(freq<1)", file=sys.stderr)
+
+    with open("dict.remove", "w") as f:
+        for w in cn_removed:
+            f.write(w + "\n")
+    print(f"written dropped CN words to dict.remove ({len(cn_removed)})",
+          file=sys.stderr)
 
     # 1b. 英文白名单（en_words）: corpus 里至少出现 min_count 次
     en_kept = en_dropped = 0
@@ -171,7 +179,11 @@ def main():
           file=sys.stderr)
 
     if len(all_tokens) > max_vocab:
+        overflow = len(all_tokens) - max_vocab
         all_tokens = all_tokens[:max_vocab]
+        en_kept -= overflow
+        print(f"truncated: {overflow} en tokens dropped (max_vocab={max_vocab})",
+              file=sys.stderr)
     with open(args.token_output, "w") as fout:
         for w in all_tokens:
             fout.write(w + "\n")

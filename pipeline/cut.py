@@ -38,7 +38,7 @@ def main():
                     help="number of processes (default: all cores)")
     args = ap.parse_args()
 
-    with open(args.input, "r", encoding="utf-8") as fin, \
+    with open(args.input, "r", encoding="utf-8", errors="replace") as fin, \
          open(args.output, "w", encoding="utf-8") as fout, \
          Pool(args.j, initializer=_init_worker, initargs=(args.dict,)) as pool:
         n = 0
