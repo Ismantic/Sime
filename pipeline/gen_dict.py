@@ -129,13 +129,15 @@ def main():
         print(f"JP char blacklist: {len(jp_blacklist)}", file=sys.stderr)
 
     # ── 读英文词表 ──
+    # 白名单统一小写去重存放；成员判定时把查询词 .lower() 再比对。
+    # iPhone / iphone / IPHONE 在语料里各自作为独立 token，但共享一条白名单条目。
     en_words = set()
     if args.en_words:
         for line in open(args.en_words):
-            w = line.rstrip("\n")
+            w = line.rstrip("\n").strip().lower()
             if w:
                 en_words.add(w)
-        print(f"en word list: {len(en_words)}", file=sys.stderr)
+        print(f"en word list (lowercased): {len(en_words)}", file=sys.stderr)
 
     # ── 读语料词频 ──
     freq = {}
@@ -195,10 +197,17 @@ def main():
           file=sys.stderr)
 
     # 1b. 英文白名单（en_words）: corpus 里至少出现 min_count 次
-    # 按语料频率从高到低排序，保证 max_vocab 截断时砍掉的是低频词
-    en_candidates = [(freq[w], w) for w in en_words
-                     if w and freq.get(w, 0) >= args.min_count]
-    en_dropped = len(en_words) - len(en_candidates)
+    # 遍历语料词频，对每个英文 token 做 .lower() 查白名单；按频率降序排，
+    # max_vocab 截断时砍低频
+    en_candidates = []
+    for w, c in freq.items():
+        if c < args.min_count:
+            continue
+        if not is_english(w):
+            continue
+        if w.lower() not in en_words:
+            continue
+        en_candidates.append((c, w))
     en_candidates.sort(reverse=True)
     en_kept = 0
     for _, w in en_candidates:
@@ -207,8 +216,9 @@ def main():
         all_tokens.append(w)
         all_seen.add(w)
         en_kept += 1
-    print(f"EN whitelist (en_words): kept {en_kept}, dropped {en_dropped} "
-          f"(freq<{args.min_count})", file=sys.stderr)
+    print(f"EN whitelist (en_words): kept {en_kept} "
+          f"(freq>={args.min_count}, whitelist hit on lowercase)",
+          file=sys.stderr)
 
     # 1c. 标点白名单（punct.txt）: corpus 里至少出现 1 次
     pn_kept = pn_dropped = 0
