@@ -188,7 +188,6 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
         auto ch = static_cast<uint8_t>(digits[i]);
 
         if (ch == '\'') {
-            // Separator in digit input — pass through
             AdvancePinyin(states, ch);
         } else {
             const char* letters = expand(ch);
@@ -196,25 +195,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
                 states.clear();
                 break;
             }
-            // Try each possible letter
-            std::vector<PinyinState> next;
-            for (const char* lp = letters; *lp; ++lp) {
-                auto tmp = states;
-                AdvancePinyin(tmp, static_cast<uint8_t>(*lp));
-                next.insert(next.end(), tmp.begin(), tmp.end());
-            }
-            // Dedup and limit state count
-            std::sort(next.begin(), next.end(),
-                      [](const PinyinState& a, const PinyinState& b) {
-                          return a.pos < b.pos;
-                      });
-            next.erase(std::unique(next.begin(), next.end(),
-                                   [](const PinyinState& a, const PinyinState& b) {
-                                       return a.pos == b.pos;
-                                   }), next.end());
-            constexpr std::size_t MaxT9States = 4096;
-            if (next.size() > MaxT9States) next.resize(MaxT9States);
-            states = std::move(next);
+            AdvanceT9(states, letters);
         }
         RecordMatches(states, i + 1, results, max_num);
     }
@@ -236,23 +217,7 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
         } else {
             const char* letters = expand(ch);
             if (!letters || !letters[0]) { states.clear(); break; }
-            std::vector<PinyinState> next;
-            for (const char* lp = letters; *lp; ++lp) {
-                auto tmp = states;
-                AdvancePinyin(tmp, static_cast<uint8_t>(*lp));
-                next.insert(next.end(), tmp.begin(), tmp.end());
-            }
-            std::sort(next.begin(), next.end(),
-                      [](const PinyinState& a, const PinyinState& b) {
-                          return a.pos < b.pos;
-                      });
-            next.erase(std::unique(next.begin(), next.end(),
-                                   [](const PinyinState& a, const PinyinState& b) {
-                                       return a.pos == b.pos;
-                                   }), next.end());
-            constexpr std::size_t MaxT9States = 4096;
-            if (next.size() > MaxT9States) next.resize(MaxT9States);
-            states = std::move(next);
+            AdvanceT9(states, letters);
         }
     }
 
@@ -339,6 +304,15 @@ void DoubleArray::FindSepDescendants(std::size_t pos,
     }
 }
 
+const std::vector<std::size_t>& DoubleArray::GetSepDescendants(
+    std::size_t pos) const {
+    auto it = sep_cache_.find(pos);
+    if (it != sep_cache_.end()) return it->second;
+    auto& entry = sep_cache_[pos];
+    FindSepDescendants(pos, entry, 6);
+    return entry;
+}
+
 void DoubleArray::RecordMatches(const std::vector<PinyinState>& states,
                                 std::size_t input_len,
                                 std::vector<SearchResult>& results,
@@ -380,9 +354,7 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
             }
             // 2. Syllable skip to '\''
             if (canSkip(s)) {
-                std::vector<std::size_t> seps;
-                FindSepDescendants(s.pos, seps, 6);
-                for (auto sp : seps) {
+                for (auto sp : GetSepDescendants(s.pos)) {
                     next.push_back({sp, 0});
                 }
             }
@@ -403,9 +375,7 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
             }
             // 3. Syllable skip
             if (canSkip(s)) {
-                std::vector<std::size_t> seps;
-                FindSepDescendants(s.pos, seps, 6);
-                for (auto sp : seps) {
+                for (auto sp : GetSepDescendants(s.pos)) {
                     std::size_t after = TryChild(sp, ch);
                     if (after != SIZE_MAX) {
                         next.push_back({after, 1});  // new syllable
@@ -428,6 +398,68 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
     // Cap state count to prevent combinatorial explosion (T9)
     constexpr std::size_t MaxStates = 2048;
     if (next.size() > MaxStates) next.resize(MaxStates);
+
+    states = std::move(next);
+}
+
+void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
+                            const char* letters) const {
+    auto canSkip = [&](const PinyinState& s) -> bool {
+        return s.depth == 1;
+    };
+
+    std::vector<PinyinState> next;
+
+    for (const auto& s : states) {
+        // Pre-compute shared state: separator child and sep descendants
+        std::size_t sep_child = TryChild(s.pos, static_cast<uint8_t>('\''));
+        bool need_skip = canSkip(s);
+        const std::vector<std::size_t>* seps = nullptr;
+        if (need_skip) {
+            seps = &GetSepDescendants(s.pos);
+        }
+
+        for (const char* lp = letters; *lp; ++lp) {
+            uint8_t ch = static_cast<uint8_t>(*lp);
+            uint8_t new_depth = (s.depth < 255)
+                ? static_cast<uint8_t>(s.depth + 1) : 255;
+
+            // 1. Direct match
+            std::size_t child = TryChild(s.pos, ch);
+            if (child != SIZE_MAX) {
+                next.push_back({child, new_depth});
+            }
+            // 2. Skip separator then match
+            if (sep_child != SIZE_MAX) {
+                std::size_t after_sep = TryChild(sep_child, ch);
+                if (after_sep != SIZE_MAX) {
+                    next.push_back({after_sep, 1});
+                }
+            }
+            // 3. Syllable skip
+            if (need_skip) {
+                for (auto sp : *seps) {
+                    std::size_t after = TryChild(sp, ch);
+                    if (after != SIZE_MAX) {
+                        next.push_back({after, 1});
+                    }
+                }
+            }
+        }
+    }
+
+    // Deduplicate by pos (keep smallest depth)
+    std::sort(next.begin(), next.end(),
+              [](const PinyinState& a, const PinyinState& b) {
+                  return a.pos < b.pos || (a.pos == b.pos && a.depth < b.depth);
+              });
+    next.erase(std::unique(next.begin(), next.end(),
+                           [](const PinyinState& a, const PinyinState& b) {
+                               return a.pos == b.pos;
+                           }), next.end());
+
+    constexpr std::size_t MaxT9States = 4096;
+    if (next.size() > MaxT9States) next.resize(MaxT9States);
 
     states = std::move(next);
 }

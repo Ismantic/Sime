@@ -59,6 +59,23 @@ Sime::Sime(const std::filesystem::path& dict_path,
     ready_ = true;
 }
 
+void Sime::ComputeEdgePenalties(std::vector<Node>& net,
+                                std::string_view input,
+                                float_t penalty_per_mismatch,
+                                std::size_t t9_boundary) {
+    for (auto& col : net) {
+        for (auto& edge : col.es) {
+            if (!edge.pieces || edge.id == NotToken) continue;
+            auto slice = input.substr(
+                edge.start, edge.end - edge.start);
+            bool is_t9 = (edge.start >= t9_boundary);
+            auto mismatch = CountSyllableMismatch(
+                edge.pieces, slice, is_t9);
+            edge.penalty =
+                static_cast<float_t>(mismatch) * penalty_per_mismatch;
+        }
+    }
+}
 
 void Sime::InitNumNet(std::string_view start,
                               std::string_view nums,
@@ -305,6 +322,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::vector<Node> net;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
     InitNumNet(start, nums, net, can_tail_expand);
+    ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
@@ -318,9 +336,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
 
     // === Layer 1: Full sentence N-best ===
-    // Scan the whole beam, re-score with fragment penalty (letter links
-    // compared directly, T9 digit links compared via LetterToNum), sort
-    // by combined score, then take top (1 + extra).
+    // (frag_penalty is already in beam scores via edge.penalty)
     {
         const auto tail = net[total + 1].states.GetStates();
         const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
@@ -334,13 +350,9 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             if (text.empty() || !l1_seen.insert(text).second) continue;
             std::string py = ExtractUnits(path, combined_input);
 
-            std::size_t mismatch = CountPathMismatch(path, combined_input, p);
-            float_t frag_penalty =
-                static_cast<float_t>(mismatch) * PinyinMatchPenalty;
-
             l1.push_back({std::move(text), std::move(py),
                           ExtractTokens(path),
-                          -tail[rank].score - frag_penalty, full_cnt});
+                          -tail[rank].score, full_cnt});
         }
         std::sort(l1.begin(), l1.end(),
                   [](const DecodeResult& a, const DecodeResult& b) {
@@ -417,6 +429,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
 
     std::vector<Node> net;
     InitNumNet(start, nums, net, /*expansion=*/false);
+    ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, start.size());
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
@@ -473,6 +486,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/true);
+    ComputeEdgePenalties(net, lower, PinyinMatchPenalty, lower.size() + 1);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -636,7 +650,7 @@ void Sime::Process(std::vector<Node>& net) const {
                 scorer_.Back(next_pos);
                 cur_pos = next_pos;
 
-                float_t next_cost = value.score + step;
+                float_t next_cost = value.score + step + word.penalty;
                 State next(next_cost, word.end, cur_pos, &value, word.id,
                            word.pieces);
                 net[word.end].states.Insert(next);
@@ -691,6 +705,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/true);
+    ComputeEdgePenalties(net, lower, PinyinMatchPenalty, total + 1);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
@@ -706,8 +721,9 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
 
     // === Layer 1: Full sentence N-best ===
-    // Scan the whole beam, re-score with distance + fragment penalties,
+    // Scan the whole beam, re-score with distance penalty,
     // sort by the combined score, then take top (1 + extra).
+    // (frag_penalty is already in beam scores via edge.penalty)
     {
         const auto tail = net.back().states.GetStates();
         const std::size_t scan =
@@ -730,13 +746,9 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             float_t dist_penalty =
                 static_cast<float_t>(distance) * penalty_per_unit;
 
-            std::size_t mismatch = CountPathMismatch(path, lower, total + 1);
-            float_t frag_penalty =
-                static_cast<float_t>(mismatch) * PinyinMatchPenalty;
-
             l1.push_back({std::move(text), std::move(py),
                           ExtractTokens(path),
-                          -tail[rank].score - dist_penalty - frag_penalty,
+                          -tail[rank].score - dist_penalty,
                           input.size()});
         }
         std::sort(l1.begin(), l1.end(),

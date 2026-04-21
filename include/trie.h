@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace trie {
@@ -104,13 +105,20 @@ private:
     };
     void AdvancePinyin(std::vector<PinyinState>& states,
                        uint8_t ch) const;
+    // Fused T9 advance: expand digit to letters and advance all states
+    // in one pass, avoiding per-letter vector copies.
+    void AdvanceT9(std::vector<PinyinState>& states,
+                   const char* letters) const;
     void RecordMatches(const std::vector<PinyinState>& states,
                        std::size_t input_len,
                        std::vector<SearchResult>& results,
                        std::size_t max_num) const;
 
+    const std::vector<std::size_t>& GetSepDescendants(std::size_t pos) const;
+
     std::size_t size_ = 0;
     std::unique_ptr<ArrayUnit[]> array_;
+    mutable std::unordered_map<std::size_t, std::vector<std::size_t>> sep_cache_;
 
     // --- Builder (used only during Build) ---
     struct TrieNode {

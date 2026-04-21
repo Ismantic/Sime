@@ -74,6 +74,7 @@ private:
         std::size_t end = 0;
         TokenID id = 0;
         const char* pieces = nullptr;  // piece path, e.g. "ni'hao"
+        float_t penalty = 0;           // syllable mismatch penalty
     };
 
     struct Node {
@@ -85,15 +86,19 @@ private:
     static constexpr std::size_t NodeSize = 40;
     static constexpr std::size_t BeamSize = 60;
     static constexpr float_t DistancePenalty = 1.8;
-    // Per-syllable penalty for incomplete pinyin matches. Applied as a
-    // post-processing re-score on Layer 1 / Layer 2 so that fully-typed
-    // syllables outrank abbreviated ones when LM costs are otherwise close.
+    // Per-syllable penalty for incomplete pinyin matches. Applied on edges
+    // before beam search so that fully-typed syllables outrank abbreviated
+    // ones during Process. Layer 2 also applies it in post-processing.
     static constexpr float_t PinyinMatchPenalty = 3.2;
 
     // Lattice building
     void InitNet(std::string_view input,
                     std::vector<Node>& net,
                     bool expansion = true) const;
+    static void ComputeEdgePenalties(std::vector<Node>& net,
+                                     std::string_view input,
+                                     float_t penalty_per_mismatch,
+                                     std::size_t t9_boundary);
     void PruneNode(std::vector<Link>& edges) const;
 
     // Beam search

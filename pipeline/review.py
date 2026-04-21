@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--num", action="store_true", help="num-key mode")
     parser.add_argument("-s", "--sentence", action="store_true", help="sentence mode")
     parser.add_argument("--errors", type=int, default=10)
+    parser.add_argument("--limit", type=int, default=0,
+                        help="max cases to evaluate (0=all)")
     args = parser.parse_args()
 
     # Read test cases
@@ -43,6 +45,10 @@ def main():
                 queries.append(parts[0])
                 pinyins.append(parts[0])
                 golds.append(parts[1])
+    if args.limit > 0:
+        queries = queries[:args.limit]
+        pinyins = pinyins[:args.limit]
+        golds = golds[:args.limit]
 
     mode = "num" if args.num else "pinyin"
     print(f"Test set: {args.cases} ({len(queries)} cases, mode={mode})",

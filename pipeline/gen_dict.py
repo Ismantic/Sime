@@ -151,8 +151,10 @@ def main():
         line = line.rstrip("\n")
         if not line:
             continue
-        idx = line.index(" ")
-        word = line[:idx]
+        parts = line.split(None, 1)
+        if len(parts) < 2:
+            continue
+        word = parts[0]
         units[word] = line
     print(f"pinyin entries: {len(units)}", file=sys.stderr)
 
@@ -250,7 +252,7 @@ def main():
         if not is_chinese(word):
             continue
         if word in units:
-            py_str = units[word][units[word].index(" ") + 1:].replace("'", "/")
+            py_str = units[word].split(None, 1)[1].replace("'", "/")
             cn_entries.append((word, py_str))
             from_units += 1
         else:
