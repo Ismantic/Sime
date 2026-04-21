@@ -5,7 +5,7 @@ NPROC = 12
 SIME = ../build
 
 RAW = sentences.txt
-UNITS = units.20260408.txt
+UNITS = dict.unit
 CORPUS = sentences.cut.txt
 CUT_DICT = dict.txt
 DICT = dict.txt
@@ -59,7 +59,7 @@ $(OUT)/sime.raw.cnt: $(OUT)/raw.3gram sime.token.dict.txt
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,1,2 \
 		-w $$AV \
-		-r 2500000,1000000
+		-r 3500000,3000000
 
 # Step 5: convert pinyin dict to trie
 convert: $(OUT)/sime.dict
