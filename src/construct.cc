@@ -873,6 +873,10 @@ float_t Constructor::GetPro(int n, const TokenID* words) const {
 
 void Constructor::Finalize() {
     FixDownPointers();
+    // Parent arrays are no longer needed after FixDownPointers; free them
+    // to reclaim ~5.8 GB for a typical corpus.
+    { auto tmp = decltype(bigram_parents_)(); bigram_parents_.swap(tmp); }
+    { auto tmp = decltype(leaf_parents_)(); leaf_parents_.swap(tmp); }
     AppendTails();
     // ctx first so CountCnt can estimate low-order discount params from
     // continuation counts (see KenLM AdjustCounts).
