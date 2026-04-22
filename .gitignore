@@ -73,3 +73,13 @@ Android/gradle/wrapper/gradle-wrapper.jar
 Android/keystore.properties
 Android/**/*.jks
 Android/**/*.keystore
+
+# Runtime assets bundled for platform builds (kept locally, not tracked)
+# Copy from pipeline/output/ before building:
+#   cp pipeline/output/sime.cnt Android/app/src/main/assets/
+#   cp pipeline/output/sime.cnt Linux/fcitx5/data/
+#   (same for sime.dict)
+Android/app/src/main/assets/sime.cnt
+Android/app/src/main/assets/sime.dict
+Linux/fcitx5/data/sime.cnt
+Linux/fcitx5/data/sime.dict
