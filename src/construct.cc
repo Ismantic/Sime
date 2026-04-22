@@ -8,7 +8,6 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-#include <unordered_map>
 
 namespace sime {
 
@@ -18,36 +17,12 @@ constexpr TokenID TailMarker = 0x00FFFFFF;
 
 } // namespace
 
-void NeyDiscounter::Init(std::uint64_t n1, std::uint64_t n2,
-                         std::uint64_t n3, std::uint64_t n4) {
-    float_t d1 = static_cast<float_t>(n1);
-    float_t d2 = static_cast<float_t>(n2);
-    float_t d3 = static_cast<float_t>(n3);
-    float_t d4 = static_cast<float_t>(n4);
-    float_t y = (d1 == 0.0) ? 0.0 : d1 / (d1 + 2.0 * d2);
-    v1_ = 1.0 - 2.0 * y * (d2 / std::max(d1, 1.0));
-    v2_ = 2.0 - 3.0 * y * (d3 / std::max(d2, 1.0));
-    v3_ = 3.0 - 4.0 * y * (d4 / std::max(d3, 1.0));
-    v1_ = std::max(v1_, 0.0);
-    v2_ = std::max(v2_, 0.0);
-    v3_ = std::max(v3_, 0.0);
-}
-
-float_t NeyDiscounter::Discount(float_t cnt) const {
-    if (cnt <= 0.0) return 0.0;
-    if (cnt <= 1.0) return cnt - v1_;
-    if (cnt <= 2.0) return cnt - v2_;
-    return cnt - v3_;
-}
-
 bool Constructor::NodeScore::operator<(const NodeScore& other) const {
     return score < other.score;
 }
 
 Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
     if (opts_.num < 1 || opts_.num > 3) {
-        // See include/construct.h: several hot paths (InsertTrigram,
-        // ComputeContinuationCounts, RunConstruct) are specialized for 1..3.
         throw std::invalid_argument("order must be in [1, 3]");
     }
     node_levels_.resize(opts_.num);
@@ -56,9 +31,7 @@ Constructor::Constructor(ConstructOptions opts) : opts_(std::move(opts)) {
     }
     leaves_.reserve(1024);
 
-    node_levels_[0].push_back(Node{0, 0, 0.0, 0.0, 0.0, 0});
-
-    nt_.assign(opts_.num + 1, {});
+    node_levels_[0].push_back(Node{0, 0, 0.0, 0.0, 0.0});
 
     cuts_.assign(opts_.num + 1, 0);
     for (std::size_t i = 0; i < opts_.cutoffs.size() && i < static_cast<std::size_t>(opts_.num); ++i) {
@@ -104,23 +77,26 @@ void Constructor::InsertUnigram(TokenID w, std::uint32_t cnt) {
     if (opts_.num < 1) return;
     node_levels_[0][0].cnt += cnt;
     // down set later in FixDownPointers.
-    node_levels_[1].push_back(Node{w, 0, static_cast<float_t>(cnt), 0.0, 0.0, 0});
+    node_levels_[1].push_back(Node{w, 0, static_cast<float_t>(cnt), 0.0, 0.0});
 }
 
 void Constructor::InsertBigram(TokenID u, TokenID v, std::uint32_t cnt) {
     if (opts_.num < 2) return;
-    node_levels_[2].push_back(Node{v, 0, static_cast<float_t>(cnt), 0.0, 0.0, 0});
+    if (cnt <= cuts_[2]) {
+        // Filtered bigrams with cnt <= cutoff have no surviving trigram
+        // children (trigram cutoff >= bigram cutoff), so ctx = 0 and they
+        // contribute nothing to nt_[2] or parent ctx_sum.
+        return;
+    }
+    node_levels_[2].push_back(Node{v, 0, static_cast<float_t>(cnt), 0.0, 0.0});
     bigram_parents_.push_back(u);
 }
 
 void Constructor::InsertTrigram(TokenID u, TokenID v, TokenID w, std::uint32_t cnt) {
     if (opts_.num < 3) return;
     if (cnt > cuts_[opts_.num]) {
-        leaves_.push_back(Leave{w, static_cast<float_t>(cnt), 0.0, 0});
+        leaves_.push_back(Leave{w, static_cast<float_t>(cnt), 0.0});
         leaf_parents_.push_back({u, v});
-    } else if (cnt >= 1 && cnt <= 4) {
-        // Filtered trigrams still count toward n-of-n for discount estimation.
-        nt_[opts_.num][cnt] += 1;
     }
 }
 
@@ -159,32 +135,6 @@ void Constructor::FixDownPointers() {
     }
 }
 
-void Constructor::CountCnt() {
-    // Highest order: use raw trigram count (matches KenLM's AdjustCounts
-    // highest-order path). Filtered trigrams contributed to nt_[opts_.num]
-    // at Insert time; add kept leaves here, skipping the tail sentinel.
-    const std::size_t leaves_end = leaves_.empty() ? 0 : leaves_.size() - 1;
-    for (std::size_t i = 0; i < leaves_end; ++i) {
-        auto c = static_cast<std::uint32_t>(leaves_[i].cnt);
-        if (c >= 1 && c <= 4) {
-            nt_[opts_.num][c] += 1;
-        }
-    }
-    // Lower orders: MKN estimates D1/D2/D3+ from the distribution of
-    // continuation counts N1+, not raw counts (KenLM AdjustCounts lines 76-88
-    // push the adjusted count into stat.n[count]).
-    for (int lvl = 1; lvl < opts_.num; ++lvl) {
-        const auto& level = node_levels_[lvl];
-        const std::size_t end = level.empty() ? 0 : level.size() - 1;
-        for (std::size_t i = 0; i < end; ++i) {
-            auto c = level[i].ctx;
-            if (c >= 1 && c <= 4) {
-                nt_[lvl][c] += 1;
-            }
-        }
-    }
-}
-
 void Constructor::AppendTails() {
     const float_t tail_pro = std::numeric_limits<float_t>::denorm_min();
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
@@ -194,10 +144,10 @@ void Constructor::AppendTails() {
         } else {
             down_count = static_cast<std::uint32_t>(node_levels_[lvl + 1].size());
         }
-        node_levels_[lvl].push_back(Node{TailMarker, down_count, 1.0, 0.0, 0.0, 0});
+        node_levels_[lvl].push_back(Node{TailMarker, down_count, 1.0, 0.0, 0.0});
         node_levels_[lvl].back().pro = tail_pro;
     }
-    leaves_.push_back(Leave{0, 1.0, tail_pro, 0});
+    leaves_.push_back(Leave{0, 1.0, tail_pro});
 }
 
 template <typename Level>
@@ -265,113 +215,63 @@ template <typename DownLevel>
 void Constructor::DiscountLevel(NodeLevel& level,
                                 DownLevel& down_level,
                                 NeyDiscounter& disc,
-                                bool use_context,
                                 int parent_lvl) {
-    // Interpolated MKN. For each parent h at `parent_lvl`:
-    //   gamma(h) = (D1*N1 + D2*N2 + D3+*N3+) / denom
-    //   P_I(w | h) = max(count - D, 0) / denom + gamma(h) * P_I(w | h')
-    // Stores gamma(h) into parent.bow (as -log) and P_I(w|h) into child.pro
-    // (as -log). Expects lvl < parent_lvl to have been processed already so
-    // GetPro can return P_I at shorter histories.
+    // Interpolated Absolute Discounting. For each parent h at `parent_lvl`:
+    //   gamma(h) = (D * num_children + lost_mass) / denom
+    //   P_I(w | h) = max(cnt(h,w) - D, 0) / denom + gamma(h) * P_I(w | h')
 
     constexpr float_t MinProb = 1e-12;
     constexpr float_t MaxProb = 1.0 - 1e-9;
 
-    // Cursor into node_levels_[parent_lvl - 1] for recovering the ancestor's
-    // id when parent_lvl >= 2 (needed to form the shorter-context query).
     std::size_t up_cursor = 0;
 
     for (std::size_t idx = 0; idx + 1 < level.size(); ++idx) {
         Node& node = level[idx];
         Node& next = level[idx + 1];
 
-        // Path B doesn't emit <s>/</s>, so the KenLM <s>-raw-count branch
-        // isn't reachable. Plain MKN: lower orders use continuation counts,
-        // highest order uses raw counts.
-        bool lower_order = use_context;
-
-        // Compute gamma's numerator and denominator from the kept children.
-        std::uint64_t n1 = 0, n2 = 0, n3p = 0;
+        std::uint32_t num_children = 0;
         float_t sum_children = 0.0;
         for (std::size_t i = node.down; i < next.down; ++i) {
-            std::uint32_t c = lower_order
-                ? down_level[i].ctx
-                : static_cast<std::uint32_t>(down_level[i].cnt);
-            sum_children += static_cast<float_t>(c);
-            if (c == 1) ++n1;
-            else if (c == 2) ++n2;
-            else if (c >= 3) ++n3p;
+            sum_children += down_level[i].cnt;
+            ++num_children;
         }
 
-        // Pre-cut denominator: bigram.cnt for the highest order (equal to sum
-        // of all trigram children before Cut/Prune), or parent.ctx_sum for
-        // lower orders (snapshot taken in ComputeContinuationCounts before
-        // Cut). Using a post-cut denominator here would make gamma shrink as
-        // pruning removes children and break normalization.
-        float_t pre_cut_denom = lower_order
-            ? static_cast<float_t>(node.ctx_sum)
-            : node.cnt;
-        if (pre_cut_denom <= 0.0) {
-            // Fallback: if we have no pre-cut record (e.g., ctx_sum=0 due to
-            // no bigram children), fall back to sum of kept children.
-            pre_cut_denom = sum_children;
-        }
-        pre_cut_denom = std::max(pre_cut_denom, 1.0);
+        float_t denom = std::max(node.cnt, 1.0);
 
-        // Lost mass = pre-cut total - kept total. This is the probability
-        // mass that Cut + entropy-pruning removed; KenLM rolls it into the
-        // gamma numerator so Sigma P_I(w|h) + gamma(h) still sums to 1.
-        float_t lost_mass = pre_cut_denom - sum_children;
+        float_t lost_mass = denom - sum_children;
         if (lost_mass < 0.0) lost_mass = 0.0;
 
         float_t gamma;
         if (node.down == next.down) {
-            // No children at all; all probability routes to backoff.
             gamma = 1.0;
         } else {
-            float_t gamma_num = disc.D1() * static_cast<float_t>(n1) +
-                                disc.D2() * static_cast<float_t>(n2) +
-                                disc.D3() * static_cast<float_t>(n3p) +
-                                lost_mass;  // <-- normalizer term
-            gamma = gamma_num / pre_cut_denom;
+            float_t gamma_num = disc.D() * static_cast<float_t>(num_children)
+                              + lost_mass;
+            gamma = gamma_num / denom;
         }
         gamma = std::clamp(gamma, MinProb, MaxProb);
         node.bow = static_cast<float>(-std::log(gamma));
 
-        // Recover the ancestor id (first token of parent's context) so we
-        // can build the shorter-history query. For parent_lvl <= 1 there's
-        // nothing to recover.
-        TokenID ancestor_id = 0;
         if (parent_lvl >= 2) {
             auto& up = node_levels_[parent_lvl - 1];
             while (up_cursor + 1 < up.size() &&
                    up[up_cursor + 1].down <= idx) {
                 ++up_cursor;
             }
-            ancestor_id = up[up_cursor].id;
         }
 
         for (std::size_t down_idx = node.down; down_idx < next.down; ++down_idx) {
-            std::uint32_t c = lower_order
-                ? down_level[down_idx].ctx
-                : static_cast<std::uint32_t>(down_level[down_idx].cnt);
-            float_t discounted = disc.Discount(static_cast<float_t>(c));
-            if (discounted < 0.0) discounted = 0.0;
-            float_t alpha = discounted / pre_cut_denom;
+            float_t discounted = disc.Discount(down_level[down_idx].cnt);
+            float_t alpha = discounted / denom;
 
             TokenID w = down_level[down_idx].id;
 
-            // P_I(w | shorter(h)). For parent_lvl = 0 the shorter history is
-            // empty and we use the uniform prior stored in root.pro.
             float_t p_lower;
             if (parent_lvl == 0) {
                 p_lower = std::exp(-node_levels_[0][0].pro);
             } else if (parent_lvl == 1) {
-                // Shorter history is empty: want P_I(w).
                 p_lower = GetPro(1, &w);
             } else {
-                // parent_lvl == 2: shorter history is [node.id], query
-                // P_I(w | node.id).
                 std::array<TokenID, 2> q{node.id, w};
                 p_lower = GetPro(2, q.data());
             }
@@ -380,8 +280,6 @@ void Constructor::DiscountLevel(NodeLevel& level,
             p_interp = std::clamp(p_interp, MinProb, MaxProb);
             down_level[down_idx].pro = static_cast<float>(-std::log(p_interp));
         }
-
-        (void)ancestor_id;  // reserved for higher orders once supported
     }
 }
 
@@ -623,128 +521,32 @@ void Constructor::PruneBigramByPMI() {
     }
 }
 
-void Constructor::ComputeContinuationCounts() {
-    // With independent counting, l2 contains every bigram in the corpus
-    // (not just trigram prefixes), so N1+(., w) is now correct for all
-    // tokens including </s>.
-    auto finalize_ctx_sum = [&]() {
-        // Pre-cut ctx_sum for each parent at levels 0..num-2. Runs BEFORE Cut
-        // so the sum reflects every child including those about to be pruned.
-        // Used by DiscountLevel's gamma normalizer to recover mass lost to
-        // pruning.
-        for (int lvl = 0; lvl < opts_.num - 1; ++lvl) {
-            auto& parents = node_levels_[lvl];
-            auto& children = node_levels_[lvl + 1];
-            for (std::size_t idx = 0; idx + 1 < parents.size(); ++idx) {
-                std::uint64_t sum = 0;
-                std::size_t begin = parents[idx].down;
-                std::size_t end = parents[idx + 1].down;
-                for (std::size_t i = begin; i < end; ++i) {
-                    sum += children[i].ctx;
-                }
-                parents[idx].ctx_sum = static_cast<std::uint32_t>(
-                    std::min<std::uint64_t>(sum, std::numeric_limits<std::uint32_t>::max()));
-            }
-        }
-    };
-
-    if (opts_.num == 2) {
-        auto& unigram_level = node_levels_[1];
-        std::unordered_map<std::uint32_t, std::uint32_t> ctx_map;
-        for (std::size_t j = 0; j + 1 < node_levels_[2].size(); ++j) {
-            ctx_map[node_levels_[2][j].id]++;
-        }
-        for (auto& node : unigram_level) {
-            auto it = ctx_map.find(node.id);
-            if (it != ctx_map.end()) {
-                node.ctx = it->second;
-            }
-        }
-        finalize_ctx_sum();
-        return;
-    }
-
-    if (opts_.num < 3) { finalize_ctx_sum(); return; }
-
-    auto& l1 = node_levels_[1];
-    auto& l2 = node_levels_[2];
-
-    // Bigram continuation count N1+(., v, w) = distinct u such that trigram
-    // (u, v, w) exists.
-    std::unordered_map<std::uint64_t, std::uint32_t> bigram_ctx;
-    for (std::size_t u_idx = 0; u_idx + 1 < l1.size(); ++u_idx) {
-        for (std::size_t v_idx = l1[u_idx].down;
-             v_idx + 1 < l2.size() && v_idx < l1[u_idx + 1].down; ++v_idx) {
-            TokenID v_id = l2[v_idx].id;
-            for (std::size_t w_idx = l2[v_idx].down; w_idx < l2[v_idx + 1].down; ++w_idx) {
-                TokenID w_id = leaves_[w_idx].id;
-                auto key = (static_cast<std::uint64_t>(v_id) << 32) | w_id;
-                bigram_ctx[key]++;
-            }
-        }
-    }
-    for (std::size_t v_idx = 0; v_idx + 1 < l1.size(); ++v_idx) {
-        TokenID v_id = l1[v_idx].id;
-        for (std::size_t w_idx = l1[v_idx].down;
-             w_idx + 1 < l2.size() && w_idx < l1[v_idx + 1].down; ++w_idx) {
-            TokenID w_id = l2[w_idx].id;
-            auto key = (static_cast<std::uint64_t>(v_id) << 32) | w_id;
-            auto it = bigram_ctx.find(key);
-            if (it != bigram_ctx.end()) {
-                l2[w_idx].ctx = it->second;
-            }
-        }
-    }
-
-    // Unigram continuation count N1+(., w) = distinct v such that bigram
-    // (v, w) exists. l2 has every bigram, so just count l2 entries by .id.
-    std::unordered_map<std::uint32_t, std::uint32_t> unigram_ctx;
-    for (std::size_t j = 0; j + 1 < l2.size(); ++j) {
-        unigram_ctx[l2[j].id]++;
-    }
-    for (auto& node : l1) {
-        auto it = unigram_ctx.find(node.id);
-        if (it != unigram_ctx.end()) {
-            node.ctx = it->second;
-        }
-    }
-
-    finalize_ctx_sum();
-}
-
 void Constructor::Discount() {
-    for (int lvl = opts_.num; lvl >= 1; --lvl) {
-        discounters_[lvl].Init(nt_[lvl][1], nt_[lvl][2], nt_[lvl][3], nt_[lvl][4]);
+    // Interpolated Absolute Discounting: fixed D per order.
+    // Defaults: unigram ≈ raw MLE (D=0.0005), bigram/trigram D=0.5.
+    constexpr float_t kDefaultD[] = {0.0005, 0.5, 0.5};
+    for (int lvl = 1; lvl <= opts_.num; ++lvl) {
+        std::size_t idx = static_cast<std::size_t>(lvl - 1);
+        float_t d = (idx < opts_.discounts.size())
+            ? opts_.discounts[idx]
+            : (idx < 3 ? kDefaultD[idx] : 0.5);
+        discounters_[lvl].Init(d);
+        std::cerr << "  D[" << lvl << "] = " << d << "\n";
     }
 
-    // Set root uniform *before* running DiscountLevel at lvl=0: GetPro falls
-    // back to exp(-root.pro) for n=0, and lvl=0 interpolation reads it.
     Node& root = node_levels_[0][0];
-    // Tokens are numbered from StartToken (=1); token_count is the count of
-    // real vocabulary entries, so the uniform prior is 1/token_count.
     std::uint32_t effective_vocab = std::max<std::uint32_t>(opts_.token_count, 1);
     float_t base = 1.0 / effective_vocab;
     root.pro = static_cast<float>(-std::log(base));
 
-    // Forward iteration. At each parent level k, compute gamma(h) into the
-    // parent's bow and P_I(w|h) into each child's pro; this requires lower
-    // orders (0..k-1) to be already written so GetPro returns the full
-    // interpolated probability at the shorter context.
     for (int lvl = 0; lvl < opts_.num; ++lvl) {
         auto& level = node_levels_[lvl];
-        bool use_context = lvl < opts_.num - 1;
         if (lvl == opts_.num - 1) {
-            DiscountLevel(level, leaves_, discounters_[lvl + 1], false, lvl);
+            DiscountLevel(level, leaves_, discounters_[lvl + 1], lvl);
         } else {
-            DiscountLevel(level, node_levels_[lvl + 1], discounters_[lvl + 1],
-                          use_context, lvl);
+            DiscountLevel(level, node_levels_[lvl + 1], discounters_[lvl + 1], lvl);
         }
     }
-
-    // <unk>'s natural P_I = gamma(root)/V is what KenLM effectively produces
-    // (prob=0, gamma=sums.gamma, interpolated to gamma/V). We already
-    // zeroed its count and ctx in Finalize so alpha(<unk>) = 0, meaning the
-    // computed P_I at lvl=0 is exactly gamma(root) * 1/V. No override here.
 }
 
 template <typename DownLevel>
@@ -873,22 +675,10 @@ float_t Constructor::GetPro(int n, const TokenID* words) const {
 
 void Constructor::Finalize() {
     FixDownPointers();
-    // Parent arrays are no longer needed after FixDownPointers; free them
-    // to reclaim ~5.8 GB for a typical corpus.
     { auto tmp = decltype(bigram_parents_)(); bigram_parents_.swap(tmp); }
     { auto tmp = decltype(leaf_parents_)(); leaf_parents_.swap(tmp); }
     AppendTails();
-    // ctx first so CountCnt can estimate low-order discount params from
-    // continuation counts (see KenLM AdjustCounts).
-    ComputeContinuationCounts();
-    // Closed-vocabulary IME: count.cc drops OOV tokens entirely (no <unk>
-    // is ever emitted), so no id 0 / sentinel appears in the LM. Queries
-    // for unknown ids naturally backoff to root uniform = gamma(root)/V.
-    CountCnt();
     Cut();
-    // Discount now produces interpolated MKN: stores P_I in pro and MKN gamma
-    // in bow. CalcBow/CalcNodeBow are no longer part of the pipeline (they
-    // computed Katz BOWs for the old backoff variant).
     Discount();
 }
 
@@ -933,8 +723,7 @@ void Constructor::Prune(const std::vector<int>& reserves) {
         }
     }
     // Entropy pruning removed entries; rerun Discount so gamma(h) and P_I(w|h)
-    // are recomputed over the surviving set (nt_ stays as pre-prune stats,
-    // which is fine -- D1/D2/D3+ don't need to be re-estimated).
+    // are recomputed over the surviving set.
     Discount();
 }
 

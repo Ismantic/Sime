@@ -27,11 +27,12 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         {"cut", required_argument, nullptr, 'c'},
         {"wordcount", required_argument, nullptr, 'w'},
         {"prune-reserve", required_argument, nullptr, 'r'},
+        {"discount", required_argument, nullptr, 'd'},
         {nullptr, 0, nullptr, 0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "n:o:c:w:r:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:c:w:r:d:", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -53,6 +54,13 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             auto parts = SplitList(optarg);
             for (const auto& p : parts) {
                 opts.prune_reserves.push_back(static_cast<int>(std::stoul(p)));
+            }
+            break;
+        }
+        case 'd': {
+            auto parts = SplitList(optarg);
+            for (const auto& p : parts) {
+                opts.discounts.push_back(std::stod(p));
             }
             break;
         }

@@ -59,7 +59,7 @@ $(OUT)/sime.raw.cnt: $(OUT)/raw.3gram sime.token.dict.txt
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,1,2 \
 		-w $$AV \
-		-r 3500000,3000000
+		-r 2500000,1000000
 
 # Step 5: convert pinyin dict to trie
 convert: $(OUT)/sime.dict

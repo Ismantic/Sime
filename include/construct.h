@@ -2,7 +2,9 @@
 
 #include "common.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <vector>
@@ -11,26 +13,21 @@ namespace sime {
 
 class NeyDiscounter {
 public:
-    void Init(std::uint64_t n1, std::uint64_t n2, std::uint64_t n3, std::uint64_t n4);
-    float_t Discount(float_t cnt) const;
-
-    // Discount amounts D1 / D2 / D3+ (used to compute MKN gamma).
-    float_t D1() const { return v1_; }
-    float_t D2() const { return v2_; }
-    float_t D3() const { return v3_; }
+    void Init(float_t d) { d_ = d; }
+    float_t D() const { return d_; }
+    float_t Discount(float_t cnt) const {
+        if (cnt <= 0.0) return 0.0;
+        return std::max(cnt - d_, 0.0);
+    }
 
 private:
-    float_t v1_ = 0.0;
-    float_t v2_ = 0.0;
-    float_t v3_ = 0.0;
+    float_t d_ = 0.0;
 };
 
 struct ConstructOptions {
     // N-gram order of the model. Supported range: 1..3.
-    // Several hot paths (InsertTrigram, ComputeContinuationCounts,
-    // RunConstruct's input loop) are specialized to this range; extending it
-    // requires generalizing InsertNgram, parent-chain tracking, per-level
-    // continuation count computation, and the merge pipeline's kMaxN.
+    // Several hot paths (InsertTrigram, RunConstruct's input loop) are
+    // specialized to this range.
     int num = 0;
     std::filesystem::path output;
     // Base path for per-order count files. Reads <input>.1gram, .2gram,
@@ -39,6 +36,9 @@ struct ConstructOptions {
     std::uint32_t token_count = 0;
     // Per-order count cutoffs; cutoffs[k-1] applies to k-grams.
     std::vector<std::uint32_t> cutoffs;
+    // Per-order absolute discount values. discounts[0] = unigram D,
+    // discounts[1] = bigram D, etc. Empty → defaults (0.0005, 0.5, 0.5).
+    std::vector<float_t> discounts;
     // Post-cut reserves for bigram/trigram entropy pruning.
     // prune_reserves[0] = bigram reserve, prune_reserves[1] = trigram reserve.
     // Unigrams are never pruned.
@@ -66,19 +66,12 @@ private:
         float_t cnt = 0.0;
         float_t pro = 0.0;
         float_t bow = 0.0;
-        std::uint32_t ctx = 0;
-        // Pre-cut sum of children's ctx at the level below. Populated by
-        // ComputeContinuationCounts before Cut/Prune, used by DiscountLevel
-        // as the MKN "denominator" for lower orders so gamma's normalizer
-        // term reflects lost continuation mass. Not persisted to disk.
-        std::uint32_t ctx_sum = 0;
     };
 
     struct Leave {
         TokenID id = 0;
         float_t cnt = 0.0;
         float_t pro = 0.0;
-        std::uint32_t ctx = 0;
     };
 
     using NodeLevel = std::vector<Node>;
@@ -91,10 +84,8 @@ private:
     int CutLevel(NodeLevel& up_level, Level& current, int threshold,
                  const std::vector<bool>& protect_mask = {});
 
-    void CountCnt();
     void Cut();
     void AppendTails();
-    void ComputeContinuationCounts();
     void Discount();
     void CalcBow();
     const void* FindDown(int level, const Node* node, TokenID i) const;
@@ -111,12 +102,11 @@ private:
 
     template <typename DownLevel>
     void DiscountLevel(NodeLevel& level, DownLevel& down_level, NeyDiscounter& disc,
-                       bool use_context, int parent_lvl);
+                       int parent_lvl);
 
     ConstructOptions opts_;
     std::vector<NodeLevel> node_levels_;
     LeaveLevel leaves_;
-    std::vector<std::array<std::uint64_t, 5>> nt_;
     std::vector<std::uint32_t> cuts_;
     std::vector<NeyDiscounter> discounters_;
 
