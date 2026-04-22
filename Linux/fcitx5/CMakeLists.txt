@@ -42,6 +42,7 @@ add_library(fcitx5_sime MODULE
 target_include_directories(fcitx5_sime PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
+    ${FCITX5_PREFIX}/include/Fcitx5/Module
 )
 
 target_link_libraries(fcitx5_sime

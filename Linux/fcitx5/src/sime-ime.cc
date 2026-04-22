@@ -7,75 +7,13 @@
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
+#include <fcitx/statusarea.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
+#include <fcitx/userinterfacemanager.h>
 
 
 namespace fcitx {
-
-// ===== Punctuation =====
-
-struct PuncResult {
-    std::string text;   // main punctuation
-    std::string after;  // text after cursor (for paired brackets)
-};
-
-static PuncResult mapPunctuation(KeySym sym, SimeState *st) {
-    switch (sym) {
-    case FcitxKey_comma:        return {"，", ""};
-    case FcitxKey_period:       return {"。", ""};
-    case FcitxKey_question:     return {"？", ""};
-    case FcitxKey_exclam:       return {"！", ""};
-    case FcitxKey_semicolon:    return {"；", ""};
-    case FcitxKey_colon:        return {"：", ""};
-    case FcitxKey_quotedbl: {
-        st->doubleQuoteOpen = !st->doubleQuoteOpen;
-        return {st->doubleQuoteOpen ? "\xe2\x80\x9c" : "\xe2\x80\x9d", ""}; // " "
-    }
-    case FcitxKey_apostrophe: {
-        st->singleQuoteOpen = !st->singleQuoteOpen;
-        return {st->singleQuoteOpen ? "\xe2\x80\x98" : "\xe2\x80\x99", ""}; // ' '
-    }
-    case FcitxKey_parenleft:    return {"（", "）"};
-    case FcitxKey_parenright:   return {"）", ""};
-    case FcitxKey_bracketleft:  return {"【", "】"};
-    case FcitxKey_bracketright: return {"】", ""};
-    case FcitxKey_less:         return {"《", "》"};
-    case FcitxKey_greater:      return {"》", ""};
-    default: return {"", ""};
-    }
-}
-
-static void commitPunctuation(InputContext *ic, SimeState *st,
-                               const PuncResult &punc) {
-    if (punc.text.empty()) return;
-
-    std::string full = punc.text + punc.after;
-    if (!punc.after.empty()) {
-        // Paired punctuation: try to place cursor between
-        if (ic->capabilityFlags().test(CapabilityFlag::CommitStringWithCursor)) {
-            auto len = utf8::lengthValidated(punc.text);
-            if (len != utf8::INVALID_LENGTH) {
-                ic->commitStringWithCursor(full, len);
-            } else {
-                ic->commitString(full);
-            }
-        } else {
-            ic->commitString(full);
-            auto afterLen = utf8::lengthValidated(punc.after);
-            if (afterLen != utf8::INVALID_LENGTH) {
-                for (size_t i = 0; i < afterLen; i++) {
-                    ic->forwardKey(Key(FcitxKey_Left));
-                }
-            }
-        }
-    } else {
-        ic->commitString(punc.text);
-    }
-
-    st->lastIsPunc = true;
-    st->lastPuncStr = full;
-}
 
 // ===== Candidate word =====
 
@@ -159,11 +97,40 @@ SimeState *Sime::state(InputContext *ic) {
 
 void Sime::activate(const InputMethodEntry &, InputContextEvent &event) {
     if (!sime_) initSime();
+
+    // Load optional addon modules
+    fullwidth();
+    chttrans();
+
+    // Add status area actions (fullwidth, punctuation, chttrans toggles)
+    auto *ic = event.inputContext();
+    for (const auto *actionName : {"chttrans", "punctuation", "fullwidth"}) {
+        if (auto *action =
+                instance_->userInterfaceManager().lookupAction(actionName)) {
+            ic->statusArea().addAction(StatusGroup::InputMethod, action);
+        }
+    }
 }
 
-void Sime::deactivate(const InputMethodEntry &, InputContextEvent &event) {
-    auto *st = state(event.inputContext());
-    resetState(event.inputContext());
+void Sime::deactivate(const InputMethodEntry &entry, InputContextEvent &event) {
+    auto *ic = event.inputContext();
+    auto *st = state(ic);
+
+    if (event.type() == EventType::InputContextSwitchInputMethod &&
+        !st->empty()) {
+        switch (*config_.switchInputMethodBehavior) {
+        case SwitchInputMethodBehavior::CommitPreedit:
+            ic->commitString(st->committedText() + st->remaining());
+            break;
+        case SwitchInputMethodBehavior::CommitDefault:
+            ic->commitString(commitText(ic));
+            break;
+        case SwitchInputMethodBehavior::Clear:
+            break;
+        }
+    }
+
+    reset(entry, event);
     st->clearContext();
     st->resetPuncState();
 }
@@ -177,6 +144,25 @@ void Sime::resetState(InputContext *ic) {
     ic->inputPanel().reset();
     ic->updatePreedit();
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
+}
+
+// Build the default commit string: selected text + first candidate for remaining
+std::string Sime::commitText(InputContext *ic) const {
+    auto *st = ic->propertyFor(const_cast<FactoryFor<SimeState>*>(&factory_));
+    std::string result = st->committedText();
+    if (sime_) {
+        std::string rem = st->remaining();
+        if (!rem.empty()) {
+            auto results = sime_->DecodeSentence(rem, 0);
+            if (!results.empty())
+                result += results[0].text;
+            else
+                result += rem;
+        }
+    } else {
+        result += st->remaining();
+    }
+    return result;
 }
 
 // Called when user selects a candidate
@@ -593,14 +579,20 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // a-z / A-Z: append to buffer (like fcitx5-pinyin: isLAZ || isUAZ)
+    // Shift+letter when buffer is empty: commit uppercase letter directly
+    if (st->empty() && key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
+        key.states() == KeyState::Shift) {
+        ic->commitString(Key::keySymToUTF8(key.sym()));
+        event.filterAndAccept();
+        return;
+    }
+
+    // a-z: append to buffer as pinyin
     // Apostrophe: separator (only when composing)
     {
         char ch = 0;
-        if ((key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z && !key.hasModifier()) ||
-            (key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
-             key.states() == KeyState::Shift))
-            ch = static_cast<char>(key.sym() | 0x20);
+        if (key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z && !key.hasModifier())
+            ch = static_cast<char>(key.sym());
         else if (key.check(FcitxKey_apostrophe) && !st->empty())
             ch = '\'';
         if (ch) {
@@ -612,21 +604,55 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         }
     }
 
-    // Punctuation
-    auto punc = mapPunctuation(key.sym(), st);
-    if (!punc.text.empty()) {
-        // Auto-select first candidate if composing
-        if (!st->empty() && cl && cl->size() > 0) {
-            cl->candidate(0).select(ic);
+    // Punctuation (via punctuation addon)
+    if (!key.hasModifier() && !key.isKeyPad() && punctuation()) {
+        auto chr = Key::keySymToUnicode(key.sym());
+        if (chr) {
+            auto [punc, puncAfter] =
+                punctuation()->call<IPunctuation::pushPunctuationV2>(
+                    "zh_CN", ic, chr);
+
+            if (!punc.empty()) {
+                // Auto-select first candidate if composing
+                if (!st->empty() && cl && cl->size() > 0) {
+                    cl->candidate(0).select(ic);
+                }
+
+                // Commit punctuation with paired cursor placement
+                auto paired = punc + puncAfter;
+                if (!puncAfter.empty()) {
+                    if (ic->capabilityFlags().test(
+                            CapabilityFlag::CommitStringWithCursor)) {
+                        auto len = utf8::lengthValidated(punc);
+                        if (len != utf8::INVALID_LENGTH) {
+                            ic->commitStringWithCursor(paired, len);
+                        } else {
+                            ic->commitString(paired);
+                        }
+                    } else {
+                        ic->commitString(paired);
+                        auto afterLen = utf8::lengthValidated(puncAfter);
+                        if (afterLen != utf8::INVALID_LENGTH) {
+                            for (size_t i = 0; i < afterLen; i++) {
+                                ic->forwardKey(Key(FcitxKey_Left));
+                            }
+                        }
+                    }
+                } else {
+                    ic->commitString(punc);
+                }
+
+                st->lastIsPunc = true;
+                st->lastPuncStr = paired;
+
+                // Sentence-ending punctuation clears context
+                if (punc == "。" || punc == "？" || punc == "！") {
+                    st->clearContext();
+                }
+                event.filterAndAccept();
+                return;
+            }
         }
-        commitPunctuation(ic, st, punc);
-        // Sentence-ending punctuation clears context
-        if (key.sym() == FcitxKey_period || key.sym() == FcitxKey_question ||
-            key.sym() == FcitxKey_exclam) {
-            st->clearContext();
-        }
-        event.filterAndAccept();
-        return;
     }
 }
 

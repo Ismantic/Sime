@@ -15,7 +15,7 @@ PUNCT = punct.txt
 OUT = output
 VOCAB = $(shell wc -l < sime.token.dict.txt 2>/dev/null || echo 0)
 
-all: $(OUT)/sime.raw.cnt $(OUT)/sime.dict
+all: $(OUT)/sime.cnt $(OUT)/sime.dict
 
 # Step 0: segment raw text
 cut: $(CORPUS)
@@ -61,6 +61,11 @@ $(OUT)/sime.raw.cnt: $(OUT)/raw.3gram sime.token.dict.txt
 		-w $$AV \
 		-r 2500000,1000000
 
+# Step 4.5: compact language model (strip bon/boe)
+compact: $(OUT)/sime.cnt
+$(OUT)/sime.cnt: $(OUT)/sime.raw.cnt
+	$(SIME)/sime-compact $(OUT)/sime.raw.cnt $(OUT)/sime.cnt
+
 # Step 5: convert pinyin dict to trie
 convert: $(OUT)/sime.dict
 $(OUT)/sime.dict: sime.token.dict.txt sime.dict.txt $(EN_DICT)
@@ -71,4 +76,4 @@ clean:
 	rm -f count.bin merge.bin $(CORPUS) chars.cnt.txt sime.dict.txt sime.en.dict.txt sime.token.dict.txt
 	rm -rf $(OUT)
 
-.PHONY: all cut chars.cnt dict count construct convert clean
+.PHONY: all cut chars.cnt dict count construct compact convert clean

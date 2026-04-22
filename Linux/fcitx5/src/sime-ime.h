@@ -12,6 +12,7 @@
 #include <fcitx/inputcontextproperty.h>
 #include <fcitx/inputmethodengine.h>
 #include <fcitx/instance.h>
+#include <fcitx-module/punctuation/punctuation_public.h>
 #include <memory>
 #include <vector>
 
@@ -23,7 +24,13 @@ enum class PreeditMode { No, ComposingPinyin, CommitPreview };
 FCITX_CONFIG_ENUM_NAME_WITH_I18N(PreeditMode, N_("不显示"),
                                  N_("拼音组合"), N_("提交预览"))
 
-class Sime final : public InputMethodEngineV2 {
+enum class SwitchInputMethodBehavior { Clear, CommitPreedit, CommitDefault };
+FCITX_CONFIG_ENUM_NAME_WITH_I18N(SwitchInputMethodBehavior,
+                                 N_("清空"),
+                                 N_("提交预编辑"),
+                                 N_("提交默认候选"))
+
+class Sime final : public InputMethodEngineV3 {
 public:
     Sime(Instance *instance);
     ~Sime() override;
@@ -76,6 +83,13 @@ public:
         OptionWithAnnotation<PreeditMode, PreeditModeI18NAnnotation> preeditMode{
             this, "PreeditMode", _("预编辑模式"), PreeditMode::ComposingPinyin};
 
+        // Switch IM behavior
+        OptionWithAnnotation<SwitchInputMethodBehavior,
+                             SwitchInputMethodBehaviorI18NAnnotation>
+            switchInputMethodBehavior{this, "SwitchInputMethodBehavior",
+                                      _("切换输入法时"),
+                                      SwitchInputMethodBehavior::CommitPreedit};
+
         // Key bindings
         KeyListOption selectionKeys{
             this, "SelectionKeys", _("候选选择键"),
@@ -116,10 +130,15 @@ private:
     void updateUI(InputContext *ic);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
+    std::string commitText(InputContext *ic) const;
     Instance *instance_;
     FactoryFor<SimeState> factory_;
     std::unique_ptr<sime::Sime> sime_;
     Config config_;
+
+    FCITX_ADDON_DEPENDENCY_LOADER(fullwidth, instance_->addonManager());
+    FCITX_ADDON_DEPENDENCY_LOADER(chttrans, instance_->addonManager());
+    FCITX_ADDON_DEPENDENCY_LOADER(punctuation, instance_->addonManager());
 };
 
 class SimeAddonFactory : public AddonFactory {

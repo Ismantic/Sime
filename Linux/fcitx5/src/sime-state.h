@@ -92,17 +92,11 @@ public:
         predicting = false;
     }
 
-    // Punctuation pairing state (persists across composing sessions)
-    bool doubleQuoteOpen = false;
-    bool singleQuoteOpen = false;
-
     // Punctuation undo
     bool lastIsPunc = false;
     std::string lastPuncStr;
 
     void resetPuncState() {
-        doubleQuoteOpen = false;
-        singleQuoteOpen = false;
         lastIsPunc = false;
         lastPuncStr.clear();
     }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Sime (是语) — a pure C++20 Chinese pinyin input method engine using Modified Kneser-Ney N-gram language models with Viterbi beam search decoding. Supports Linux (Fcitx5 plugin) and Android (JNI).
+Sime (是语) — a pure C++20 Chinese pinyin input method engine using Interpolated Absolute Discounting (Ney 1994) N-gram language models with Viterbi beam search decoding. Supports Linux (Fcitx5 plugin) and Android (JNI).
 
 ## Build
 
@@ -18,7 +18,7 @@ For the Fcitx5 plugin: add `-DSIME_ENABLE_FCITX5=ON`, then `sudo cmake --install
 Build outputs in `./build/`:
 - `sime` — interactive decoder (used for manual testing)
 - `sime-count` — n-gram counter (pipeline step 3)
-- `sime-construct` — Modified Kneser-Ney LM builder (pipeline step 4)
+- `sime-construct` — IAD LM builder (pipeline step 4)
 - `sime-converter` — pinyin Trie builder (pipeline step 5)
 - `sime-dump` — inspect a built `.cnt` LM file
 - `sime-cut` — Chinese text segmenter using the LM + dict
@@ -47,7 +47,7 @@ make cut        # 0. (optional) segment raw text via cut.py
 make chars      # 1. Count corpus word frequencies
 make dict       # 2. Generate token dict + pinyin dictionary
 make count      # 3. Parallel n-gram counting (parallel_count.sh)
-make construct  # 4. Build Kneser-Ney language model
+make construct  # 4. Build IAD language model
 make convert    # 5. Build pinyin Trie
 ```
 
@@ -65,7 +65,7 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 - **Dict** (`dict.h/cc` + `dict.inc`): pinyin dictionary with 4 double-array tries (`LetterPinyin`, `LetterEn`, `NumPinyin`, `NumEn`). `dict.inc` is the embedded pinyin syllable table.
 - **Trie** (`trie.h/cc`): generic `DoubleArray` with exact/prefix/pinyin-aware/T9 search modes. Used by both `Dict` and `Cutter`.
 - **Counting** (`count.h/cc`): external-sort n-gram counter used by `sime-count`.
-- **Construction** (`construct.h/cc`): Modified Kneser-Ney smoothing + entropy pruning used by `sime-construct`.
+- **Construction** (`construct.h/cc`): Interpolated Absolute Discounting (IAD) smoothing + entropy pruning used by `sime-construct`. Uses `NeyDiscounter` with per-order fixed D values (defaults: unigram=0.0005, bigram=0.5, trigram=0.5). CLI `-d` flag allows custom D values.
 - **Conversion** (`convert.h/cc`): builds the pinyin Trie; driver for `sime-converter`.
 - **Scorer** (`score.h/cc`): n-gram LM probability lookups with backoff.
 - **Decoder** (`sime.h/cc`): lattice construction + Viterbi beam search for both full-keyboard pinyin and T9/nine-key input (`DecodeNumStr`, `DecodeNumSentence`). Key constants: `NodeSize=40`, `BeamSize=60`.
@@ -83,7 +83,7 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 
 No `<s>`/`</s>` sentence boundary tokens. The corpus is treated as a stream of fragments; each line resets the sliding window so n-grams don't cross boundaries. Decoder starts beam from root; first word is scored via unigram continuation probability.
 
-**MKN smoothing**: interpolated Modified Kneser-Ney. Stored `pro` is `P_I(w|h)` (already interpolated), stored `bow` is MKN gamma `γ(h)`. Query semantics match KenLM's backoff-form storage via the "interpolated-fits-in-backoff" trick.
+**IAD smoothing**: Interpolated Absolute Discounting (Ney 1994). All levels use raw counts with a single fixed discount D per order (no continuation counts). Stored `pro` is `P_I(w|h)` (already interpolated), stored `bow` is the interpolation gamma `γ(h)`. Bigram pruning uses count-weighted PMI; trigram pruning uses Stolcke KL.
 
 **Entropy pruning**: Stolcke 1998 relative-entropy formula, aligned with SRILM `NgramLM.cc::pruneProbs`.
 
