@@ -87,18 +87,10 @@ private:
     void Cut();
     void AppendTails();
     void Discount();
-    void CalcBow();
     const void* FindDown(int level, const Node* node, TokenID i) const;
     float_t GetPro(int level, const TokenID* tokens) const;
     void GetBack(int length, const TokenID* seq,
                  std::uint32_t& boe, std::uint32_t& bon) const;
-
-    template <typename DownLevel>
-    float_t CalcNodeBow(int level,
-                        TokenID* tokens,
-                        const DownLevel& down_level,
-                        std::size_t begin,
-                        std::size_t end) const;
 
     template <typename DownLevel>
     void DiscountLevel(NodeLevel& level, DownLevel& down_level, NeyDiscounter& disc,

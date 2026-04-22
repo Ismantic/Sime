@@ -83,9 +83,6 @@ void Constructor::InsertUnigram(TokenID w, std::uint32_t cnt) {
 void Constructor::InsertBigram(TokenID u, TokenID v, std::uint32_t cnt) {
     if (opts_.num < 2) return;
     if (cnt <= cuts_[2]) {
-        // Filtered bigrams with cnt <= cutoff have no surviving trigram
-        // children (trigram cutoff >= bigram cutoff), so ctx = 0 and they
-        // contribute nothing to nt_[2] or parent ctx_sum.
         return;
     }
     node_levels_[2].push_back(Node{v, 0, static_cast<float_t>(cnt), 0.0, 0.0});
@@ -194,18 +191,12 @@ void Constructor::Cut() {
             continue;
         }
         auto& up_level = node_levels_[lvl - 1];
-
-        // No special-token protection: the LM contains only real vocabulary
-        // tokens (no <s>/</s>/<unk>). Cut runs purely on count thresholds
-        // plus the "keep if it has children" rule in CutLevel.
-        std::vector<bool> protect_mask;
-
         if (lvl == opts_.num) {
-            int new_size = CutLevel(up_level, leaves_, cuts_[lvl], protect_mask);
+            int new_size = CutLevel(up_level, leaves_, cuts_[lvl]);
             leaves_.resize(static_cast<std::size_t>(new_size));
         } else {
             auto& level = node_levels_[lvl];
-            int new_size = CutLevel(up_level, level, cuts_[lvl], protect_mask);
+            int new_size = CutLevel(up_level, level, cuts_[lvl]);
             level.resize(static_cast<std::size_t>(new_size));
         }
     }
@@ -223,42 +214,29 @@ void Constructor::DiscountLevel(NodeLevel& level,
     constexpr float_t MinProb = 1e-12;
     constexpr float_t MaxProb = 1.0 - 1e-9;
 
-    std::size_t up_cursor = 0;
-
     for (std::size_t idx = 0; idx + 1 < level.size(); ++idx) {
         Node& node = level[idx];
         Node& next = level[idx + 1];
 
-        std::uint32_t num_children = 0;
+        std::uint32_t num_children = next.down - node.down;
         float_t sum_children = 0.0;
         for (std::size_t i = node.down; i < next.down; ++i) {
             sum_children += down_level[i].cnt;
-            ++num_children;
         }
 
         float_t denom = std::max(node.cnt, 1.0);
 
-        float_t lost_mass = denom - sum_children;
-        if (lost_mass < 0.0) lost_mass = 0.0;
+        float_t lost_mass = std::max(denom - sum_children, 0.0);
 
         float_t gamma;
-        if (node.down == next.down) {
+        if (num_children == 0) {
             gamma = 1.0;
         } else {
-            float_t gamma_num = disc.D() * static_cast<float_t>(num_children)
-                              + lost_mass;
-            gamma = gamma_num / denom;
+            gamma = (disc.D() * static_cast<float_t>(num_children) + lost_mass)
+                  / denom;
         }
         gamma = std::clamp(gamma, MinProb, MaxProb);
         node.bow = static_cast<float>(-std::log(gamma));
-
-        if (parent_lvl >= 2) {
-            auto& up = node_levels_[parent_lvl - 1];
-            while (up_cursor + 1 < up.size() &&
-                   up[up_cursor + 1].down <= idx) {
-                ++up_cursor;
-            }
-        }
 
         for (std::size_t down_idx = node.down; down_idx < next.down; ++down_idx) {
             float_t discounted = disc.Discount(down_level[down_idx].cnt);
@@ -522,8 +500,6 @@ void Constructor::PruneBigramByPMI() {
 }
 
 void Constructor::Discount() {
-    // Interpolated Absolute Discounting: fixed D per order.
-    // Defaults: unigram ≈ raw MLE (D=0.0005), bigram/trigram D=0.5.
     constexpr float_t kDefaultD[] = {0.0005, 0.5, 0.5};
     for (int lvl = 1; lvl <= opts_.num; ++lvl) {
         std::size_t idx = static_cast<std::size_t>(lvl - 1);
@@ -531,7 +507,6 @@ void Constructor::Discount() {
             ? opts_.discounts[idx]
             : (idx < 3 ? kDefaultD[idx] : 0.5);
         discounters_[lvl].Init(d);
-        std::cerr << "  D[" << lvl << "] = " << d << "\n";
     }
 
     Node& root = node_levels_[0][0];
@@ -548,79 +523,6 @@ void Constructor::Discount() {
         }
     }
 }
-
-template <typename DownLevel>
-float_t Constructor::CalcNodeBow(int level,
-                                 TokenID* words,
-                                 const DownLevel& down_level,
-                                 std::size_t begin,
-                                 std::size_t end) const {
-    if (begin >= end) {
-        return 1.0;
-    }
-    float_t sum_down = 0.0;
-    float_t sum_backoff = 0.0;
-    for (std::size_t idx = begin; idx < end; ++idx) {
-        TokenID tid = down_level[idx].id;
-        float_t pro = std::exp(-down_level[idx].pro);
-        sum_down += pro;
-        words[level + 1] = tid;
-        sum_backoff += GetPro(level, words + 2);
-    }
-    if (sum_down >= 1.0 || sum_backoff >= 1.0) {
-        constexpr float_t BowEpsilon = 0.0001;
-        float_t bow = std::max(sum_down, sum_backoff) + BowEpsilon;
-        return (bow - sum_down) / (bow - sum_backoff);
-    }
-    return (1.0 - sum_down) / (1.0 - sum_backoff);
-}
-
-
-void Constructor::CalcBow() {
-    std::vector<TokenID> words(opts_.num + 2, 0);
-    for (int lvl = 0; lvl < opts_.num; ++lvl) {
-        auto& level = node_levels_[lvl];
-        if (level.size() <= 1) {
-            continue;
-        }
-        std::vector<Node*> bases(static_cast<std::size_t>(lvl + 1));
-        std::vector<int> idx(static_cast<std::size_t>(lvl + 1), 0);
-        for (int i = 0; i <= lvl; ++i) {
-            bases[static_cast<std::size_t>(i)] = node_levels_[i].data();
-        }
-        int sz = static_cast<int>(level.size()) - 1;
-        for (; idx[static_cast<std::size_t>(lvl)] < sz; ++idx[static_cast<std::size_t>(lvl)]) {
-            words[lvl] = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)]].id;
-            for (int k = lvl - 1; k >= 0; --k) {
-                Node* base = bases[static_cast<std::size_t>(k)];
-                while (base[idx[static_cast<std::size_t>(k)] + 1].down <=
-                       static_cast<std::uint32_t>(idx[static_cast<std::size_t>(k + 1)])) {
-                    ++idx[static_cast<std::size_t>(k)];
-                }
-                words[k] = base[idx[static_cast<std::size_t>(k)]].id;
-            }
-            Node& node = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)]];
-            Node& next = bases[static_cast<std::size_t>(lvl)][idx[static_cast<std::size_t>(lvl)] + 1];
-            float_t bow = 1.0;
-            if (lvl == opts_.num - 1) {
-                bow = CalcNodeBow(lvl,
-                                    words.data(),
-                                    leaves_,
-                                    node.down,
-                                    next.down);
-            } else {
-                bow = CalcNodeBow(lvl,
-                                    words.data(),
-                                    node_levels_[lvl + 1],
-                                    node.down,
-                                    next.down);
-            }
-            node.bow = -std::log(bow);
-            node.bow = static_cast<float>(node.bow);
-        }
-    }
-}
-
 
 const void* Constructor::FindDown(int level, const Node* node, TokenID id) const {
     std::uint32_t begin = node->down;
@@ -646,12 +548,9 @@ const void* Constructor::FindDown(int level, const Node* node, TokenID id) const
 }
 
 float_t Constructor::GetPro(int n, const TokenID* words) const {
-    // Returns the LM probability P(words[n-1] | words[0..n-2]) using the
-    // currently stored `pro` (as -log P) and `bow` (as -log gamma or -log
-    // Katz BOW, depending on caller's semantics). The recursion is the same
-    // for both interpolated and backoff MKN (KenLM trick): descend the Trie
-    // through the history; on a miss, multiply by the deepest-reached node's
-    // bow and retry with a shorter history.
+    // Returns the LM probability P(words[n-1] | words[0..n-2]).
+    // Descend the Trie through the history; on a miss, multiply by gamma
+    // (stored as -log in bow) and retry with a shorter history.
     if (n <= 0 || node_levels_[0].empty()) {
         return std::exp(-node_levels_[0][0].pro);  // uniform prior
     }
@@ -680,6 +579,9 @@ void Constructor::Finalize() {
     AppendTails();
     Cut();
     Discount();
+    for (int lvl = 1; lvl <= opts_.num; ++lvl) {
+        std::cerr << "  D[" << lvl << "] = " << discounters_[lvl].D() << "\n";
+    }
 }
 
 void Constructor::Prune(const std::vector<int>& reserves) {
