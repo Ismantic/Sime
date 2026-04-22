@@ -163,6 +163,7 @@ std::string DictConverter::PiecesToString(
 //       token_id: uint32_t
 //       pieces_len: uint16_t
 //       pieces_data: char[pieces_len]
+//       null_terminator: char ('\0')
 
 bool DictConverter::Write(const std::filesystem::path& output) {
     constexpr std::size_t HeaderSize = 5 * sizeof(uint32_t);
@@ -249,13 +250,14 @@ void DictConverter::WriteSideTable(
             pos = buffer.size();
             buffer.resize(pos + sizeof(item.id));
             std::memcpy(buffer.data() + pos, &item.id, sizeof(item.id));
-            // pieces
+            // pieces (null-terminated for zero-copy access)
             auto pieces_len = static_cast<uint16_t>(item.pieces.size());
             pos = buffer.size();
-            buffer.resize(pos + sizeof(pieces_len) + pieces_len);
+            buffer.resize(pos + sizeof(pieces_len) + pieces_len + 1);
             std::memcpy(buffer.data() + pos, &pieces_len, sizeof(pieces_len));
             std::memcpy(buffer.data() + pos + sizeof(pieces_len),
                         item.pieces.data(), pieces_len);
+            buffer[pos + sizeof(pieces_len) + pieces_len] = '\0';
         }
     }
 }

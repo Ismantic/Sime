@@ -52,14 +52,9 @@ public:
 private:
     trie::DoubleArray dats_[DatCount];
 
-    // Side table: entries_[type][index] = list of Items
-    struct EntryData {
-        std::vector<TokenID> ids;
-        std::vector<std::string> pieces;  // parallel with ids
-    };
-    std::vector<EntryData> entries_[DatCount];
-    // Flattened Item arrays for GetEntry (built from EntryData)
-    std::vector<std::vector<Item>> items_[DatCount];
+    // Side table: offset into blob_ for each entry (zero-copy access)
+    std::vector<uint32_t> side_offsets_[DatCount];
+    mutable std::vector<Item> scratch_;  // reused by GetEntry
 
     // Token text table
     uint32_t token_count_ = 0;

@@ -26,9 +26,9 @@ Dict::~Dict() { Clear(); }
 void Dict::Clear() {
     for (int t = 0; t < DatCount; ++t) {
         dats_[t] = trie::DoubleArray();
-        entries_[t].clear();
-        items_[t].clear();
+        side_offsets_[t].clear();
     }
+    scratch_.clear();
     token_count_ = 0;
     blob_.clear();
     token_strs_.clear();
@@ -86,26 +86,20 @@ bool Dict::Load(const std::filesystem::path& path) {
 
         if (offset + sizeof(uint32_t) > size) continue;
 
-        // Parse side table
+        // Parse side table: build offset index, no data copy
         uint32_t entry_count = 0;
         std::memcpy(&entry_count, blob_.data() + offset, sizeof(entry_count));
         offset += sizeof(entry_count);
 
-        entries_[t].resize(entry_count);
-        items_[t].resize(entry_count);
+        side_offsets_[t].resize(entry_count);
 
         for (uint32_t e = 0; e < entry_count; ++e) {
+            side_offsets_[t][e] = static_cast<uint32_t>(offset);
+
             if (offset + sizeof(uint16_t) > size) break;
             uint16_t item_count = 0;
             std::memcpy(&item_count, blob_.data() + offset, sizeof(item_count));
             offset += sizeof(item_count);
-
-            auto& entry = entries_[t][e];
-            entry.ids.reserve(item_count);
-            entry.pieces.reserve(item_count);
-
-            auto& item_vec = items_[t][e];
-            item_vec.reserve(item_count);
 
             for (uint16_t j = 0; j < item_count; ++j) {
                 if (offset + sizeof(TokenID) + sizeof(uint16_t) > size) break;
@@ -119,17 +113,9 @@ bool Dict::Load(const std::filesystem::path& path) {
                 offset += sizeof(pieces_len);
 
                 if (offset + pieces_len > size) break;
-
-                entry.ids.push_back(id);
-                entry.pieces.emplace_back(blob_.data() + offset, pieces_len);
-                offset += pieces_len;
+                offset += pieces_len + 1;  // +1 for null terminator
 
                 token_set_.insert(id);
-            }
-
-            // Build Item array for GetEntry
-            for (std::size_t j = 0; j < entry.ids.size(); ++j) {
-                item_vec.push_back({entry.ids[j], entry.pieces[j].c_str()});
             }
         }
     }
@@ -138,9 +124,29 @@ bool Dict::Load(const std::filesystem::path& path) {
 }
 
 Dict::Entry Dict::GetEntry(DatType type, uint32_t index) const {
-    if (index >= items_[type].size()) return {nullptr, 0};
-    const auto& vec = items_[type][index];
-    return {vec.data(), static_cast<uint32_t>(vec.size())};
+    if (index >= side_offsets_[type].size()) return {nullptr, 0};
+    scratch_.clear();
+
+    auto offset = static_cast<std::size_t>(side_offsets_[type][index]);
+    uint16_t item_count = 0;
+    std::memcpy(&item_count, blob_.data() + offset, sizeof(item_count));
+    offset += sizeof(item_count);
+
+    for (uint16_t j = 0; j < item_count; ++j) {
+        TokenID id = 0;
+        std::memcpy(&id, blob_.data() + offset, sizeof(id));
+        offset += sizeof(id);
+
+        uint16_t pieces_len = 0;
+        std::memcpy(&pieces_len, blob_.data() + offset, sizeof(pieces_len));
+        offset += sizeof(pieces_len);
+
+        const char* pieces = blob_.data() + offset;
+        offset += pieces_len + 1;  // +1 for null terminator
+
+        scratch_.push_back({id, pieces});
+    }
+    return {scratch_.data(), static_cast<uint32_t>(scratch_.size())};
 }
 
 const char32_t* Dict::TokenAt(uint32_t i) const {
