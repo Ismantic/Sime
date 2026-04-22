@@ -4,6 +4,9 @@ docs/
 # Dict (kept locally, not tracked)
 dict/
 
+# Data (runtime LM artifacts, kept locally, not tracked)
+data/
+
 # Build
 build/
 build_fcitx5/
