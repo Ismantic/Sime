@@ -14,6 +14,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/count.cc
     ${NEW_SRC_DIR}/construct.cc
     ${NEW_SRC_DIR}/convert.cc
+    ${NEW_SRC_DIR}/compact.cc
     ${NEW_SRC_DIR}/score.cc
     ${NEW_SRC_DIR}/dict.cc
     ${NEW_SRC_DIR}/state.cc
@@ -45,12 +46,16 @@ target_link_libraries(sime-dump PRIVATE sime_core)
 add_executable(sime-cut ${NEW_ROOT}/bin/cutter.cc)
 target_link_libraries(sime-cut PRIVATE sime_core)
 
+add_executable(sime-compact ${NEW_ROOT}/bin/compact.cc)
+target_link_libraries(sime-compact PRIVATE sime_core)
+
 
 set(_sime_targets
     sime-count
     sime-construct
     sime-converter
     sime-dump
+    sime-compact
     #sime-cut
     sime
 )

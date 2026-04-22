@@ -2,6 +2,7 @@
 
 #include "common.h"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <utility>
@@ -39,14 +40,8 @@ public:
     void Back(Pos& pos) const;
     float_t UnknownPenalty() const;
 
-    // Initial decoder state: navigates from root through (num-1) <s> tokens
-    // so the first scored word uses the highest-order context. Falls back
-    // to a shallower level (down to root) if <s> padding nodes aren't in
-    // the model.
     Pos StartPos() const;
 
-    // Enumerate successor tokens from context, sorted by cost (best first).
-    // context is backed off in-place to the resolved position.
     std::vector<std::pair<TokenID, float_t>> NextTokens(
         Pos& context, std::size_t num) const;
 
@@ -63,37 +58,47 @@ public:
     std::vector<NGram> DumpLevel(int level) const;
 
 private:
-    // Layout matches disk format — enables mmap without copy.
-    struct NodeEntry {
-        TokenID token = 0;
-        float pro = 0.0f;
-        std::uint32_t down = 0;
-        float bow = 0.0f;
-        std::uint32_t bon = 0;
-        std::uint32_t boe = 0;
+    // SoA level view for quantized compact format.
+    struct LevelView {
+        const TokenID* tokens = nullptr;
+        const std::uint16_t* pro_q = nullptr;   // 16-bit quantized
+        const std::uint8_t* bow_q = nullptr;     // 8-bit quantized
+        const std::uint32_t* down = nullptr;
+        std::size_t size = 0;
     };
 
-    struct LeaveEntry {
-        TokenID token = 0;
-        float pro = 0.0f;
-        std::uint32_t bon = 0;
-        std::uint32_t boe = 0;
-    };
+    // Dequantize helpers.
+    float NodePro(int level, std::size_t index) const {
+        return qt_pro_[static_cast<std::size_t>(level)]
+                      [node_levels_[static_cast<std::size_t>(level)].pro_q[index]];
+    }
+    float NodeBow(int level, std::size_t index) const {
+        return qt_bow_[static_cast<std::size_t>(level)]
+                      [node_levels_[static_cast<std::size_t>(level)].bow_q[index]];
+    }
+    float LeafPro(std::size_t index) const {
+        return qt_leaf_pro_[leaf_pro_q_[index]];
+    }
 
     std::size_t GetNode(int level, std::size_t b, std::size_t e, TokenID w) const;
     std::size_t GetLeave(std::size_t b, std::size_t e, TokenID w) const;
+    std::size_t FindNode(int level, TokenID token) const;
 
     int num_ = 0;
     std::vector<int> sizes_;
 
-    // mmap-backed arrays — point directly into mapped file.
-    struct LevelView {
-        const NodeEntry* data = nullptr;
-        std::size_t size = 0;
-    };
+    // mmap-backed SoA arrays.
     std::vector<LevelView> node_levels_;
-    const LeaveEntry* leave_data_ = nullptr;
+
+    // Leaf SoA.
+    const TokenID* leaf_tokens_ = nullptr;
+    const std::uint16_t* leaf_pro_q_ = nullptr;
     std::size_t leave_size_ = 0;
+
+    // Quantization tables: pro is 65536-entry (16-bit), bow is 256-entry (8-bit).
+    std::vector<std::vector<float>> qt_pro_;    // [level][0..65535]
+    std::vector<std::vector<float>> qt_bow_;    // [level][0..255]
+    std::vector<float> qt_leaf_pro_;            // [0..65535]
 
     // mmap state
     void* mmap_addr_ = nullptr;
