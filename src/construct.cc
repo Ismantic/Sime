@@ -616,7 +616,10 @@ void Constructor::Prune(const std::vector<int>& reserves) {
     if (opts_.num >= 2) {
         PruneBigramByPMI();
     }
-    if (opts_.num >= 3) {
+    if (opts_.num >= 3 && prune_cutoffs_[opts_.num] > 0) {
+        // Recompute probabilities after bigram PMI pruning so that the
+        // Stolcke entropy scores for trigrams use up-to-date P(w|h) / γ(h).
+        Discount();
         int remaining = prune_sizes_[opts_.num] - 1;
         int reserve = reserve_for(opts_.num);
         if (remaining > reserve) {
