@@ -1,6 +1,6 @@
 pkgname=fcitx5-sime
 pkgver=2026.04.22
-pkgrel=4
+pkgrel=5
 pkgdesc="Sime Chinese input method for Fcitx5"
 arch=("x86_64")
 url="https://github.com/Ismantic/Sime"
