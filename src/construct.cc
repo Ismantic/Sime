@@ -402,8 +402,10 @@ void Constructor::PruneLevel(int level) {
         candidates.push_back(
             NodeScore{dist, static_cast<std::uint32_t>(idx), has_down});
     }
-    std::sort(candidates.begin(), candidates.end());
     int cuts = std::min(prune_cutoffs_[level], static_cast<int>(candidates.size()));
+    std::nth_element(candidates.begin(),
+                     candidates.begin() + cuts,
+                     candidates.end());
     float_t mark = 0.0;
     for (int i = 0; i < cuts; ++i) {
         if (candidates[i].has_down) continue;
@@ -620,6 +622,8 @@ void Constructor::Prune(const std::vector<int>& reserves) {
         // Recompute probabilities after bigram PMI pruning so that the
         // Stolcke entropy scores for trigrams use up-to-date P(w|h) / γ(h).
         Discount();
+        prune_cache_level_ = -1;
+        prune_cache_index_ = -1;
         int remaining = prune_sizes_[opts_.num] - 1;
         int reserve = reserve_for(opts_.num);
         if (remaining > reserve) {

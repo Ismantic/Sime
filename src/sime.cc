@@ -137,20 +137,9 @@ void Sime::InitNumNet(std::string_view start,
             emit_dat(s, Dict::LetterEn, suffix, p, false);
 
             // Tail expansion for prefix letters
-            if (expansion) {
-                std::size_t tail_end = s;
-                while (tail_end < p && start[tail_end] != '\'') ++tail_end;
-                if (tail_end == p) {
-                    std::string tail_clean;
-                    for (std::size_t i = s; i < p; ++i) {
-                        if (start[i] == '\'') continue;
-                        tail_clean.push_back(start[i]);
-                    }
-                    if (!tail_clean.empty() && !Dict::IsKnownPinyin(tail_clean)) {
-                        expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true);
-                        expand_dat(s, Dict::LetterEn, tail_clean, p, 1024, false);
-                    }
-                }
+            if (expansion && !Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
+                expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true);
+                expand_dat(s, Dict::LetterEn, suffix, p, 1024, false);
             }
             continue;
         }
@@ -551,35 +540,32 @@ void Sime::InitNet(std::string_view input,
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
             Dict::LetterEn);
 
-        // Tail expansion
-        if (expansion) {
-            std::string tail_clean;
-            for (char c : suffix) {
-                if (c == '\'') continue;
-                tail_clean.push_back(c);
-            }
-            if (!tail_clean.empty() && !Dict::IsKnownPinyin(tail_clean)) {
-                auto expand_results = [&](
-                    const std::vector<trie::SearchResult>& results,
-                    Dict::DatType type, std::size_t tail_len) {
-                    for (const auto& r : results) {
-                        if (r.length <= tail_len) continue;
-                        auto entry = dict_.GetEntry(type, r.value);
-                        for (uint32_t i = 0; i < entry.count; ++i) {
-                            emit(s, total, entry.items[i].id,
-                                 entry.items[i].pieces);
-                        }
+        // Tail expansion: use suffix as-is for both pinyin and English.
+        // PrefixSearchPinyin handles '\'' natively; English trie keys
+        // contain literal '\'' (don't, it's) so passing it through
+        // naturally rejects pinyin-separator patterns like g'b'd (no
+        // English word starts with "g'") while still matching don't.
+        if (expansion && !Dict::IsKnownPinyin(std::string(suffix))) {
+            auto expand_results = [&](
+                const std::vector<trie::SearchResult>& results,
+                Dict::DatType type, std::size_t tail_len) {
+                for (const auto& r : results) {
+                    if (r.length <= tail_len) continue;
+                    auto entry = dict_.GetEntry(type, r.value);
+                    for (uint32_t i = 0; i < entry.count; ++i) {
+                        emit(s, total, entry.items[i].id,
+                             entry.items[i].pieces);
                     }
-                };
-                expand_results(
-                    dict_.Dat(Dict::LetterPinyin).FindWordsWithPrefixPinyin(
-                        suffix, 512),
-                    Dict::LetterPinyin, suffix.size());
-                expand_results(
-                    dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(
-                        tail_clean, 1024),
-                    Dict::LetterEn, tail_clean.size());
-            }
+                }
+            };
+            expand_results(
+                dict_.Dat(Dict::LetterPinyin).FindWordsWithPrefixPinyin(
+                    suffix, 512),
+                Dict::LetterPinyin, suffix.size());
+            expand_results(
+                dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(
+                    suffix, 1024),
+                Dict::LetterEn, suffix.size());
         }
     }
 

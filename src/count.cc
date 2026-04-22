@@ -1,16 +1,15 @@
 #include "count.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <memory>
 #include <queue>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -39,18 +38,29 @@ struct RunRange {
 };
 
 template <std::size_t N>
-void FlushCounts(std::map<Item<N>, Cnt>& counts,
+void FlushCounts(std::vector<Group<N>>& counts,
                  std::fstream& swap,
                  std::vector<RunRange<N>>& runs) {
     if (counts.empty()) {
         return;
     }
+    std::sort(counts.begin(), counts.end(),
+              [](const Group<N>& a, const Group<N>& b) {
+                  return a.item < b.item;
+              });
+    // Merge adjacent duplicates.
     swap.seekp(0, std::ios::end);
     auto start = static_cast<std::uint64_t>(swap.tellp());
-    for (const auto& [gram, freq] : counts) {
-        Group<N> rec{gram, freq};
-        WriteGroup(swap, rec);
+    Group<N> cur = counts[0];
+    for (std::size_t i = 1; i < counts.size(); ++i) {
+        if (counts[i].item == cur.item) {
+            cur.cnt += counts[i].cnt;
+        } else {
+            WriteGroup(swap, cur);
+            cur = counts[i];
+        }
     }
+    WriteGroup(swap, cur);
     auto end = static_cast<std::uint64_t>(swap.tellp());
     runs.push_back(RunRange<N>{start, end});
     counts.clear();
@@ -165,7 +175,7 @@ void MergeRuns(const std::filesystem::path& swap_path,
 
 template <std::size_t N>
 struct Bucket {
-    std::map<Item<N>, Cnt> counts;
+    std::vector<Group<N>> counts;
     std::fstream swap;
     std::vector<RunRange<N>> runs;
     std::filesystem::path swap_path;
@@ -182,12 +192,13 @@ struct Bucket {
         if (!swap.is_open()) {
             throw std::runtime_error("Failed to open swap file: " + swap_path.string());
         }
+        counts.reserve(cap);
         runs.reserve(16);
         active = true;
     }
 
     void Feed(const Item<N>& gram) {
-        ++counts[gram];
+        counts.push_back(Group<N>{gram, 1});
         if (counts.size() >= count_max) {
             FlushCounts(counts, swap, runs);
         }
