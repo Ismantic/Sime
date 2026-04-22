@@ -286,7 +286,7 @@ def main():
     with open(args.en_output, "w") as fout:
         for word in all_tokens:
             if is_english(word):
-                fout.write(f"{word} {word.lower()}\n")
+                fout.write(f"{word} {word}\n")
                 en_count += 1
 
     print(f"\nen tokens: {en_count}", file=sys.stderr)

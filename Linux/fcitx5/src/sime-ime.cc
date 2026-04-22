@@ -579,19 +579,13 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
         return;
     }
 
-    // Shift+letter when buffer is empty: commit uppercase letter directly
-    if (st->empty() && key.sym() >= FcitxKey_A && key.sym() <= FcitxKey_Z &&
-        key.states() == KeyState::Shift) {
-        ic->commitString(Key::keySymToUTF8(key.sym()));
-        event.filterAndAccept();
-        return;
-    }
-
-    // a-z: append to buffer as pinyin
+    // a-z / Shift+A-Z: append to buffer (preserving case)
     // Apostrophe: separator (only when composing)
     {
         char ch = 0;
-        if (key.sym() >= FcitxKey_a && key.sym() <= FcitxKey_z && !key.hasModifier())
+        if (key.isLAZ())
+            ch = static_cast<char>(key.sym());
+        else if (key.isUAZ())
             ch = static_cast<char>(key.sym());
         else if (key.check(FcitxKey_apostrophe) && !st->empty())
             ch = '\'';

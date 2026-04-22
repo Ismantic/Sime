@@ -65,8 +65,6 @@ bool ParseLine(const std::string& line,
 bool DictConverter::LoadTokens(const std::filesystem::path& path) {
     maps_[0].clear();
     maps_[1].clear();
-    maps_[2].clear();
-    maps_[3].clear();
     tokens_.clear();
     token_ids_.clear();
 
@@ -149,11 +147,11 @@ std::string DictConverter::PiecesToString(
 }
 
 // Binary format:
-//   Header: 7 x uint32_t
+//   Header: 5 x uint32_t
 //     [0] token_count
 //     [1] token_table_offset
-//     [2..5] section_offsets[4] (each = DAT + side table)
-//     [6] total_size
+//     [2..3] section_offsets[2] (each = DAT + side table)
+//     [4] total_size
 //   Token text table (char32_t, null-terminated per token)
 //   4 x { DAT serialized | side table }
 //
@@ -167,7 +165,7 @@ std::string DictConverter::PiecesToString(
 //       pieces_data: char[pieces_len]
 
 bool DictConverter::Write(const std::filesystem::path& output) {
-    constexpr std::size_t HeaderSize = 7 * sizeof(uint32_t);
+    constexpr std::size_t HeaderSize = 5 * sizeof(uint32_t);
     std::vector<char> buffer;
     buffer.resize(HeaderSize);
 
@@ -220,7 +218,7 @@ bool DictConverter::Write(const std::filesystem::path& output) {
     header[1] = token_offset;
     for (int t = 0; t < Dict::DatCount; ++t)
         header[2 + t] = section_offsets[t];
-    header[6] = total_size;
+    header[4] = total_size;
 
     // Write file
     std::ofstream out(output, std::ios::binary | std::ios::trunc);

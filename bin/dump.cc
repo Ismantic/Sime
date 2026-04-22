@@ -26,8 +26,6 @@ const char* DatName(int t) {
     switch (t) {
     case 0: return "letter_pinyin";
     case 1: return "letter_en";
-    case 2: return "num_pinyin";
-    case 3: return "num_en";
     default: return "unknown";
     }
 }
@@ -54,7 +52,7 @@ int main(int argc, char* argv[]) {
 
     if (dict_path.empty() || (out_prefix.empty() && query.empty())) {
         std::cerr << "Usage: sime-dump --dict <dict.bin> [--cnt <model.bin>] --out <prefix>\n"
-                  << "       sime-dump --dict <dict.bin> --query <type:0-3> <key>\n";
+                  << "       sime-dump --dict <dict.bin> --query <type:0-1> <key>\n";
         return 1;
     }
 

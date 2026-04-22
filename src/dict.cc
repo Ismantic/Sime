@@ -43,7 +43,7 @@ bool Dict::Load(const std::filesystem::path& path) {
     in.seekg(0, std::ios::end);
     const auto size = static_cast<std::size_t>(in.tellg());
     in.seekg(0, std::ios::beg);
-    if (size < 7 * sizeof(uint32_t)) return false;
+    if (size < 5 * sizeof(uint32_t)) return false;
 
     blob_.resize(size);
     if (!in.read(blob_.data(), static_cast<std::streamsize>(size))) {
@@ -58,7 +58,7 @@ bool Dict::Load(const std::filesystem::path& path) {
     uint32_t section_offsets[DatCount];
     for (int t = 0; t < DatCount; ++t)
         section_offsets[t] = header[2 + t];
-    uint32_t total_size = header[6];
+    uint32_t total_size = header[4];
     if (total_size != size) { Clear(); return false; }
 
     // Parse token text table
@@ -164,14 +164,22 @@ bool Dict::IsKnownPinyin(const std::string& text) {
 
 char Dict::LetterToNum(char c) {
     switch (c) {
-    case 'a': case 'b': case 'c': return '2';
-    case 'd': case 'e': case 'f': return '3';
-    case 'g': case 'h': case 'i': return '4';
-    case 'j': case 'k': case 'l': return '5';
-    case 'm': case 'n': case 'o': return '6';
-    case 'p': case 'q': case 'r': case 's': return '7';
-    case 't': case 'u': case 'v': return '8';
-    case 'w': case 'x': case 'y': case 'z': return '9';
+    case 'a': case 'b': case 'c':
+    case 'A': case 'B': case 'C': return '2';
+    case 'd': case 'e': case 'f':
+    case 'D': case 'E': case 'F': return '3';
+    case 'g': case 'h': case 'i':
+    case 'G': case 'H': case 'I': return '4';
+    case 'j': case 'k': case 'l':
+    case 'J': case 'K': case 'L': return '5';
+    case 'm': case 'n': case 'o':
+    case 'M': case 'N': case 'O': return '6';
+    case 'p': case 'q': case 'r': case 's':
+    case 'P': case 'Q': case 'R': case 'S': return '7';
+    case 't': case 'u': case 'v':
+    case 'T': case 'U': case 'V': return '8';
+    case 'w': case 'x': case 'y': case 'z':
+    case 'W': case 'X': case 'Y': case 'Z': return '9';
     default: return 0;
     }
 }
@@ -179,8 +187,7 @@ char Dict::LetterToNum(char c) {
 std::string Dict::LettersToNums(std::string_view letters) {
     std::string result;
     for (char ch : letters) {
-        char d = LetterToNum(static_cast<char>(
-            std::tolower(static_cast<unsigned char>(ch))));
+        char d = LetterToNum(ch);
         if (d != 0) result.push_back(d);
     }
     return result;
@@ -188,14 +195,14 @@ std::string Dict::LettersToNums(std::string_view letters) {
 
 const char* Dict::NumToLetters(uint8_t digit) {
     switch (digit) {
-    case '2': return "abc";
-    case '3': return "def";
-    case '4': return "ghi";
-    case '5': return "jkl";
-    case '6': return "mno";
-    case '7': return "pqrs";
-    case '8': return "tuv";
-    case '9': return "wxyz";
+    case '2': return "abcABC";
+    case '3': return "defDEF";
+    case '4': return "ghiGHI";
+    case '5': return "jklJKL";
+    case '6': return "mnoMNO";
+    case '7': return "pqrsPQRS";
+    case '8': return "tuvTUV";
+    case '9': return "wxyzWXYZ";
     default: return nullptr;
     }
 }

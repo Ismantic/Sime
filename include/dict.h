@@ -17,9 +17,7 @@ public:
     enum DatType : int {
         LetterPinyin = 0,
         LetterEn = 1,
-        NumPinyin = 2,
-        NumEn = 3,
-        DatCount = 4,
+        DatCount = 2,
     };
 
     struct Item {
