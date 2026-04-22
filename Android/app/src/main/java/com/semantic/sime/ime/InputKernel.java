@@ -1,7 +1,6 @@
 package com.semantic.sime.ime;
 
 import com.semantic.sime.ime.engine.DecodeResult;
-import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.Decoder;
 import com.semantic.sime.ime.PinyinUtil;
 import com.semantic.sime.ime.keyboard.KeyType;
@@ -29,6 +28,9 @@ public class InputKernel {
      * default {@code nbest=0}.
      */
     private static final int EXTRA_SENTENCES = 0;
+
+    /** Number of predictions / completions to request. */
+    private static final int PREDICTION_LIMIT = 10;
 
     /** Side effects requested by the kernel, forwarded to the IME service. */
     public interface Listener {
@@ -72,6 +74,12 @@ public class InputKernel {
     private List<PinyinAlt> pinyinAlts = Collections.emptyList();
     /** Segmented pinyin string of the current top candidate, for preedit. */
     private String topUnits = "";
+
+    /** Token IDs of each selection, parallel with state.selections. */
+    private final List<int[]> selectionTokenIds = new ArrayList<>();
+
+    /** English keyboard buffer (not yet committed). */
+    private final StringBuilder englishBuffer = new StringBuilder();
 
     /**
      * A possible segmentation of the leading digits into pinyin letters.
@@ -127,6 +135,8 @@ public class InputKernel {
     public List<DecodeResult> getCandidates()   { return candidates; }
     public List<PinyinAlt> getPinyinAlts()   { return pinyinAlts; }
     public String getTopUnits()              { return topUnits; }
+    public String getEnglishBuffer()         { return englishBuffer.toString(); }
+    public boolean isPredicting()            { return state.predicting; }
 
     public void setChineseLayout(ChineseLayout l) {
         this.chineseLayout = l;
@@ -166,6 +176,12 @@ public class InputKernel {
             if (listener != null) listener.onCommitText(T9_NUM_PUNCTUATION[0]);
             return;
         }
+        // T9: while composing, the 1 key inserts a separator instead
+        // of opening the punctuation picker (mirrors Linux sime.cc).
+        if (chineseLayout == ChineseLayout.T9 && !state.buffer.isEmpty()) {
+            handleSeparator();
+            return;
+        }
         java.util.ArrayList<DecodeResult> out =
                 new java.util.ArrayList<>(T9_NUM_PUNCTUATION.length);
         for (String p : T9_NUM_PUNCTUATION) {
@@ -188,6 +204,13 @@ public class InputKernel {
     // ===== Letter / digit =====
 
     private void handleLetter(char c) {
+        if (mode == KeyboardMode.ENGLISH) {
+            exitPrediction();
+            englishBuffer.append(c);
+            if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+            refreshEnglishCompletions();
+            return;
+        }
         if (mode != KeyboardMode.CHINESE) {
             if (listener != null) listener.onCommitText(String.valueOf(c));
             return;
@@ -216,6 +239,13 @@ public class InputKernel {
     }
 
     private void handleSeparator() {
+        if (mode == KeyboardMode.ENGLISH) {
+            // Apostrophe in English mode: append to buffer (e.g. "don't")
+            englishBuffer.append('\'');
+            if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+            refreshEnglishCompletions();
+            return;
+        }
         if (mode != KeyboardMode.CHINESE) {
             if (listener != null) listener.onCommitText("'");
             return;
@@ -248,6 +278,21 @@ public class InputKernel {
     // ===== Space / Enter =====
 
     private void handleSpace() {
+        if (mode == KeyboardMode.ENGLISH) {
+            if (englishBuffer.length() > 0) {
+                commitEnglishBuffer();
+            } else {
+                if (listener != null) listener.onCommitText(" ");
+            }
+            return;
+        }
+        if (state.predicting) {
+            // In prediction mode, space picks the first prediction.
+            if (!candidates.isEmpty()) {
+                onPredictionPick(0);
+            }
+            return;
+        }
         if (state.buffer.isEmpty()) {
             if (listener != null) listener.onCommitText(" ");
             return;
@@ -260,6 +305,20 @@ public class InputKernel {
     }
 
     private void handleEnter() {
+        if (mode == KeyboardMode.ENGLISH) {
+            if (englishBuffer.length() > 0) {
+                commitEnglishBuffer();
+            } else {
+                if (listener != null) listener.onSendEnter();
+            }
+            return;
+        }
+        if (state.predicting) {
+            exitPrediction();
+            publish();
+            if (listener != null) listener.onSendEnter();
+            return;
+        }
         if (state.buffer.isEmpty()) {
             if (listener != null) listener.onSendEnter();
             return;
@@ -313,6 +372,26 @@ public class InputKernel {
     // ===== Backspace =====
 
     private void handleBackspace() {
+        if (mode == KeyboardMode.ENGLISH) {
+            if (englishBuffer.length() > 0) {
+                englishBuffer.deleteCharAt(englishBuffer.length() - 1);
+                if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+                if (englishBuffer.length() > 0) {
+                    refreshEnglishCompletions();
+                } else {
+                    candidates = Collections.emptyList();
+                    publish();
+                }
+            } else {
+                if (listener != null) listener.onDeleteBefore(1);
+            }
+            return;
+        }
+        if (state.predicting) {
+            exitPrediction();
+            publish();
+            return;
+        }
         if (state.buffer.isEmpty() && state.selections.isEmpty()) {
             if (listener != null) listener.onDeleteBefore(1);
             return;
@@ -349,12 +428,17 @@ public class InputKernel {
 
     private void handlePunctuation(String text) {
         if (text == null || text.isEmpty()) return;
+        if (mode == KeyboardMode.ENGLISH && englishBuffer.length() > 0) {
+            commitEnglishBuffer();
+        }
         if (mode == KeyboardMode.CHINESE && !state.buffer.isEmpty()
                 && !candidates.isEmpty()) {
             // Commit first candidate before the punctuation so the
             // in-flight composition isn't lost.
             commitFirstCandidateInline();
         }
+        exitPrediction();
+        state.clearContext();
         if (listener != null) listener.onCommitText(text);
     }
 
@@ -424,6 +508,10 @@ public class InputKernel {
 
     public void onHanziCandidatePick(int index) {
         if (index < 0 || index >= candidates.size()) return;
+        if (state.predicting) {
+            onPredictionPick(index);
+            return;
+        }
         DecodeResult c = candidates.get(index);
         if (inPunctuationPicker) {
             // The "1 key" picker commits the punctuation as raw text and
@@ -433,13 +521,38 @@ public class InputKernel {
             return;
         }
         state.select(c.text, c.units, c.consumed);
+        selectionTokenIds.add(c.tokenIds);
         if (state.fullySelected()) {
             String out = state.committedText();
             if (listener != null) listener.onCommitText(out);
-            resetAll();
+            pushSelectionContext();
+            resetInput();
+            showPredictions(false);
         } else {
             redecodeAndPublish();
         }
+    }
+
+    /** Pick a prediction candidate (shown after full selection). */
+    public void onPredictionPick(int index) {
+        if (index < 0 || index >= candidates.size()) return;
+        DecodeResult c = candidates.get(index);
+        state.pushContext(c.tokenIds);
+        if (listener != null) listener.onCommitText(c.text);
+        showPredictions(false);
+    }
+
+    /** Pick an English completion candidate. */
+    public void onEnglishCompletionPick(int index) {
+        if (index < 0 || index >= candidates.size()) return;
+        DecodeResult c = candidates.get(index);
+        state.pushContext(c.tokenIds);
+        englishBuffer.setLength(0);
+        if (listener != null) {
+            listener.onCommitText(c.text);
+            listener.onSetComposingText("");
+        }
+        showPredictions(true);
     }
 
     // ===== Mode switching =====
@@ -483,8 +596,13 @@ public class InputKernel {
         if (mode == KeyboardMode.CHINESE && !state.buffer.isEmpty()) {
             String out = state.committedText() + state.remaining();
             if (listener != null) listener.onCommitText(out);
-            resetAll();
+            resetInput();
         }
+        // Flush English buffer when leaving ENGLISH.
+        if (mode == KeyboardMode.ENGLISH && englishBuffer.length() > 0) {
+            commitEnglishBuffer();
+        }
+        exitPrediction();
         switchMode(target);
     }
 
@@ -509,6 +627,8 @@ public class InputKernel {
      * happen to return the exact same hanzi for the exact same span.
      */
     private void decode() {
+        // New input dismisses prediction mode
+        exitPrediction();
         if (mode != KeyboardMode.CHINESE || state.buffer.isEmpty()) {
             candidates = Collections.emptyList();
             pinyinAlts = Collections.emptyList();
@@ -558,7 +678,7 @@ public class InputKernel {
             if (consumed <= 0) continue;
             String key = text + "\u0001" + consumed;
             if (!seenKeys.add(key)) continue;
-            DecodeResult c = new DecodeResult(text, r.units != null ? r.units : "", consumed);
+            DecodeResult c = new DecodeResult(text, r.units != null ? r.units : "", consumed, r.tokenIds);
             out.add(c);
             if (topCandidate == null) topCandidate = c;
         }
@@ -661,14 +781,98 @@ public class InputKernel {
         return n;
     }
 
+    // ===== Prediction =====
+
+    /**
+     * Push all accumulated selection token IDs into the prediction context.
+     */
+    private void pushSelectionContext() {
+        for (int[] ids : selectionTokenIds) {
+            state.pushContext(ids);
+        }
+    }
+
+    /**
+     * Show prediction candidates (NextTokens) if context is available.
+     *
+     * @param enOnly true when in English mode
+     */
+    private void showPredictions(boolean enOnly) {
+        if (state.contextIds.isEmpty()) {
+            exitPrediction();
+            publish();
+            return;
+        }
+        DecodeResult[] results = decoder.nextTokens(
+                state.contextIdsArray(), PREDICTION_LIMIT, enOnly);
+        if (results.length == 0) {
+            exitPrediction();
+            publish();
+            return;
+        }
+        state.predicting = true;
+        candidates = new ArrayList<>(results.length);
+        for (DecodeResult r : results) candidates.add(r);
+        topUnits = "";
+        pinyinAlts = Collections.emptyList();
+        publish();
+    }
+
+    private void exitPrediction() {
+        state.predicting = false;
+        candidates = Collections.emptyList();
+        topUnits = "";
+    }
+
+    /**
+     * Reset input state but keep prediction context.
+     */
+    private void resetInput() {
+        state.reset();
+        selectionTokenIds.clear();
+        pinyinAlts = Collections.emptyList();
+        topUnits = "";
+        inPunctuationPicker = false;
+    }
+
+    // ===== English completion =====
+
+    private void refreshEnglishCompletions() {
+        DecodeResult[] results = decoder.getTokens(
+                englishBuffer.toString(), PREDICTION_LIMIT, true);
+        candidates = new ArrayList<>(results.length);
+        for (DecodeResult r : results) candidates.add(r);
+        topUnits = "";
+        pinyinAlts = Collections.emptyList();
+        publish();
+    }
+
+    /**
+     * Commit the English buffer as-is (user pressed space without
+     * picking a completion).
+     */
+    private void commitEnglishBuffer() {
+        String text = englishBuffer.toString();
+        englishBuffer.setLength(0);
+        if (listener != null) {
+            listener.onCommitText(text);
+            listener.onSetComposingText("");
+        }
+        candidates = Collections.emptyList();
+        // No context push for raw text (no token IDs)
+        publish();
+    }
+
     // ===== Helpers =====
 
     private void resetAll() {
         state.reset();
+        selectionTokenIds.clear();
         candidates = Collections.emptyList();
         pinyinAlts = Collections.emptyList();
         topUnits = "";
         inPunctuationPicker = false;
+        englishBuffer.setLength(0);
         publish();
     }
 

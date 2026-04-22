@@ -24,19 +24,28 @@ std::string jstringToString(JNIEnv* env, jstring js) {
     return result;
 }
 
-// Pack DecodeResult vector as triplets: [text, units, cnt, text, units, cnt, ...]
+// Pack DecodeResult vector as quads: [text, units, cnt, tokenIds, ...]
+// tokenIds is a comma-separated string of token IDs, e.g. "92703,12345"
 jobjectArray packResults(JNIEnv* env, jclass stringClass,
                          const std::vector<sime::DecodeResult>& results) {
     auto arr = env->NewObjectArray(
-        static_cast<jsize>(results.size() * 3), stringClass, nullptr);
+        static_cast<jsize>(results.size() * 4), stringClass, nullptr);
     for (std::size_t i = 0; i < results.size(); ++i) {
-        jsize base = static_cast<jsize>(i * 3);
+        jsize base = static_cast<jsize>(i * 4);
         env->SetObjectArrayElement(arr, base,
             env->NewStringUTF(results[i].text.c_str()));
         env->SetObjectArrayElement(arr, base + 1,
             env->NewStringUTF(results[i].units.c_str()));
         env->SetObjectArrayElement(arr, base + 2,
             env->NewStringUTF(std::to_string(results[i].cnt).c_str()));
+        // Token IDs
+        std::string ids;
+        for (std::size_t j = 0; j < results[i].tokens.size(); ++j) {
+            if (j > 0) ids += ',';
+            ids += std::to_string(results[i].tokens[j]);
+        }
+        env->SetObjectArrayElement(arr, base + 3,
+            env->NewStringUTF(ids.c_str()));
     }
     return arr;
 }
@@ -65,7 +74,7 @@ Java_com_semantic_sime_SimeEngine_nativeLoadResources(
 }
 
 
-// 3. DecodeSentence: returns triplets [text, units, cnt, ...]
+// 3. DecodeSentence: returns quads [text, units, cnt, tokenIds, ...]
 JNIEXPORT jobjectArray JNICALL
 Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
     JNIEnv* env, jclass /*clazz*/,
@@ -82,7 +91,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
     return packResults(env, stringClass, results);
 }
 
-// 4. DecodeNumSentence: returns triplets [text, units, cnt, ...]
+// 4. DecodeNumSentence: returns quads [text, units, cnt, tokenIds, ...]
 JNIEXPORT jobjectArray JNICALL
 Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
     JNIEnv* env, jclass /*clazz*/,
@@ -105,6 +114,46 @@ JNIEXPORT jboolean JNICALL
 Java_com_semantic_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {
     return (g_sime && g_sime->Ready()) ? JNI_TRUE : JNI_FALSE;
+}
+
+// 6. NextTokens: prediction based on context token IDs.
+JNIEXPORT jobjectArray JNICALL
+Java_com_semantic_sime_SimeEngine_nativeNextTokens(
+    JNIEnv* env, jclass /*clazz*/,
+    jintArray contextIds, jint limit, jboolean enOnly) {
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!g_sime || !g_sime->Ready())
+        return env->NewObjectArray(0, stringClass, nullptr);
+
+    jsize len = env->GetArrayLength(contextIds);
+    std::vector<sime::TokenID> ctx(static_cast<std::size_t>(len));
+    env->GetIntArrayRegion(contextIds, 0, len,
+        reinterpret_cast<jint*>(ctx.data()));
+
+    auto results = g_sime->NextTokens(ctx,
+        static_cast<std::size_t>(limit),
+        static_cast<bool>(enOnly));
+
+    return packResults(env, stringClass, results);
+}
+
+// 7. GetTokens: prefix completion from the dictionary trie.
+JNIEXPORT jobjectArray JNICALL
+Java_com_semantic_sime_SimeEngine_nativeGetTokens(
+    JNIEnv* env, jclass /*clazz*/,
+    jstring prefix, jint limit, jboolean enOnly) {
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!g_sime || !g_sime->Ready())
+        return env->NewObjectArray(0, stringClass, nullptr);
+
+    auto prefix_str = jstringToString(env, prefix);
+    auto results = g_sime->GetTokens(prefix_str,
+        static_cast<std::size_t>(limit),
+        static_cast<bool>(enOnly));
+
+    return packResults(env, stringClass, results);
 }
 
 } // extern "C"

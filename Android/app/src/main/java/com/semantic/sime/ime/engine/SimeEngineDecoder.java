@@ -26,4 +26,16 @@ public final class SimeEngineDecoder implements Decoder {
         if (!engine.isReady()) return new DecodeResult[0];
         return engine.decodeNumSentence(startLetters, digits, limit);
     }
+
+    @Override
+    public DecodeResult[] nextTokens(int[] contextIds, int limit, boolean enOnly) {
+        if (!engine.isReady()) return new DecodeResult[0];
+        return engine.nextTokens(contextIds, limit, enOnly);
+    }
+
+    @Override
+    public DecodeResult[] getTokens(String prefix, int limit, boolean enOnly) {
+        if (!engine.isReady()) return new DecodeResult[0];
+        return engine.getTokens(prefix, limit, enOnly);
+    }
 }

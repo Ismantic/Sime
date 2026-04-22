@@ -182,12 +182,18 @@ public class CandidatesBar extends FrameLayout {
     public void render(InputKernel kernel, InputState state, List<DecodeResult> candidates) {
         boolean stateActive = (state != null) && !state.isEmpty();
         boolean hasCandidates = (candidates != null) && !candidates.isEmpty();
+        String engBuf = kernel != null ? kernel.getEnglishBuffer() : "";
+        boolean hasEnglishInput = !engBuf.isEmpty();
         // Show "active" mode whenever there's something to display.
         // The T9 "1 key" picker has an empty state but a non-empty
         // candidate list — it should still occupy the bar.
-        if (stateActive || hasCandidates) {
+        if (stateActive || hasCandidates || hasEnglishInput) {
             showActive();
-            preeditView.setText(stateActive ? buildPreedit(kernel, state) : "");
+            if (hasEnglishInput) {
+                preeditView.setText(engBuf);
+            } else {
+                preeditView.setText(stateActive ? buildPreedit(kernel, state) : "");
+            }
             populateCandidates(candidates);
         } else {
             showIdle();

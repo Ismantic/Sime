@@ -30,12 +30,12 @@ public class SimeEngine {
     private static final String TAG = "SimeEngine";
 
     /**
-     * Bumped whenever the bundled {@code sime.trie} / {@code sime.cnt}
+     * Bumped whenever the bundled {@code sime.dict} / {@code sime.cnt}
      * assets change. The deployed copy in app private storage carries
      * a marker file with the version it was extracted from; mismatches
      * trigger a re-extract on the next {@link #start(Context)}.
      */
-    private static final int ASSET_VERSION = 1;
+    private static final int ASSET_VERSION = 2;
     private static final String ASSET_VERSION_MARKER = ".deployed_version";
 
     private static boolean sLoaded = false;
@@ -54,6 +54,8 @@ public class SimeEngine {
     private static native String[] nativeDecodeSentence(String input, int extra);
     private static native String[] nativeDecodeNumSentence(String prefixLetters, String digits, int extra);
     private static native boolean nativeIsReady();
+    private static native String[] nativeNextTokens(int[] contextIds, int limit, boolean enOnly);
+    private static native String[] nativeGetTokens(String prefix, int limit, boolean enOnly);
 
     /** Set true once init has loaded the native resources successfully. */
     private volatile boolean ready = false;
@@ -83,7 +85,7 @@ public class SimeEngine {
     /** Decode unit input to candidates. */
     public DecodeResult[] decodeSentence(String input, int extra) {
         if (!ready) return new DecodeResult[0];
-        return parseTriplets(nativeDecodeSentence(input, extra));
+        return parseQuads(nativeDecodeSentence(input, extra));
     }
 
     /**
@@ -96,20 +98,43 @@ public class SimeEngine {
      */
     public DecodeResult[] decodeNumSentence(String prefixLetters, String digits, int extra) {
         if (!ready) return new DecodeResult[0];
-        return parseTriplets(nativeDecodeNumSentence(
+        return parseQuads(nativeDecodeNumSentence(
                 prefixLetters != null ? prefixLetters : "", digits, extra));
+    }
+
+    /**
+     * Prediction: suggest next words based on context token IDs.
+     *
+     * @param enOnly when true, only English tokens are returned
+     */
+    public DecodeResult[] nextTokens(int[] contextIds, int limit, boolean enOnly) {
+        if (!ready || contextIds == null || contextIds.length == 0)
+            return new DecodeResult[0];
+        return parseQuads(nativeNextTokens(contextIds, limit, enOnly));
+    }
+
+    /**
+     * Prefix completion: return tokens starting with {@code prefix}.
+     *
+     * @param enOnly when true, only the English DAT is searched
+     */
+    public DecodeResult[] getTokens(String prefix, int limit, boolean enOnly) {
+        if (!ready || prefix == null || prefix.isEmpty())
+            return new DecodeResult[0];
+        return parseQuads(nativeGetTokens(prefix, limit, enOnly));
     }
 
     // ===== Internals =====
 
-    /** Parse JNI triplet array into DecodeResult[]. */
-    private static DecodeResult[] parseTriplets(String[] raw) {
-        DecodeResult[] result = new DecodeResult[raw.length / 3];
+    /** Parse JNI quad array into DecodeResult[]. */
+    private static DecodeResult[] parseQuads(String[] raw) {
+        DecodeResult[] result = new DecodeResult[raw.length / 4];
         for (int i = 0; i < result.length; i++) {
             result[i] = new DecodeResult(
-                raw[i * 3],
-                raw[i * 3 + 1],
-                Integer.parseInt(raw[i * 3 + 2])
+                raw[i * 4],
+                raw[i * 4 + 1],
+                Integer.parseInt(raw[i * 4 + 2]),
+                DecodeResult.parseTokenIds(raw[i * 4 + 3])
             );
         }
         return result;
@@ -127,7 +152,7 @@ public class SimeEngine {
                 return;
             }
             ensureAssetsFresh(appCtx, dataDir);
-            String triePath = new File(dataDir, "sime.trie").getAbsolutePath();
+            String triePath = new File(dataDir, "sime.dict").getAbsolutePath();
             String modelPath = new File(dataDir, "sime.cnt").getAbsolutePath();
             if (!nativeLoadResources(triePath, modelPath)) {
                 Log.e(TAG, "nativeLoadResources failed: trie=" + triePath
@@ -154,10 +179,10 @@ public class SimeEngine {
         if (deployed != ASSET_VERSION) {
             Log.i(TAG, "asset version " + deployed + " → " + ASSET_VERSION
                     + ", re-extracting");
-            new File(dataDir, "sime.trie").delete();
+            new File(dataDir, "sime.dict").delete();
             new File(dataDir, "sime.cnt").delete();
         }
-        boolean trieOk = extractAsset(ctx, "sime.trie", dataDir);
+        boolean trieOk = extractAsset(ctx, "sime.dict", dataDir);
         boolean cntOk  = extractAsset(ctx, "sime.cnt",  dataDir);
         if (trieOk && cntOk && deployed != ASSET_VERSION) {
             writeMarkerVersion(marker, ASSET_VERSION);

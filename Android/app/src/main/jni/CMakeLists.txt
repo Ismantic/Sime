@@ -13,7 +13,6 @@ set(SIME_INC ${SIME_ROOT}/include)
 # sime_core as a static library
 add_library(sime_core STATIC
     ${SIME_SRC}/ustr.cc
-    ${SIME_SRC}/unit.cc
     ${SIME_SRC}/count.cc
     ${SIME_SRC}/construct.cc
     ${SIME_SRC}/convert.cc
@@ -21,9 +20,9 @@ add_library(sime_core STATIC
     ${SIME_SRC}/score.cc
     ${SIME_SRC}/trie.cc
     ${SIME_SRC}/state.cc
-    ${SIME_SRC}/interpret.cc
+    ${SIME_SRC}/sime.cc
     ${SIME_SRC}/dict.cc
-    ${SIME_SRC}/nine.cc
+    ${SIME_SRC}/cut.cc
 )
 target_include_directories(sime_core PUBLIC ${SIME_INC} ${SIME_SRC})
 target_compile_options(sime_core PRIVATE -Wall -Wextra -O2)

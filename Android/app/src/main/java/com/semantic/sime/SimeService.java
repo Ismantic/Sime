@@ -10,6 +10,7 @@ import android.view.inputmethod.InputConnection;
 import com.semantic.sime.ime.InputKernel;
 import com.semantic.sime.ime.InputView;
 import com.semantic.sime.ime.KeyboardMode;
+import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
 
@@ -54,8 +55,12 @@ public class SimeService extends InputMethodService
         inputView.attach(kernel);
         kernel.attach(this, inputView);
         inputView.getCandidatesBar().setOnCandidatePickListener(idx -> {
-            Log.d(TAG, "candidate pick: " + idx);
-            kernel.onHanziCandidatePick(idx);
+            Log.d(TAG, "candidate pick: " + idx + " mode=" + kernel.getMode());
+            if (kernel.getMode() == KeyboardMode.ENGLISH) {
+                kernel.onEnglishCompletionPick(idx);
+            } else {
+                kernel.onHanziCandidatePick(idx);
+            }
         });
         inputView.getCandidatesBar().setOnSettingsListener(() -> {
             Log.d(TAG, "settings gear tapped");
@@ -103,8 +108,13 @@ public class SimeService extends InputMethodService
 
     @Override
     public void onSetComposingText(String preedit) {
-        // Preedit is rendered inside our candidate bar, not via
-        // InputConnection, so this is a no-op for now.
+        InputConnection ic = getCurrentInputConnection();
+        if (ic == null) return;
+        if (preedit == null || preedit.isEmpty()) {
+            ic.finishComposingText();
+        } else {
+            ic.setComposingText(preedit, 1);
+        }
     }
 
 }

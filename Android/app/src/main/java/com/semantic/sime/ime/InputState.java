@@ -46,6 +46,37 @@ public final class InputState {
         }
     }
 
+    // ===== Prediction context (mirrors SimeState::context / context_ids) =====
+
+    /** Recent committed token IDs, persists across composing sessions. */
+    public final List<Integer> contextIds = new ArrayList<>();
+    /** Whether the candidate bar is currently showing predictions. */
+    public boolean predicting = false;
+
+    private static final int MAX_CONTEXT_IDS = 16;
+
+    /**
+     * Push committed token IDs into the prediction context.
+     * Mirrors {@code SimeState::pushContext}.
+     */
+    public void pushContext(int[] tokens) {
+        for (int tid : tokens) contextIds.add(tid);
+        while (contextIds.size() > MAX_CONTEXT_IDS) {
+            contextIds.remove(0);
+        }
+    }
+
+    public void clearContext() {
+        contextIds.clear();
+        predicting = false;
+    }
+
+    public int[] contextIdsArray() {
+        int[] arr = new int[contextIds.size()];
+        for (int i = 0; i < arr.length; i++) arr[i] = contextIds.get(i);
+        return arr;
+    }
+
     // ===== Android-specific additions =====
 
     /**

@@ -99,6 +99,55 @@ def abbrev_variants(unit_str):
     return variants
 
 
+# ── 标点符号拼音/英文名映射 ──
+# 中文标点 → 拼音（用 / 分隔音节，与 sime.dict.txt 格式一致）
+CN_PUNCT_PINYIN = {
+    "，": "dou/hao",
+    "。": "ju/hao",
+    "！": "gan/tan/hao",
+    "？": "wen/hao",
+    "：": "mao/hao",
+    "；": "fen/hao",
+    "\u201c": "yin/hao",    # "
+    "\u201d": "yin/hao",    # "
+    "、": "dun/hao",
+    "（": "kuo/hao",
+    "）": "kuo/hao",
+    "【": "fang/kuo/hao",
+    "】": "fang/kuo/hao",
+    "《": "shu/ming/hao",
+    "》": "shu/ming/hao",
+    "——": "po/zhe/hao",
+    "……": "sheng/lue/hao",
+    "·": "jian/ge/hao",
+    "～": "bo/lang/hao",
+}
+
+# 英文标点 → 英文名（作为 sime.en.dict.txt 的 key）
+EN_PUNCT_WORDS = {
+    ",": "comma",
+    ".": "period",
+    "!": "exclamation",
+    "?": "question",
+    ":": "colon",
+    ";": "semicolon",
+    "-": "hyphen",
+    "(": "parenthesis",
+    ")": "parenthesis",
+    "@": "at",
+    "#": "hash",
+    "$": "dollar",
+    "%": "percent",
+    "&": "ampersand",
+    "*": "asterisk",
+    "+": "plus",
+    "=": "equals",
+    "/": "slash",
+    "~": "tilde",
+    "_": "underscore",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate Sime dictionaries")
     parser.add_argument("--min-count", type=int, default=16,
@@ -236,10 +285,18 @@ def main():
     print(f"Punct whitelist: kept {pn_kept}, dropped {pn_dropped} (freq<1)",
           file=sys.stderr)
 
+    # 截断只砍英文部分，保留中文和标点
+    # all_tokens 顺序: [CN...] [EN...] [punct...]
+    en_start = cn_kept
+    en_end = cn_kept + en_kept
     if len(all_tokens) > max_vocab:
         overflow = len(all_tokens) - max_vocab
-        all_tokens = all_tokens[:max_vocab]
+        # 从英文尾部砍掉 overflow 个，保留标点
+        en_tokens = all_tokens[en_start:en_end]
+        punct_tokens = all_tokens[en_end:]
+        en_tokens = en_tokens[:len(en_tokens) - overflow]
         en_kept -= overflow
+        all_tokens = all_tokens[:en_start] + en_tokens + punct_tokens
         print(f"truncated: {overflow} en tokens dropped (max_vocab={max_vocab})",
               file=sys.stderr)
     with open(args.token_output, "w") as fout:
@@ -271,6 +328,13 @@ def main():
                 cn_entries.append((word, py_str))
                 from_pypinyin += 1
 
+    # 中文标点追加
+    cn_punct_count = 0
+    for punct, py_str in CN_PUNCT_PINYIN.items():
+        if punct in token_set:
+            cn_entries.append((punct, py_str))
+            cn_punct_count += 1
+
     with open(args.cn_output, "w") as fout:
         for word, py_str in cn_entries:
             fout.write(f"{word} {py_str}\n")
@@ -278,18 +342,26 @@ def main():
 
     print(f"\nfrom units: {from_units}", file=sys.stderr)
     print(f"from pypinyin: {from_pypinyin}", file=sys.stderr)
+    print(f"CN punct: {cn_punct_count}", file=sys.stderr)
     print(f"pinyin entries: {pinyin_count}", file=sys.stderr)
     print(f"written to {args.cn_output}", file=sys.stderr)
 
     # ── Step 3: sime.en.dict.txt (英文词典) ──
     en_count = 0
+    en_punct_count = 0
     with open(args.en_output, "w") as fout:
         for word in all_tokens:
             if is_english(word):
                 fout.write(f"{word} {word}\n")
                 en_count += 1
+        # 英文标点追加
+        for punct, name in EN_PUNCT_WORDS.items():
+            if punct in token_set:
+                fout.write(f"{punct} {name}\n")
+                en_punct_count += 1
 
     print(f"\nen tokens: {en_count}", file=sys.stderr)
+    print(f"EN punct: {en_punct_count}", file=sys.stderr)
     print(f"written to {args.en_output}", file=sys.stderr)
 
 
