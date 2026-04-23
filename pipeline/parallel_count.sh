@@ -11,6 +11,7 @@ DICT=""
 OUTPUT=""
 COUNT_MAX=83886080
 NPROC=$(nproc)
+PUNCT=""
 CORPUS=""
 
 while [[ $# -gt 0 ]]; do
@@ -20,12 +21,13 @@ while [[ $# -gt 0 ]]; do
         -o) OUTPUT=$2; shift 2;;
         -c) COUNT_MAX=$2; shift 2;;
         -j) NPROC=$2; shift 2;;
+        -p) PUNCT=$2; shift 2;;
         *)  CORPUS=$1; shift;;
     esac
 done
 
 if [[ -z "$NGRAM" || -z "$DICT" || -z "$OUTPUT" || -z "$CORPUS" ]]; then
-    echo "usage: parallel_count.sh -n <max_order> -d <dict> -o <output_prefix> [-c count_max] [-j nproc] <corpus>" >&2
+    echo "usage: parallel_count.sh -n <max_order> -d <dict> -o <output_prefix> [-c count_max] [-j nproc] [-p punct] <corpus>" >&2
     exit 1
 fi
 
@@ -64,7 +66,11 @@ for i in "${!CHUNKS[@]}"; do
     out="$OUTDIR/ngram.$i"        # sime-count writes $out.1gram .. .Ngram
     swap="$OUTDIR/swap.$i"        # ... and $swap.1 .. .N
     chunk_prefixes+=("$out")
-    "$SIME" -n "$NGRAM" -d "$DICT" -s "$swap" -o "$out" -c "$PER_PROC_MAX" "$chunk" &
+    punct_args=()
+    if [[ -n "$PUNCT" ]]; then
+        punct_args+=(-p "$PUNCT")
+    fi
+    "$SIME" -n "$NGRAM" -d "$DICT" -s "$swap" -o "$out" -c "$PER_PROC_MAX" "${punct_args[@]}" "$chunk" &
     all_pids+=($!)
 done
 

@@ -31,6 +31,9 @@ struct CountOptions {
     // Base path; per-order outputs go to <output>.1gram .. <output>.<num>gram.
     std::filesystem::path output;
     std::filesystem::path dict;
+    // Optional punctuation list. Tokens in this file break the sliding
+    // window after being counted, so they only appear at n-gram ends.
+    std::filesystem::path punct;
 };
 
 void RunCount(const CountOptions& option);

@@ -10,6 +10,7 @@
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -219,6 +220,7 @@ std::filesystem::path WithSuffix(const std::filesystem::path& base,
 
 void ProcessOneFile(const std::filesystem::path& path,
                     const TokenMap& tokens,
+                    const std::unordered_set<TokenID>& punct_ids,
                     int max_order,
                     Bucket<1>* b1,
                     Bucket<2>* b2,
@@ -292,6 +294,12 @@ void ProcessOneFile(const std::filesystem::path& path,
             auto it = tokens.ids.find(std::string(token));
             if (it != tokens.ids.end()) {
                 feed_word(it->second);
+                // Punctuation breaks the context: the punct token is
+                // counted (appears at n-gram end) but subsequent tokens
+                // won't form bigrams/trigrams with it as history.
+                if (!punct_ids.empty() && punct_ids.count(it->second)) {
+                    reset_windows();
+                }
             } else {
                 // OOV: corpus/dict mismatch. IME output is closed-vocabulary,
                 // so we never emit <unk>. Just break the sliding windows so
@@ -322,6 +330,24 @@ void RunCount(const CountOptions& options) {
     }
     std::cerr << "loaded " << tokens.ids.size() << " tokens from dict\n";
 
+    // Load optional punctuation set.
+    std::unordered_set<TokenID> punct_ids;
+    if (!options.punct.empty()) {
+        std::ifstream pf(options.punct);
+        if (!pf.is_open()) {
+            throw std::runtime_error("Failed to open punct file: " + options.punct.string());
+        }
+        std::string pline;
+        while (std::getline(pf, pline)) {
+            if (pline.empty()) continue;
+            auto it = tokens.ids.find(pline);
+            if (it != tokens.ids.end()) {
+                punct_ids.insert(it->second);
+            }
+        }
+        std::cerr << "loaded " << punct_ids.size() << " punctuation tokens\n";
+    }
+
     // Divide the budget across active orders so aggregate memory stays bounded.
     std::size_t per_bucket = std::max<std::size_t>(
         options.count_max / static_cast<std::size_t>(options.num),
@@ -349,7 +375,7 @@ void RunCount(const CountOptions& options) {
 
     for (const auto& input : options.inputs) {
         std::cerr << "processing " << input.string() << " ...\n";
-        ProcessOneFile(input, tokens, options.num,
+        ProcessOneFile(input, tokens, punct_ids, options.num,
                        options.num >= 1 ? &b1 : nullptr,
                        options.num >= 2 ? &b2 : nullptr,
                        options.num >= 3 ? &b3 : nullptr);

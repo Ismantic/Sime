@@ -9,7 +9,7 @@ namespace {
 
 void PrintUsage() {
     std::cerr << "sime-count -n <max_order> -d <token_dict> -o <output_prefix> "
-                 "-s <swap_prefix> [-c count_size] inputfiles...\n"
+                 "-s <swap_prefix> [-c count_size] [-p punct_file] inputfiles...\n"
                  "Emits <output_prefix>.1gram .. .<N>gram (one file per order).\n";
 }
 
@@ -23,10 +23,11 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
         {"swap", required_argument, nullptr, 's'},
         {"count", required_argument, nullptr, 'c'},
         {"dict", required_argument, nullptr, 'd'},
+        {"punct", required_argument, nullptr, 'p'},
         {nullptr, 0, nullptr, 0}
     };
 
-    while ((c = getopt_long(argc, argv, "n:o:s:c:d:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:s:c:d:p:", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -42,6 +43,9 @@ sime::CountOptions ParseArgs(int argc, char* argv[]) {
             break;
         case 'd':
             opts.dict = optarg;
+            break;
+        case 'p':
+            opts.punct = optarg;
             break;
         default:
             PrintUsage();
