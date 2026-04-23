@@ -154,9 +154,10 @@ void Sime::InitNumNet(std::string_view start,
 
         // T9: expand digits to letters and search letter DATs
         std::string_view num_suffix = nums.substr(dpos);
-        auto t9_emit = [&](Dict::DatType type, std::size_t max_num) {
+        auto t9_emit = [&](Dict::DatType type, trie::DoubleArray::CharExpander expander,
+                           std::size_t max_num) {
             auto results = dict_.Dat(type).PrefixSearchT9(
-                num_suffix, Dict::NumToLetters, max_num);
+                num_suffix, expander, max_num);
             for (const auto& r : results) {
                 std::size_t new_col = s + r.length;
                 if (new_col > total) continue;
@@ -166,8 +167,10 @@ void Sime::InitNumNet(std::string_view start,
                 }
             }
         };
-        t9_emit(Dict::LetterPinyin, 512);
-        t9_emit(Dict::LetterEn, 512);
+        // Pinyin DAT: lowercase only (no uppercase in pinyin)
+        t9_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
+        // English DAT: both cases
+        t9_emit(Dict::LetterEn, Dict::NumToLetters, 512);
 
         // Tail expansion for digits
         if (expansion) {
@@ -176,9 +179,11 @@ void Sime::InitNumNet(std::string_view start,
                 ++tail_len;
             if (dpos + tail_len == d && tail_len > 0) {
                 std::string tail(nums.substr(dpos, tail_len));
-                auto t9_expand = [&](Dict::DatType type, std::size_t max_num) {
+                auto t9_expand = [&](Dict::DatType type,
+                                     trie::DoubleArray::CharExpander expander,
+                                     std::size_t max_num) {
                     auto results = dict_.Dat(type).FindWordsWithPrefixT9(
-                        tail, Dict::NumToLetters, max_num);
+                        tail, expander, max_num);
                     for (const auto& r : results) {
                         if (r.length <= tail.size()) continue;
                         auto entry = dict_.GetEntry(type, r.value);
@@ -188,8 +193,8 @@ void Sime::InitNumNet(std::string_view start,
                         }
                     }
                 };
-                t9_expand(Dict::LetterPinyin, 512);
-                t9_expand(Dict::LetterEn, 1024);
+                t9_expand(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
+                t9_expand(Dict::LetterEn, Dict::NumToLetters, 1024);
             }
         }
     }

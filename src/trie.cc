@@ -179,56 +179,80 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     std::vector<SearchResult> results;
     if (Empty()) return results;
 
-    // Reuse the pinyin state machine but expand each input char
+    // Reuse the pinyin state machine but expand each input char.
     std::vector<PinyinState> states = {{0, 0}};
-    RecordMatches(states, 0, results, max_num);
 
-    // Complete the last syllable via bounded DFS (same as PrefixSearchPinyin).
+    // Per-length budget: T9 short matches (1-2 digits) are very
+    // numerous and would starve longer matches under a global limit.
+    // Give each digit-length its own quota so all lengths get fair
+    // representation.
+    constexpr std::size_t MaxT9Digits = 18;
+    constexpr std::size_t BudgetPerLen = 80;
+    const std::size_t ndigits = std::min(digits.size(), MaxT9Digits);
+    std::vector<std::size_t> len_count(ndigits + 1, 0);
+
+    auto addResult = [&](uint32_t val, std::size_t input_len) -> bool {
+        if (len_count[input_len] >= BudgetPerLen) return false;
+        // Dedup
+        for (const auto& r : results) {
+            if (r.value == val && r.length == input_len) return false;
+        }
+        results.push_back({val, input_len});
+        ++len_count[input_len];
+        return true;
+    };
+
+    // Record eow matches from current states
+    auto recordMatches = [&](std::size_t input_len) {
+        for (const auto& s : states) {
+            if (len_count[input_len] >= BudgetPerLen) break;
+            std::size_t pos = s.pos;
+            if (pos >= size_ || !array_[pos].eow) continue;
+            std::size_t vp = pos ^ array_[pos].index;
+            if (vp >= size_ || !array_[vp].HasValue()) continue;
+            addResult(static_cast<uint32_t>(array_[vp].value), input_len);
+        }
+    };
+
+    // Complete the last syllable via bounded DFS.
     // Only fires for depth==1 states (just the initial typed).
     auto recordLastSyllableMatches = [&](std::size_t input_len) {
         for (const auto& s : states) {
-            if (results.size() >= max_num) break;
+            if (len_count[input_len] >= BudgetPerLen) break;
             if (s.depth != 1) continue;
             struct Frame { std::size_t pos; int rem; };
             std::vector<Frame> stack = {{s.pos, 6}};
-            while (!stack.empty() && results.size() < max_num) {
+            while (!stack.empty() && len_count[input_len] < BudgetPerLen) {
                 auto [pos, rem] = stack.back();
                 stack.pop_back();
                 if (rem <= 0 || pos >= size_) continue;
                 if (array_[pos].eow) {
                     std::size_t vp = pos ^ array_[pos].index;
                     if (vp < size_ && array_[vp].HasValue()) {
-                        uint32_t val = static_cast<uint32_t>(array_[vp].value);
-                        bool dup = false;
-                        for (const auto& r : results) {
-                            if (r.value == val && r.length == input_len) {
-                                dup = true; break;
-                            }
-                        }
-                        if (!dup) results.push_back({val, input_len});
+                        addResult(static_cast<uint32_t>(array_[vp].value),
+                                  input_len);
                     }
                 }
+                // Only scan letters (a-z, A-Z) — letter DATs have no
+                // digits or punctuation, so 52 iterations vs 254.
                 uint32_t base = array_[pos].index;
-                for (int ch = 1; ch <= 255; ++ch) {
-                    if (ch == '\'') continue;
+                auto tryChild = [&](int ch) {
                     std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
-                    if (child >= size_ || child == pos) continue;
-                    if (array_[child].label != ch ||
-                        array_[child].parent != pos) continue;
-                    stack.push_back({child, rem - 1});
-                }
+                    if (child < size_ && child != pos &&
+                        array_[child].label == ch &&
+                        array_[child].parent == pos) {
+                        stack.push_back({child, rem - 1});
+                    }
+                };
+                for (int ch = 'a'; ch <= 'z'; ++ch) tryChild(ch);
+                for (int ch = 'A'; ch <= 'Z'; ++ch) tryChild(ch);
             }
         }
     };
 
-    // Do NOT break early on results.size() >= max_num: T9 digit expansion
-    // floods short matches quickly, which would prevent discovering longer
-    // (and often better) matches.  Process every digit so that full-length
-    // matches like 还是 (424744) or 什么 (743663) are always reachable.
-    // Use a generous internal limit; trim at the end.
-    const std::size_t internal_limit = std::max(max_num, std::size_t{4096});
+    recordMatches(0);
 
-    for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
+    for (std::size_t i = 0; i < ndigits && !states.empty(); ++i) {
         auto ch = static_cast<uint8_t>(digits[i]);
 
         if (ch == '\'') {
@@ -241,7 +265,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             }
             AdvanceT9(states, letters);
         }
-        RecordMatches(states, i + 1, results, internal_limit);
+        recordMatches(i + 1);
         recordLastSyllableMatches(i + 1);
     }
     return results;
@@ -503,7 +527,7 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
                                return a.pos == b.pos;
                            }), next.end());
 
-    constexpr std::size_t MaxT9States = 4096;
+    constexpr std::size_t MaxT9States = 1024;
     if (next.size() > MaxT9States) next.resize(MaxT9States);
 
     states = std::move(next);

@@ -48,6 +48,7 @@ public:
     static char LetterToNum(char c);
     static std::string LettersToNums(std::string_view letters);
     static const char* NumToLetters(uint8_t digit);
+    static const char* NumToLettersLower(uint8_t digit);
 
 private:
     trie::DoubleArray dats_[DatCount];
