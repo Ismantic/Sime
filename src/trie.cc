@@ -175,7 +175,7 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
 
 std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     std::string_view digits, CharExpander expand,
-    std::size_t max_num) const {
+    std::size_t /*max_num*/) const {
     std::vector<SearchResult> results;
     if (Empty()) return results;
 
@@ -186,7 +186,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     // numerous and would starve longer matches under a global limit.
     // Give each digit-length its own quota so all lengths get fair
     // representation.
-    constexpr std::size_t MaxT9Digits = 18;
+    constexpr std::size_t MaxT9Digits = 24;
     constexpr std::size_t BudgetPerLen = 80;
     const std::size_t ndigits = std::min(digits.size(), MaxT9Digits);
     std::vector<std::size_t> len_count(ndigits + 1, 0);
