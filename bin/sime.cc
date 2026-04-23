@@ -241,6 +241,10 @@ int main(int argc, char** argv) {
     while (true) {
         std::cout << "> " << std::flush;
         if (!std::getline(std::cin, line)) break;
+        // Strip tab-separated trailing columns (test case files use
+        // <input>\t<pinyin>\t<expected> format).
+        if (auto tab = line.find('\t'); tab != std::string::npos)
+            line.resize(tab);
         if (line == ":quit" || line == ":q") break;
         if (line.empty()) continue;
 

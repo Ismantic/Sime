@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <unordered_set>
 
 namespace sime {
@@ -145,7 +146,9 @@ void Sime::InitNumNet(std::string_view start,
             // Cross-boundary: search with letters + digits combined.
             // PrefixSearchT9 now handles letter chars via AdvancePinyin,
             // so a mixed string like "b'9'3" works directly.
-            if (!nums.empty()) {
+            // Only search from the last few letter columns — earlier columns
+            // would need impractically long words to span into digit territory.
+            if (!nums.empty() && (p - s) <= 6) {
                 std::string cross(suffix);
                 cross += nums;
                 auto cross_emit = [&](Dict::DatType type,
@@ -233,60 +236,75 @@ void Sime::InitNumNet(std::string_view start,
 
 std::string Sime::AbbreviatePieces(const char* full_pieces,
                                    std::string_view input) {
-    std::string result;
-    std::size_t ipos = 0;
-    const char* p = full_pieces;
-    bool first = true;
-    while (*p) {
-        if (!first) result += '\'';
-        first = false;
-        // Current syllable: p up to next '\'' or end
-        const char* syl_end = p;
-        while (*syl_end && *syl_end != '\'') ++syl_end;
-        // Match input chars against syllable chars
+    // Parse syllables from full_pieces.
+    struct Syl { const char* begin; std::size_t len; };
+    std::vector<Syl> syls;
+    for (const char* p = full_pieces; *p; ) {
         const char* s = p;
-        std::size_t syl_start = result.size();
-        while (s < syl_end && ipos < input.size() && input[ipos] != '\'') {
-            char ic = input[ipos];
-            if (ic == *s) {
-                // Direct letter match
-                result.push_back(*s);
-                ++ipos;
-                ++s;
-            } else if (ic >= '2' && ic <= '9') {
-                // T9 digit: each digit maps to one pinyin letter.
-                // Check if the current syllable char is in this digit's
-                // letter expansion and continue matching within the
-                // same syllable (e.g. "74" → "ri": 7→r, 4→i).
-                const char* letters = Dict::NumToLettersLower(
-                    static_cast<uint8_t>(ic));
-                bool found = false;
-                for (const char* l = letters; *l; ++l) {
-                    if (*l == *s) { found = true; break; }
-                }
-                if (found) {
-                    result.push_back(*s);
-                    ++ipos;
-                    ++s;
-                } else {
-                    break;
-                }
-            } else {
-                break;
+        while (*p && *p != '\'') ++p;
+        if (p > s) syls.push_back({s, static_cast<std::size_t>(p - s)});
+        if (*p == '\'') ++p;
+    }
+    if (syls.empty()) return full_pieces;
+
+    // Check if input char matches a syllable letter.
+    auto charMatch = [](char ic, char sc) -> bool {
+        if (ic == sc) return true;
+        if (ic >= '2' && ic <= '9') {
+            const char* letters = Dict::NumToLettersLower(
+                static_cast<uint8_t>(ic));
+            for (const char* l = letters; *l; ++l) {
+                if (*l == sc) return true;
             }
         }
-        if (result.size() == syl_start) {
-            // No chars matched for this syllable — stop
-            if (!result.empty()) result.pop_back();  // remove trailing '\''
-            break;
+        return false;
+    };
+
+    // Find the max prefix length of syllable syl that matches input
+    // starting at ipos. Returns 0 if first char doesn't match.
+    auto maxMatch = [&](const Syl& syl, std::size_t ipos) -> std::size_t {
+        std::size_t matched = 0;
+        for (std::size_t k = 0; k < syl.len && ipos + k < input.size()
+                 && input[ipos + k] != '\''; ++k) {
+            if (!charMatch(input[ipos + k], syl.begin[k])) break;
+            ++matched;
         }
-        // Skip '\'' in input if present
-        if (ipos < input.size() && input[ipos] == '\'') ++ipos;
-        // Advance pieces past this syllable
-        p = (*syl_end == '\'') ? syl_end + 1 : syl_end;
+        return matched;
+    };
+
+    // Recursive search: for each syllable, try lengths 1..max (prefer
+    // shorter = more abbreviated). Return true if all syllables can be
+    // covered consuming all input non-separator chars.
+    std::vector<std::size_t> chosen(syls.size(), 0);
+
+    std::function<bool(std::size_t, std::size_t)> solve =
+        [&](std::size_t si, std::size_t ipos) -> bool {
+        // Skip input separators.
+        while (ipos < input.size() && input[ipos] == '\'') ++ipos;
+        if (si == syls.size()) return ipos >= input.size();
+        if (ipos >= input.size()) return false;
+        std::size_t mm = maxMatch(syls[si], ipos);
+        if (mm == 0) return false;
+        for (std::size_t len = 1; len <= mm; ++len) {
+            chosen[si] = len;
+            // Skip any input separator after the consumed digits.
+            std::size_t next_ipos = ipos + len;
+            if (solve(si + 1, next_ipos)) return true;
+        }
+        return false;
+    };
+
+    if (!solve(0, 0)) {
+        // Fallback: greedy (original behavior) — shouldn't normally happen.
+        return full_pieces;
     }
-    // If nothing matched, return full pieces as-is
-    if (result.empty()) return full_pieces;
+
+    // Build result from chosen lengths.
+    std::string result;
+    for (std::size_t i = 0; i < syls.size(); ++i) {
+        if (i > 0) result += '\'';
+        result.append(syls[i].begin, chosen[i]);
+    }
     return result;
 }
 

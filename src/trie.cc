@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstring>
+#include <unordered_set>
 
 namespace trie {
 
@@ -191,12 +192,13 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     const std::size_t ndigits = std::min(digits.size(), MaxT9Digits);
     std::vector<std::size_t> len_count(ndigits + 1, 0);
 
+    // Dedup set: pack (value, length) into a single uint64_t.
+    std::unordered_set<uint64_t> seen;
     auto addResult = [&](uint32_t val, std::size_t input_len) -> bool {
         if (len_count[input_len] >= BudgetPerLen) return false;
-        // Dedup
-        for (const auto& r : results) {
-            if (r.value == val && r.length == input_len) return false;
-        }
+        uint64_t key = (static_cast<uint64_t>(val) << 32)
+                      | static_cast<uint64_t>(input_len);
+        if (!seen.insert(key).second) return false;
         results.push_back({val, input_len});
         ++len_count[input_len];
         return true;
@@ -537,7 +539,7 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
                                return a.pos == b.pos;
                            }), next.end());
 
-    constexpr std::size_t MaxT9States = 1024;
+    constexpr std::size_t MaxT9States = 512;
     if (next.size() > MaxT9States) next.resize(MaxT9States);
 
     states = std::move(next);

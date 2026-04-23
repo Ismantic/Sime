@@ -11,7 +11,7 @@ CUT_DICT = dict.txt
 DICT = dict.txt
 EN_WORDS = en_dict.raw
 PUNCT = punct.txt
-OUT = output
+OUT = output-new
 
 all: $(OUT)/sime.cnt $(OUT)/sime.dict
 
