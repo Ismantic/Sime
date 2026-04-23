@@ -221,8 +221,14 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
         }
     };
 
+    // Do NOT break early on results.size() >= max_num: T9 digit expansion
+    // floods short matches quickly, which would prevent discovering longer
+    // (and often better) matches.  Process every digit so that full-length
+    // matches like 还是 (424744) or 什么 (743663) are always reachable.
+    // Use a generous internal limit; trim at the end.
+    const std::size_t internal_limit = std::max(max_num, std::size_t{4096});
+
     for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
-        if (results.size() >= max_num) break;
         auto ch = static_cast<uint8_t>(digits[i]);
 
         if (ch == '\'') {
@@ -235,7 +241,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             }
             AdvanceT9(states, letters);
         }
-        RecordMatches(states, i + 1, results, max_num);
+        RecordMatches(states, i + 1, results, internal_limit);
         recordLastSyllableMatches(i + 1);
     }
     return results;

@@ -355,8 +355,6 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         }
     }
 
-    const std::size_t layer1_size = results.size();
-
     // === Layer 2: unigram alternatives at column 0 ===
     // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
     // then abbreviated prefix matches (mismatch>0), each sorted by score.
@@ -757,8 +755,6 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             results.push_back(std::move(l1[i]));
         }
     }
-
-    const std::size_t layer1_size = results.size();
 
     // === Layer 2: word/char alternatives at position 0 ===
     // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
