@@ -671,6 +671,11 @@ public class InputKernel {
         // first region, the separator becomes an orphan at the start and
         // would cripple InitNet (column 0 = NotToken skip, Layer 2 empty).
         String start = bufferLetters;
+        int startStripped = 0;
+        while (start.startsWith("'")) {
+            start = start.substring(1);
+            startStripped++;
+        }
 
         DecodeResult[] raw;
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
@@ -681,17 +686,16 @@ public class InputKernel {
             raw = new DecodeResult[0];
         }
 
-        // Pass-through with dedup. consumed comes straight from the
-        // decoder; since start IS bufferLetters, C++ start.size() ==
-        // start.length() and the returned consumed is already in the
-        // correct buffer-byte coordinate system.
+        // Pass-through with dedup. When leading separators were stripped
+        // from start, add that offset back to each consumed so select()
+        // correctly covers the orphan separator bytes in the buffer.
         List<DecodeResult> out = new ArrayList<>(raw.length);
         java.util.HashSet<String> seenKeys = new java.util.HashSet<>();
         DecodeResult topCandidate = null;
         for (DecodeResult r : raw) {
             String text = r.text != null ? r.text : "";
             if (text.isEmpty()) continue;
-            int consumed = r.consumed;
+            int consumed = r.consumed + startStripped;
             if (consumed <= 0) continue;
             String key = text + "\u0001" + consumed;
             if (!seenKeys.add(key)) continue;
