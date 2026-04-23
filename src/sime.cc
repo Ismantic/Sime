@@ -358,6 +358,11 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: unigram alternatives at column 0 ===
+    // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
+    // then abbreviated prefix matches (mismatch>0), each sorted by score.
+    std::vector<DecodeResult> l2_full;
+    std::vector<DecodeResult> l2_abbrev;
+
     for (const auto& edge : net[0].es) {
         if (edge.id == NotToken) continue;
 
@@ -375,26 +380,30 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         auto slice = std::string_view(combined_input).substr(
             edge.start, edge.end - edge.start);
         std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, is_t9);
-        float_t frag_penalty =
-            static_cast<float_t>(mismatch) * PinyinMatchPenalty;
 
         Scorer::Pos epos{};
         Scorer::Pos enext{};
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
-                        - dist_penalty - frag_penalty;
+                        - dist_penalty;
 
         std::string edge_py = edge.pieces ? edge.pieces : "";
         std::size_t cnt = edge.end;
-        results.push_back({std::move(text_utf8), std::move(edge_py),
-                           ExtractTokens({edge}),
-                           score, cnt});
+        DecodeResult r{std::move(text_utf8), std::move(edge_py),
+                       ExtractTokens({edge}), score, cnt};
+        if (mismatch == 0) {
+            l2_full.push_back(std::move(r));
+        } else {
+            l2_abbrev.push_back(std::move(r));
+        }
     }
 
-    std::sort(results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
-              results.end(),
-              [](const DecodeResult& a, const DecodeResult& b) {
-                  return a.score > b.score;
-              });
+    auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
+        return a.score > b.score;
+    };
+    std::sort(l2_full.begin(), l2_full.end(), by_score);
+    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
+    for (auto& r : l2_full) results.push_back(std::move(r));
+    for (auto& r : l2_abbrev) results.push_back(std::move(r));
 
     return results;
 }
@@ -772,13 +781,11 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         auto slice = std::string_view(lower).substr(
             edge.start, edge.end - edge.start);
         std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, false);
-        float_t frag_penalty =
-            static_cast<float_t>(mismatch) * PinyinMatchPenalty;
 
         Scorer::Pos epos{};
         Scorer::Pos enext{};
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
-                        - dist_penalty - frag_penalty;
+                        - dist_penalty;
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)

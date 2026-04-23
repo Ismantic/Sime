@@ -183,6 +183,44 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     std::vector<PinyinState> states = {{0, 0}};
     RecordMatches(states, 0, results, max_num);
 
+    // Complete the last syllable via bounded DFS (same as PrefixSearchPinyin).
+    // Only fires for depth==1 states (just the initial typed).
+    auto recordLastSyllableMatches = [&](std::size_t input_len) {
+        for (const auto& s : states) {
+            if (results.size() >= max_num) break;
+            if (s.depth != 1) continue;
+            struct Frame { std::size_t pos; int rem; };
+            std::vector<Frame> stack = {{s.pos, 6}};
+            while (!stack.empty() && results.size() < max_num) {
+                auto [pos, rem] = stack.back();
+                stack.pop_back();
+                if (rem <= 0 || pos >= size_) continue;
+                if (array_[pos].eow) {
+                    std::size_t vp = pos ^ array_[pos].index;
+                    if (vp < size_ && array_[vp].HasValue()) {
+                        uint32_t val = static_cast<uint32_t>(array_[vp].value);
+                        bool dup = false;
+                        for (const auto& r : results) {
+                            if (r.value == val && r.length == input_len) {
+                                dup = true; break;
+                            }
+                        }
+                        if (!dup) results.push_back({val, input_len});
+                    }
+                }
+                uint32_t base = array_[pos].index;
+                for (int ch = 1; ch <= 255; ++ch) {
+                    if (ch == '\'') continue;
+                    std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
+                    if (child >= size_ || child == pos) continue;
+                    if (array_[child].label != ch ||
+                        array_[child].parent != pos) continue;
+                    stack.push_back({child, rem - 1});
+                }
+            }
+        }
+    };
+
     for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
         if (results.size() >= max_num) break;
         auto ch = static_cast<uint8_t>(digits[i]);
@@ -198,6 +236,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             AdvanceT9(states, letters);
         }
         RecordMatches(states, i + 1, results, max_num);
+        recordLastSyllableMatches(i + 1);
     }
     return results;
 }
