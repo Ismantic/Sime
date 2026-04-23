@@ -56,12 +56,18 @@ public class SimeEngine {
     private static native boolean nativeIsReady();
     private static native String[] nativeNextTokens(int[] contextIds, int limit, boolean enOnly);
     private static native String[] nativeGetTokens(String prefix, int limit, boolean enOnly);
+    private static native int nativeContextSize();
 
     /** Set true once init has loaded the native resources successfully. */
     private volatile boolean ready = false;
 
     public boolean isReady() {
         return ready;
+    }
+
+    /** Max context tokens the LM can use (n-gram order minus 1). */
+    public int contextSize() {
+        return ready ? nativeContextSize() : 2;
     }
 
     /**

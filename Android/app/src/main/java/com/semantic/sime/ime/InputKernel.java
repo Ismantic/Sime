@@ -105,6 +105,7 @@ public class InputKernel {
 
     public InputKernel(Decoder decoder) {
         this.decoder = decoder;
+        state.maxContextIds = decoder.contextSize();
     }
 
     // ===== Lifecycle =====
@@ -485,6 +486,13 @@ public class InputKernel {
         if (index < 0 || index >= pinyinAlts.size()) return;
         if (mode != KeyboardMode.CHINESE) return;
         PinyinAlt alt = pinyinAlts.get(index);
+        // Skip any separator that applyLetterPick auto-inserted between
+        // the previous letter region and the digit region. Advance
+        // lettersEnd past it so applyLetterPick sees the actual digit.
+        while (state.lettersEnd < state.buffer.length()
+                && state.buffer.charAt(state.lettersEnd) == '\'') {
+            state.lettersEnd++;
+        }
         int start = state.lettersEnd;
         int end = Math.min(start + alt.digitCount, state.buffer.length());
         if (end <= start) return;
@@ -499,6 +507,11 @@ public class InputKernel {
      */
     public void onFallbackLetterPick(char letter) {
         if (mode != KeyboardMode.CHINESE) return;
+        // Skip separator between letter region and digit region.
+        while (state.lettersEnd < state.buffer.length()
+                && state.buffer.charAt(state.lettersEnd) == '\'') {
+            state.lettersEnd++;
+        }
         int start = state.lettersEnd;
         if (start >= state.buffer.length()) return;
         String digits = state.buffer.substring(start, start + 1);
@@ -653,6 +666,10 @@ public class InputKernel {
         // start IS bufferLetters. Selections.pinyin is NOT included —
         // those syllables are committed (gone from `state.remaining()`)
         // and the next decode is for what comes after them.
+        // Strip leading separator: applyLetterPick auto-inserts '\''
+        // between letter regions; if a hanzi selection later consumes the
+        // first region, the separator becomes an orphan at the start and
+        // would cripple InitNet (column 0 = NotToken skip, Layer 2 empty).
         String start = bufferLetters;
 
         DecodeResult[] raw;
@@ -701,7 +718,7 @@ public class InputKernel {
         // consume past the end of the buffer) are not offered.
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
             pinyinAlts = computePinyinAltsFromRaw(
-                    raw, countSyllables(start), digits.length());
+                    raw, countSyllables(start), digits.length(), digits);
         } else {
             pinyinAlts = Collections.emptyList();
         }
@@ -752,9 +769,13 @@ public class InputKernel {
      * existing buffer); the alt strip rejects these because picking
      * one would consume more digits than the buffer actually has.
      */
+    private static final String[] T9_LETTERS = {
+        null, null, "abc", "def", "ghi", "jkl", "mno", "pqrs", "tuv", "wxyz"
+    };
+
     private static List<PinyinAlt> computePinyinAltsFromRaw(
-            DecodeResult[] raw, int startSyllables, int maxDigits) {
-        if (raw.length == 0) return Collections.emptyList();
+            DecodeResult[] raw, int startSyllables, int maxDigits,
+            String digits) {
         java.util.LinkedHashMap<String, PinyinAlt> seen =
                 new java.util.LinkedHashMap<>();
         for (DecodeResult r : raw) {
@@ -767,6 +788,24 @@ public class InputKernel {
             if (seen.containsKey(nextSyl)) continue;
             seen.put(nextSyl, new PinyinAlt(nextSyl, nextSyl, nextSyl.length()));
             if (seen.size() >= MAX_PINYIN_ALTS) break;
+        }
+        // Always add the current digit's individual letters as fallback.
+        char firstDigit = 0;
+        for (int i = 0; i < digits.length(); i++) {
+            char c = digits.charAt(i);
+            if (c >= '2' && c <= '9') { firstDigit = c; break; }
+        }
+        if (firstDigit != 0) {
+            String letters = T9_LETTERS[firstDigit - '0'];
+            if (letters != null) {
+                for (int i = 0; i < letters.length(); i++) {
+                    if (seen.size() >= MAX_PINYIN_ALTS) break;
+                    String l = String.valueOf(letters.charAt(i));
+                    if (!seen.containsKey(l)) {
+                        seen.put(l, new PinyinAlt(l, l, 1));
+                    }
+                }
+            }
         }
         return new ArrayList<>(seen.values());
     }

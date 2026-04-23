@@ -53,7 +53,8 @@ public final class InputState {
     /** Whether the candidate bar is currently showing predictions. */
     public boolean predicting = false;
 
-    private static final int MAX_CONTEXT_IDS = 16;
+    /** Max context tokens the LM can use (set from engine's contextSize()). */
+    public int maxContextIds = 2;
 
     /**
      * Push committed token IDs into the prediction context.
@@ -61,7 +62,7 @@ public final class InputState {
      */
     public void pushContext(int[] tokens) {
         for (int tid : tokens) contextIds.add(tid);
-        while (contextIds.size() > MAX_CONTEXT_IDS) {
+        while (contextIds.size() > maxContextIds) {
             contextIds.remove(0);
         }
     }
@@ -150,8 +151,18 @@ public final class InputState {
      */
     public void select(String text, String pinyin, int consumed) {
         int prevLettersEnd = lettersEnd;
+        // Absorb trailing separator: applyLetterPick auto-inserts '\''
+        // between syllable picks.  Once a selection consumes the preceding
+        // syllable the separator is orphaned — absorb it so the next
+        // decode sees a clean start without patching consumed elsewhere.
+        int sel = selectedLength() + consumed;
+        while (sel < lettersEnd && sel < buffer.length()
+                && buffer.charAt(sel) == '\'') {
+            consumed++;
+            sel++;
+        }
         selections.add(new Selection(text, pinyin, consumed));
-        int sel = selectedLength();
+        sel = selectedLength();
         if (lettersEnd < sel) lettersEnd = sel;
         undoStack.push(InputAction.hanziPick(text, pinyin, consumed, prevLettersEnd));
     }

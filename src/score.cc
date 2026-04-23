@@ -361,11 +361,27 @@ std::vector<std::pair<TokenID, float_t>> Scorer::NextTokens(
               [](const auto& a, const auto& b) { return a.second < b.second; });
 
     if (result.size() < num && ctx.level > 1) {
+        std::unordered_set<TokenID> seen;
+        for (const auto& [tid, _] : result) seen.insert(tid);
+
+        // Walk down to lower-order contexts to fill remaining slots.
         Pos backed = ctx;
-        Back(backed);
-        if (backed.level >= 1) {
-            std::unordered_set<TokenID> seen;
-            for (const auto& [tid, _] : result) seen.insert(tid);
+        while (result.size() < num && backed.level > 1) {
+            // Force descent: find the current node's token at level-1.
+            const auto& lv = node_levels_[backed.level];
+            TokenID v = lv.tokens[backed.index];
+            if (backed.level == 2) {
+                // bigram → unigram: find v at level 1
+                auto idx = FindNode(1, v);
+                if (idx == SIZE_MAX) break;
+                backed.level = 1;
+                backed.index = static_cast<std::uint32_t>(idx);
+            } else {
+                backed.level = backed.level - 1;
+                auto idx = FindNode(static_cast<int>(backed.level), v);
+                if (idx == SIZE_MAX) break;
+                backed.index = static_cast<std::uint32_t>(idx);
+            }
 
             std::vector<std::pair<TokenID, float_t>> backoff;
             collect(backed.level, backed.index, backoff);

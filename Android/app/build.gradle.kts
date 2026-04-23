@@ -40,6 +40,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Use Release optimization for native C++ even in debug APK
+            externalNativeBuild {
+                cmake {
+                    arguments("-DCMAKE_BUILD_TYPE=Release")
+                }
+            }
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")

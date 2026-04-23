@@ -38,4 +38,9 @@ public final class SimeEngineDecoder implements Decoder {
         if (!engine.isReady()) return new DecodeResult[0];
         return engine.getTokens(prefix, limit, enOnly);
     }
+
+    @Override
+    public int contextSize() {
+        return engine.contextSize();
+    }
 }

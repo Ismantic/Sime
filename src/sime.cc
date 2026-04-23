@@ -141,6 +141,32 @@ void Sime::InitNumNet(std::string_view start,
                 expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true);
                 expand_dat(s, Dict::LetterEn, suffix, p, 1024, false);
             }
+
+            // Cross-boundary: search with letters + digits combined.
+            // PrefixSearchT9 now handles letter chars via AdvancePinyin,
+            // so a mixed string like "b'9'3" works directly.
+            if (!nums.empty()) {
+                std::string cross(suffix);
+                cross += nums;
+                auto cross_emit = [&](Dict::DatType type,
+                                      trie::DoubleArray::CharExpander expander,
+                                      std::size_t max_num) {
+                    auto results = dict_.Dat(type).PrefixSearchT9(
+                        cross, expander, max_num);
+                    for (const auto& r : results) {
+                        std::size_t new_col = s + r.length;
+                        if (new_col <= p) continue;  // already covered by letter-only search
+                        if (new_col > total) continue;
+                        auto entry = dict_.GetEntry(type, r.value);
+                        for (uint32_t i = 0; i < entry.count; ++i) {
+                            emit(s, new_col, entry.items[i].id,
+                                 entry.items[i].pieces);
+                        }
+                    }
+                };
+                cross_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
+                cross_emit(Dict::LetterEn, Dict::NumToLetters, 512);
+            }
             continue;
         }
 
@@ -221,10 +247,30 @@ std::string Sime::AbbreviatePieces(const char* full_pieces,
         const char* s = p;
         std::size_t syl_start = result.size();
         while (s < syl_end && ipos < input.size() && input[ipos] != '\'') {
-            if (input[ipos] == *s) {
-                result.push_back(input[ipos]);
+            char ic = input[ipos];
+            if (ic == *s) {
+                // Direct letter match
+                result.push_back(*s);
                 ++ipos;
                 ++s;
+            } else if (ic >= '2' && ic <= '9') {
+                // T9 digit: each digit maps to one pinyin letter.
+                // Check if the current syllable char is in this digit's
+                // letter expansion and continue matching within the
+                // same syllable (e.g. "74" → "ri": 7→r, 4→i).
+                const char* letters = Dict::NumToLettersLower(
+                    static_cast<uint8_t>(ic));
+                bool found = false;
+                for (const char* l = letters; *l; ++l) {
+                    if (*l == *s) { found = true; break; }
+                }
+                if (found) {
+                    result.push_back(*s);
+                    ++ipos;
+                    ++s;
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
@@ -389,7 +435,9 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
                         - dist_penalty;
 
-        std::string edge_py = edge.pieces ? edge.pieces : "";
+        std::string edge_py = edge.pieces
+            ? AbbreviatePieces(edge.pieces, slice)
+            : "";
         std::size_t cnt = edge.end;
         DecodeResult r{std::move(text_utf8), std::move(edge_py),
                        ExtractTokens({edge}), score, cnt};
@@ -818,10 +866,15 @@ std::vector<DecodeResult> Sime::NextTokens(
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0) return results;
 
+    // Only the last (num-1) context tokens matter — that's the maximum
+    // history a num-gram model can condition on.  Walking from root with
+    // at most (num-1) steps also guarantees we never reach leaf level.
     Scorer::Pos pos{};
-    for (auto tid : context) {
+    const auto tail = static_cast<std::size_t>(std::max(scorer_.Num() - 1, 1));
+    std::size_t start = context.size() > tail ? context.size() - tail : 0;
+    for (std::size_t i = start; i < context.size(); ++i) {
         Scorer::Pos next{};
-        scorer_.ScoreMove(pos, tid, next);
+        scorer_.ScoreMove(pos, context[i], next);
         pos = next;
     }
 
@@ -829,7 +882,6 @@ std::vector<DecodeResult> Sime::NextTokens(
     // predictions will be Chinese and get dropped.
     const std::size_t pool = en ? num * 16 : num * 4;
     auto next_tokens = scorer_.NextTokens(pos, pool);
-    const auto& ts = dict_.TokenSet();
 
     // English tokens in Sime's corpora are ASCII-letter words (possibly
     // containing an apostrophe, e.g. don't, 's), or SentencePiece-style
@@ -846,7 +898,6 @@ std::vector<DecodeResult> Sime::NextTokens(
     for (const auto& [tid, pro] : next_tokens) {
         if (results.size() >= num) break;
         if (tid < StartToken) continue;
-        if (ts.find(tid) == ts.end()) continue;
 
         const char32_t* chars = dict_.TokenAt(tid);
         if (!chars || chars[0] == 0) continue;

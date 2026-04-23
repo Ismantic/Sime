@@ -259,11 +259,16 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             AdvancePinyin(states, ch);
         } else {
             const char* letters = expand(ch);
-            if (!letters || !letters[0]) {
+            if (letters && letters[0]) {
+                AdvanceT9(states, letters);
+            } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+                // Direct letter in a mixed letter+digit string:
+                // advance as exact pinyin match.
+                AdvancePinyin(states, ch);
+            } else {
                 states.clear();
                 break;
             }
-            AdvanceT9(states, letters);
         }
         recordMatches(i + 1);
         recordLastSyllableMatches(i + 1);
@@ -285,8 +290,13 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
             AdvancePinyin(states, ch);
         } else {
             const char* letters = expand(ch);
-            if (!letters || !letters[0]) { states.clear(); break; }
-            AdvanceT9(states, letters);
+            if (letters && letters[0]) {
+                AdvanceT9(states, letters);
+            } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+                AdvancePinyin(states, ch);
+            } else {
+                states.clear(); break;
+            }
         }
     }
 

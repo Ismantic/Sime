@@ -45,4 +45,7 @@ public interface Decoder {
      * @param enOnly  when true, only the English DAT is searched
      */
     DecodeResult[] getTokens(String prefix, int limit, boolean enOnly);
+
+    /** Max context tokens the LM uses for prediction (n-gram order minus 1). */
+    int contextSize();
 }

@@ -138,7 +138,14 @@ Java_com_semantic_sime_SimeEngine_nativeNextTokens(
     return packResults(env, stringClass, results);
 }
 
-// 7. GetTokens: prefix completion from the dictionary trie.
+// 7. ContextSize: max context tokens the LM can use (num - 1).
+JNIEXPORT jint JNICALL
+Java_com_semantic_sime_SimeEngine_nativeContextSize(
+    JNIEnv* /*env*/, jclass /*clazz*/) {
+    return (g_sime && g_sime->Ready()) ? g_sime->ContextSize() : 2;
+}
+
+// 8. GetTokens: prefix completion from the dictionary trie.
 JNIEXPORT jobjectArray JNICALL
 Java_com_semantic_sime_SimeEngine_nativeGetTokens(
     JNIEnv* env, jclass /*clazz*/,

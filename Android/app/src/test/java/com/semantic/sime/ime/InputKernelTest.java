@@ -53,6 +53,19 @@ public class InputKernelTest {
         void putNumSentence(String startLetters, String digits, DecodeResult... results) {
             numSentenceMap.put(startLetters + "|" + digits, results);
         }
+
+        @Override
+        public DecodeResult[] nextTokens(int[] contextIds, int limit, boolean enOnly) {
+            return new DecodeResult[0];
+        }
+
+        @Override
+        public DecodeResult[] getTokens(String prefix, int limit, boolean enOnly) {
+            return new DecodeResult[0];
+        }
+
+        @Override
+        public int contextSize() { return 2; }
     }
 
     private static final class RecordingListener implements InputKernel.Listener {
