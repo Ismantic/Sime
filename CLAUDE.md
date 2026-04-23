@@ -20,6 +20,7 @@ Build outputs in `./build/`:
 - `sime-count` — n-gram counter (pipeline step 3)
 - `sime-construct` — IAD LM builder (pipeline step 4)
 - `sime-converter` — pinyin Trie builder (pipeline step 5)
+- `sime-compact` — compacts a `.raw.cnt` into `.cnt` (final deployment format)
 - `sime-dump` — inspect a built `.cnt` LM file
 - `sime-cut` — Chinese text segmenter using the LM + dict
 
@@ -67,6 +68,7 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 - **Counting** (`count.h/cc`): external-sort n-gram counter used by `sime-count`.
 - **Construction** (`construct.h/cc`): Interpolated Absolute Discounting (IAD) smoothing + entropy pruning used by `sime-construct`. Uses `NeyDiscounter` with per-order fixed D values (defaults: unigram=0.0005, bigram=0.5, trigram=0.5). CLI `-d` flag allows custom D values.
 - **Conversion** (`convert.h/cc`): builds the pinyin Trie; driver for `sime-converter`.
+- **Compact** (`compact.h/cc`): compacts raw `.cnt` LM files into deployment format; driver for `sime-compact`.
 - **Scorer** (`score.h/cc`): n-gram LM probability lookups with backoff.
 - **Decoder** (`sime.h/cc`): lattice construction + Viterbi beam search for both full-keyboard pinyin and T9/nine-key input (`DecodeNumStr`, `DecodeNumSentence`). Key constants: `NodeSize=40`, `BeamSize=60`.
 - **State** (`state.h/cc`): beam search state heap.
@@ -90,6 +92,15 @@ No `<s>`/`</s>` sentence boundary tokens. The corpus is treated as a stream of f
 ## Token ID Conventions
 
 `NotToken=0` (empty/sentinel), `StartToken=1` (first real vocabulary token). Dict tokens are numbered sequentially from 1 in `sime.token.dict.txt` line order. `CutUnkToken = (uint32_t)-1` is used only by `Cutter` for OOV fragments.
+
+## Deploying Assets to Platform Builds
+
+Platform builds (Android/Fcitx5) need LM assets copied from pipeline output — these are gitignored:
+
+```bash
+cp pipeline/output/sime.cnt pipeline/output/sime.dict Android/app/src/main/assets/
+cp pipeline/output/sime.cnt pipeline/output/sime.dict Linux/fcitx5/data/
+```
 
 ## Compiler Settings
 

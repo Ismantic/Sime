@@ -752,6 +752,11 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     const std::size_t layer1_size = results.size();
 
     // === Layer 2: word/char alternatives at position 0 ===
+    // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
+    // then abbreviated prefix matches (mismatch>0), each sorted by score.
+    std::vector<DecodeResult> l2_full;
+    std::vector<DecodeResult> l2_abbrev;
+
     for (const auto& edge : net[0].es) {
         if (edge.id == NotToken) continue;
 
@@ -778,17 +783,22 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
-        results.push_back({std::move(text_utf8), std::move(edge_py),
-                           ExtractTokens({edge}),
-                           score, edge.end});
+        DecodeResult r{std::move(text_utf8), std::move(edge_py),
+                       ExtractTokens({edge}), score, edge.end};
+        if (mismatch == 0) {
+            l2_full.push_back(std::move(r));
+        } else {
+            l2_abbrev.push_back(std::move(r));
+        }
     }
 
-    std::sort(
-        results.begin() + static_cast<std::ptrdiff_t>(layer1_size),
-        results.end(),
-        [](const DecodeResult& a, const DecodeResult& b) {
-            return a.score > b.score;
-        });
+    auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
+        return a.score > b.score;
+    };
+    std::sort(l2_full.begin(), l2_full.end(), by_score);
+    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
+    for (auto& r : l2_full) results.push_back(std::move(r));
+    for (auto& r : l2_abbrev) results.push_back(std::move(r));
 
     return results;
 }

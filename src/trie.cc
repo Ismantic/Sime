@@ -476,7 +476,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
     auto recordLastSyllableMatches = [&](std::size_t input_len) {
         for (const auto& s : states) {
             if (results.size() >= max_num) break;
-            if (s.depth == 0) continue;
+            if (s.depth != 1) continue;
             // Bounded DFS looking for eow within the current syllable
             struct Frame { std::size_t pos; int rem; };
             std::vector<Frame> stack = {{s.pos, 6}};
