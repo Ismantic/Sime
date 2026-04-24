@@ -99,11 +99,17 @@ void Sime::ComputeEdgePenalties(std::vector<Node>& net,
     for (auto& col : net) {
         for (auto& edge : col.es) {
             if (!edge.pieces || edge.id == NotToken) continue;
-            auto slice = input.substr(
-                edge.start, edge.end - edge.start);
-            bool is_t9 = (edge.start >= t9_boundary);
-            auto mismatch = CountSyllableMismatch(
-                edge.pieces, slice, is_t9);
+            // Tier 0/1 edges (non-fuzzy, non-expansion) have mismatch==0
+            // by construction: strict pinyin/english matches consume input
+            // letters verbatim, so no abbreviated syllable exists.
+            std::size_t mismatch = 0;
+            if (edge.fuzzy || edge.expansion) {
+                auto slice = input.substr(
+                    edge.start, edge.end - edge.start);
+                bool is_t9 = (edge.start >= t9_boundary);
+                mismatch = CountSyllableMismatch(
+                    edge.pieces, slice, is_t9);
+            }
             edge.penalty =
                 static_cast<float_t>(mismatch) * penalty_per_mismatch
                 + (edge.english ? EnglishPenalty : 0.0f);
@@ -174,8 +180,17 @@ void Sime::InitNumNet(std::string_view start,
             emit_dat(s, Dict::LetterPinyin, suffix, p, true, false);
             emit_dat(s, Dict::LetterEn, suffix, p, false, true);
 
-            // Tail expansion for prefix letters
-            if (expansion && !Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
+            // Tail expansion for prefix letters. Skip if a non-expansion edge
+            // already reaches p — expansion edges go to the same target and
+            // lose to any non-expansion via tier-gating anyway.
+            bool has_nonexp_to_p = false;
+            for (const auto& e : net[s].es) {
+                if (e.end == p && !e.expansion) {
+                    has_nonexp_to_p = true; break;
+                }
+            }
+            if (expansion && !has_nonexp_to_p &&
+                !Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
                 expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true, false);
                 expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
             }
@@ -239,8 +254,16 @@ void Sime::InitNumNet(std::string_view start,
         // English DAT: both cases
         t9_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
 
-        // Tail expansion for digits
-        if (expansion) {
+        // Tail expansion for digits. Skip if a non-expansion edge already
+        // reaches `total` — expansion targets the same column and loses to
+        // any non-expansion via tier-gating.
+        bool has_nonexp_to_total = false;
+        for (const auto& e : net[s].es) {
+            if (e.end == total && !e.expansion) {
+                has_nonexp_to_total = true; break;
+            }
+        }
+        if (expansion && !has_nonexp_to_total) {
             std::size_t tail_len = 0;
             while (dpos + tail_len < d && nums[dpos + tail_len] != '\'')
                 ++tail_len;
@@ -718,8 +741,15 @@ void Sime::InitNet(std::string_view input,
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
             Dict::LetterEn, true);
 
-        // Tail expansion: use suffix as-is for both pinyin and English.
-        if (expansion && !Dict::IsKnownPinyin(std::string(suffix))) {
+        // Tail expansion: skip if a non-expansion edge already reaches total.
+        bool has_nonexp_to_total = false;
+        for (const auto& e : net[s].es) {
+            if (e.end == total && !e.expansion) {
+                has_nonexp_to_total = true; break;
+            }
+        }
+        if (expansion && !has_nonexp_to_total &&
+            !Dict::IsKnownPinyin(std::string(suffix))) {
             auto expand_results = [&](
                 const std::vector<trie::SearchResult>& results,
                 Dict::DatType type, std::size_t tail_len, bool en) {
@@ -819,10 +849,13 @@ void Sime::PruneNode(std::vector<Link>& edges,
     };
 
     // Precompute mismatch count per edge (only when pruning is needed).
+    // Tier 0/1 edges (non-fuzzy, non-expansion) are known-mismatch==0;
+    // skip the expensive CountSyllableMismatch call for them.
     std::vector<std::size_t> edge_mismatch(edges.size(), 0);
     for (std::size_t i = 0; i < edges.size(); ++i) {
         const auto& e = edges[i];
         if (!e.pieces || e.id == NotToken) continue;
+        if (!e.fuzzy && !e.expansion) continue;  // mismatch = 0 by definition
         auto slice = input.substr(e.start, e.end - e.start);
         bool is_t9 = (e.start >= t9_boundary);
         edge_mismatch[i] = CountSyllableMismatch(e.pieces, slice, is_t9);
