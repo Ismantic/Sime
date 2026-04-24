@@ -13,8 +13,6 @@
 
 namespace trie {
 
-class T9CacheSession;
-
 struct ArrayUnit {
     uint8_t label = 0;
     bool eow = false;
@@ -127,8 +125,6 @@ public:
     bool Empty() const { return size_ == 0; }
 
 private:
-    friend class T9CacheSession;
-
     void CollectWords(std::size_t pos, std::string& word,
                       std::vector<SearchResult>& results,
                       std::size_t max_num,
