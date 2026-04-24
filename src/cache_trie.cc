@@ -106,11 +106,27 @@ std::vector<SearchResult> T9CacheSession::CollectCompletions(
     std::vector<SearchResult> results;
     if (!dat_ || dat_->Empty() || max_num == 0) return results;
 
-    for (const auto& s : states_) {
-        if (results.size() >= max_num) break;
-        std::string word;
-        dat_->CollectWords(s.pos, word, results, max_num, stop_at_sep);
-    }
+    std::unordered_set<uint64_t> seen;
+    const std::size_t pool = max_num * 8 + 8;
+    auto collect_group = [&](bool fuzzy) {
+        for (const auto& s : states_) {
+            if (results.size() >= max_num) break;
+            if (s.fuzzy != fuzzy) continue;
+            std::vector<SearchResult> local;
+            std::string word;
+            dat_->CollectWords(s.pos, word, local, pool, stop_at_sep);
+            for (const auto& r : local) {
+                uint64_t key = (static_cast<uint64_t>(r.value) << 32)
+                             | static_cast<uint64_t>(r.length);
+                if (!seen.insert(key).second) continue;
+                results.push_back(r);
+                if (results.size() >= max_num) break;
+            }
+        }
+    };
+
+    collect_group(false);
+    collect_group(true);
     return results;
 }
 

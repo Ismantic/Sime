@@ -391,32 +391,6 @@ std::size_t Sime::CountPathMismatch(const std::vector<Link>& path,
     return mismatch;
 }
 
-void Sime::BuildNumNetFromCache(std::vector<Node>& net) const {
-    const std::size_t p = num_cache_.start.size();
-    const std::size_t total = p + num_cache_.nums.size();
-    net.clear();
-    net.resize(total + 2);
-
-    for (std::size_t s = 0; s < total; ++s) {
-        bool is_sep = s < p
-            ? num_cache_.start[s] == '\''
-            : num_cache_.nums[s - p] == '\'';
-        if (is_sep) {
-            net[s].es.push_back({s, s + 1, NotToken});
-            continue;
-        }
-        net[s].es = num_cache_.exact_edges[s];
-        net[s].es.insert(net[s].es.end(),
-                         num_cache_.static_expansion_edges[s].begin(),
-                         num_cache_.static_expansion_edges[s].end());
-        net[s].es.insert(net[s].es.end(),
-                         num_cache_.dynamic_expansion_edges[s].begin(),
-                         num_cache_.dynamic_expansion_edges[s].end());
-        PruneNode(net[s].es);
-    }
-    net[total].es.push_back({total, total + 1, NotToken});
-}
-
 void Sime::ResetNumDecodeCache(std::string_view start,
                                std::string_view nums) const {
     num_cache_.Clear();
@@ -538,6 +512,46 @@ void Sime::ResetNumDecodeCache(std::string_view start,
                             tail, Dict::NumToLetters, 1024));
         }
     }
+
+    RebuildNumNet();
+}
+
+void Sime::RebuildNumNet() const {
+    const std::size_t p = num_cache_.start.size();
+    const std::size_t total = p + num_cache_.nums.size();
+    num_cache_.net.resize(total + 2);
+
+    for (std::size_t s = 0; s < total; ++s) {
+        auto& col = num_cache_.net[s];
+        col.es.clear();
+        col.states.Clear();
+
+        bool is_sep = s < p
+            ? num_cache_.start[s] == '\''
+            : num_cache_.nums[s - p] == '\'';
+        if (is_sep) {
+            col.es.push_back({s, s + 1, NotToken});
+            continue;
+        }
+        col.es.insert(col.es.end(),
+                       num_cache_.exact_edges[s].begin(),
+                       num_cache_.exact_edges[s].end());
+        col.es.insert(col.es.end(),
+                       num_cache_.static_expansion_edges[s].begin(),
+                       num_cache_.static_expansion_edges[s].end());
+        col.es.insert(col.es.end(),
+                       num_cache_.dynamic_expansion_edges[s].begin(),
+                       num_cache_.dynamic_expansion_edges[s].end());
+        PruneNode(col.es, &num_cache_.score_cache);
+    }
+    auto& term = num_cache_.net[total];
+    term.es.clear();
+    term.states.Clear();
+    term.es.push_back({total, total + 1, NotToken});
+
+    auto& sentinel = num_cache_.net[total + 1];
+    sentinel.es.clear();
+    sentinel.states.Clear();
 }
 
 void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
@@ -638,16 +652,16 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             ++tail_len;
         }
         if (dpos + tail_len != d || tail_len == 0) continue;
-        std::string tail(num_cache_.nums.substr(dpos, tail_len));
-        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
-                    Dict::LetterPinyin,
-                    py_dat.FindWordsWithPrefixT9(
-                        tail, Dict::NumToLettersLower, 512));
-        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
-                    Dict::LetterEn,
-                    en_dat.FindWordsWithPrefixT9(
-                        tail, Dict::NumToLetters, 1024));
+        auto& state = num_cache_.starts[s];
+        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
+                    tail_len, Dict::LetterPinyin,
+                    state.py_t9_session.CollectCompletions(512));
+        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
+                    tail_len, Dict::LetterEn,
+                    state.en_t9_session.CollectCompletions(1024));
     }
+
+    RebuildNumNet();
 }
 
 std::vector<DecodeResult> Sime::DecodeNumSentence(
@@ -802,11 +816,16 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
         AppendNumDecodeCache(nums.substr(num_cache_.nums.size()));
     }
 
-    std::vector<Node> net;
-    BuildNumNetFromCache(net);
+    // Use cached net directly (no copy). RebuildNumNet already assembled it.
+    auto& net = num_cache_.net;
+
+    // Clear states from previous call, apply penalties, run beam search.
+    for (auto& col : net) {
+        col.states.Clear();
+        col.states.SetMaxTop(BeamSize);
+    }
     ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
 
-    for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
     net[0].states.Insert(init);
     Process(net);
@@ -1268,13 +1287,30 @@ void Sime::InitNet(std::string_view input,
     net[total].es.push_back({total, total + 1, NotToken});
 }
 
-void Sime::PruneNode(std::vector<Link>& edges) const {
+void Sime::PruneNode(std::vector<Link>& edges,
+                     std::unordered_map<TokenID, float_t>* score_cache) const {
     if (edges.size() <= NodeSize) return;
 
     std::unordered_map<std::size_t, std::vector<std::size_t>> groups;
     for (std::size_t i = 0; i < edges.size(); ++i) {
         groups[edges[i].end - edges[i].start].push_back(i);
     }
+
+    auto get_score = [&](TokenID id) -> float_t {
+        if (id == NotToken) return 0.0;
+        if (score_cache) {
+            auto it = score_cache->find(id);
+            if (it != score_cache->end()) return it->second;
+            Scorer::Pos ppos{};
+            Scorer::Pos pnext{};
+            float_t s = scorer_.ScoreMove(ppos, id, pnext);
+            score_cache->emplace(id, s);
+            return s;
+        }
+        Scorer::Pos ppos{};
+        Scorer::Pos pnext{};
+        return scorer_.ScoreMove(ppos, id, pnext);
+    };
 
     std::vector<Link> pruned;
     pruned.reserve(edges.size());
@@ -1290,14 +1326,7 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
         std::vector<std::pair<float_t, std::size_t>> scored;
         scored.reserve(indices.size());
         for (auto idx : indices) {
-            const auto& e = edges[idx];
-            if (e.id == NotToken) {
-                scored.push_back({0.0, idx});
-                continue;
-            }
-            Scorer::Pos ppos{};
-            Scorer::Pos pnext{};
-            scored.push_back({scorer_.ScoreMove(ppos, e.id, pnext), idx});
+            scored.push_back({get_score(edges[idx].id), idx});
         }
 
         std::partial_sort(

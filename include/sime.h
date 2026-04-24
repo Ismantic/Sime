@@ -107,7 +107,8 @@ private:
                                      std::string_view input,
                                      float_t penalty_per_mismatch,
                                      std::size_t t9_boundary);
-    void PruneNode(std::vector<Link>& edges) const;
+    void PruneNode(std::vector<Link>& edges,
+                   std::unordered_map<TokenID, float_t>* score_cache = nullptr) const;
 
     // Beam search
     void Process(std::vector<Node>& net) const;
@@ -169,6 +170,8 @@ private:
         std::vector<std::vector<Link>> exact_edges;
         std::vector<std::vector<Link>> static_expansion_edges;
         std::vector<std::vector<Link>> dynamic_expansion_edges;
+        std::vector<Node> net;  // assembled from edges, reused across calls
+        std::unordered_map<TokenID, float_t> score_cache;
 
         void Clear() {
             start.clear();
@@ -177,6 +180,8 @@ private:
             exact_edges.clear();
             static_expansion_edges.clear();
             dynamic_expansion_edges.clear();
+            net.clear();
+            score_cache.clear();
         }
     };
 
@@ -188,7 +193,7 @@ private:
     void ResetNumDecodeCache(std::string_view start,
                              std::string_view nums) const;
     void AppendNumDecodeCache(std::string_view appended_tail) const;
-    void BuildNumNetFromCache(std::vector<Node>& net) const;
+    void RebuildNumNet() const;
 
     // Resources
     Dict dict_;
