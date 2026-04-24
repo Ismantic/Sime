@@ -92,7 +92,7 @@ private:
 
     // Search parameters
     static constexpr std::size_t NodeSize = 40;
-    static constexpr std::size_t BeamSize = 60;
+    static constexpr std::size_t BeamSize = 20;
     static constexpr float_t DistancePenalty = 1.8;
     // Per-syllable penalty for incomplete pinyin matches. Applied on edges
     // before beam search so that fully-typed syllables outrank abbreviated

@@ -86,7 +86,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
 
     auto input_str = jstringToString(env, input);
     std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
-    auto results = g_sime->DecodeSentenceCache(input_str, e);
+    auto results = g_sime->DecodeSentence(input_str, e);
 
     return packResults(env, stringClass, results);
 }
@@ -104,7 +104,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
     auto prefix = jstringToString(env, prefixLetters);
     auto d = jstringToString(env, digits);
     std::size_t e = extra > 0 ? static_cast<std::size_t>(extra) : 0;
-    auto results = g_sime->DecodeNumSentenceCache(d, prefix, e);
+    auto results = g_sime->DecodeNumSentence(d, prefix, e);
 
     return packResults(env, stringClass, results);
 }
