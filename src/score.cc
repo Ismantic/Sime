@@ -109,6 +109,8 @@ bool Scorer::Load(const std::filesystem::path& path) {
         lv.size = size;
     }
 
+    BuildL1Index();
+
     // Map SoA leaves: tokens | pro_q16.
     auto leave_sz = static_cast<std::size_t>(sizes_.back());
     if (leave_sz == 0) { Reset(); return false; }
@@ -138,6 +140,23 @@ void Scorer::Reset() {
     qt_pro_.clear();
     qt_bow_.clear();
     qt_leaf_pro_.clear();
+    l1_index_.clear();
+}
+
+void Scorer::BuildL1Index() {
+    l1_index_.clear();
+    if (num_ < 2) return;
+    const auto& lv = node_levels_[1];
+    if (lv.size <= 1) return;
+    // Find max token ID to size the array.
+    TokenID max_token = 0;
+    for (std::size_t i = 0; i < lv.size - 1; ++i) {
+        if (lv.tokens[i] > max_token) max_token = lv.tokens[i];
+    }
+    l1_index_.assign(static_cast<std::size_t>(max_token) + 1, UINT32_MAX);
+    for (std::size_t i = 0; i < lv.size - 1; ++i) {
+        l1_index_[lv.tokens[i]] = static_cast<std::uint32_t>(i);
+    }
 }
 
 Scorer::Pos Scorer::StartPos() const {
@@ -146,6 +165,13 @@ Scorer::Pos Scorer::StartPos() const {
 
 std::size_t Scorer::FindNode(int level, TokenID token) const {
     if (level < 1 || level >= num_) return SIZE_MAX;
+    // O(1) lookup for level 1 (unigram → bigram).
+    if (level == 1 && !l1_index_.empty()) {
+        if (static_cast<std::size_t>(token) >= l1_index_.size())
+            return SIZE_MAX;
+        auto idx = l1_index_[static_cast<std::size_t>(token)];
+        return (idx == UINT32_MAX) ? SIZE_MAX : static_cast<std::size_t>(idx);
+    }
     const auto& lv = node_levels_[static_cast<std::size_t>(level)];
     std::size_t lo = 0;
     std::size_t hi = (lv.size > 0) ? lv.size - 1 : 0;
@@ -475,6 +501,15 @@ std::size_t Scorer::GetNode(int level,
                             std::size_t begin,
                             std::size_t end,
                             TokenID w) const {
+    // O(1) for level-1 full-range lookups (unigram context).
+    if (level == 1 && !l1_index_.empty()) {
+        if (static_cast<std::size_t>(w) >= l1_index_.size()) return end;
+        auto idx = l1_index_[static_cast<std::size_t>(w)];
+        if (idx == UINT32_MAX) return end;
+        auto i = static_cast<std::size_t>(idx);
+        if (i >= begin && i < end) return i;
+        return end;
+    }
     const auto* tokens = node_levels_[static_cast<std::size_t>(level)].tokens;
     const auto* first = tokens + begin;
     const auto* last = tokens + end;

@@ -156,6 +156,7 @@ private:
 
     std::size_t size_ = 0;
     std::unique_ptr<ArrayUnit[]> array_;
+    std::vector<uint8_t> alphabet_;  // distinct labels in the trie
     mutable std::unordered_map<std::size_t, std::vector<std::size_t>> sep_cache_;
 
     // --- Builder (used only during Build) ---

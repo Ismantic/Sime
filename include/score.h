@@ -100,6 +100,11 @@ private:
     std::vector<std::vector<float>> qt_bow_;    // [level][0..255]
     std::vector<float> qt_leaf_pro_;            // [0..65535]
 
+    // Token → level-1 node index lookup (O(1) instead of binary search).
+    // l1_index_[token] == index into node_levels_[1], or UINT32_MAX if absent.
+    std::vector<std::uint32_t> l1_index_;
+    void BuildL1Index();
+
     // mmap state
     void* mmap_addr_ = nullptr;
     std::size_t mmap_len_ = 0;

@@ -8,12 +8,26 @@ namespace trie {
 
 // --- DoubleArray ---
 
+static std::vector<uint8_t> ScanAlphabet(const ArrayUnit* array, std::size_t size) {
+    bool seen[256] = {};
+    for (std::size_t i = 0; i < size; ++i) {
+        uint8_t l = array[i].label;
+        if (l != 0) seen[l] = true;
+    }
+    std::vector<uint8_t> result;
+    for (int c = 1; c <= 255; ++c) {
+        if (seen[c]) result.push_back(static_cast<uint8_t>(c));
+    }
+    return result;
+}
+
 void DoubleArray::Build(const std::vector<std::string>& keys,
                         const std::vector<uint32_t>& values) {
     assert(keys.size() == values.size());
     Builder b;
     b.Run(keys, values);
     array_ = b.GetResult(size_);
+    alphabet_ = ScanAlphabet(array_.get(), size_);
 }
 
 bool DoubleArray::Get(std::string_view key, uint32_t& out) const {
@@ -299,7 +313,7 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
     }
 
     uint32_t base = array_[pos].index;
-    for (int ch = 1; ch <= 255; ++ch) {
+    for (uint8_t ch : alphabet_) {
         if (stop_at_sep && ch == '\'') continue;
         std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
         if (child >= size_ || child == pos) continue;
@@ -579,6 +593,7 @@ bool DoubleArray::Deserialize(const char* data, std::size_t size) {
         std::memcpy(&u.parent, data + offset, sizeof(u.parent));
         offset += sizeof(u.parent);
     }
+    alphabet_ = ScanAlphabet(array_.get(), size_);
     return true;
 }
 

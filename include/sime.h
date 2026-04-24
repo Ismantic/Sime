@@ -172,6 +172,7 @@ private:
         std::vector<std::vector<Link>> dynamic_expansion_edges;
         std::vector<Node> net;  // assembled from edges, reused across calls
         std::unordered_map<TokenID, float_t> score_cache;
+        std::vector<bool> dirty;  // per-column dirty flag for RebuildNumNet
 
         void Clear() {
             start.clear();
@@ -182,6 +183,7 @@ private:
             dynamic_expansion_edges.clear();
             net.clear();
             score_cache.clear();
+            dirty.clear();
         }
     };
 

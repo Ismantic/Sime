@@ -404,6 +404,7 @@ void Sime::ResetNumDecodeCache(std::string_view start,
     num_cache_.exact_edges.resize(total);
     num_cache_.static_expansion_edges.resize(total);
     num_cache_.dynamic_expansion_edges.resize(total);
+    num_cache_.dirty.assign(total, true);
 
     auto emit_exact = [&](std::size_t s,
                           std::size_t max_end, Dict::DatType type,
@@ -523,6 +524,13 @@ void Sime::RebuildNumNet() const {
 
     for (std::size_t s = 0; s < total; ++s) {
         auto& col = num_cache_.net[s];
+
+        // Skip columns that haven't changed since last rebuild.
+        if (s < num_cache_.dirty.size() && !num_cache_.dirty[s]) {
+            col.states.Clear();
+            continue;
+        }
+
         col.es.clear();
         col.states.Clear();
 
@@ -544,6 +552,10 @@ void Sime::RebuildNumNet() const {
                        num_cache_.dynamic_expansion_edges[s].end());
         PruneNode(col.es, &num_cache_.score_cache);
     }
+
+    // Reset dirty flags after rebuild.
+    num_cache_.dirty.assign(total, false);
+
     auto& term = num_cache_.net[total];
     term.es.clear();
     term.states.Clear();
@@ -641,6 +653,18 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
 
     const std::size_t d = num_cache_.nums.size();
     const std::size_t total = p + d;
+
+    // Mark dirty columns: all digit columns + cross-active letter columns.
+    num_cache_.dirty.resize(total, true);  // new columns default to dirty
+    for (std::size_t s = p; s < total; ++s) {
+        num_cache_.dirty[s] = true;
+    }
+    for (std::size_t s = 0; s < p; ++s) {
+        if (num_cache_.starts[s].cross_active) {
+            num_cache_.dirty[s] = true;
+        }
+    }
+
     for (std::size_t s = 0; s < total; ++s) {
         num_cache_.dynamic_expansion_edges[s].clear();
     }
@@ -652,13 +676,14 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             ++tail_len;
         }
         if (dpos + tail_len != d || tail_len == 0) continue;
+        if (tail_len > 6) continue;
         auto& state = num_cache_.starts[s];
+        auto py_comp = state.py_t9_session.CollectCompletions(128);
+        auto en_comp = state.en_t9_session.CollectCompletions(128);
         emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
-                    tail_len, Dict::LetterPinyin,
-                    state.py_t9_session.CollectCompletions(512));
+                    tail_len, Dict::LetterPinyin, py_comp);
         emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
-                    tail_len, Dict::LetterEn,
-                    state.en_t9_session.CollectCompletions(1024));
+                    tail_len, Dict::LetterEn, en_comp);
     }
 
     RebuildNumNet();
