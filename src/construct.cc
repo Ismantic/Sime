@@ -430,13 +430,29 @@ void Constructor::PruneLevel(int level) {
 void Constructor::PruneBigramByPMI() {
     constexpr int level = 2;
     if (opts_.num < 2) return;
-    if (prune_cutoffs_.empty() || prune_cutoffs_[level] <= 0) return;
     int n = prune_sizes_[level] - 1;
     if (n <= 0) return;
-    int cuts = std::min(prune_cutoffs_[level], n);
 
     auto& l1 = node_levels_[1];
     auto& l2 = node_levels_[2];
+
+    const std::uint32_t pmi_min_count = opts_.pmi_min_count;
+
+    // Pre-count bigrams below the count threshold; they'll all be cut
+    // regardless of reserve budget.
+    std::size_t below_threshold = 0;
+    if (pmi_min_count > 0) {
+        for (int idx = 0; idx < n; ++idx) {
+            if (static_cast<std::uint32_t>(l2[idx].cnt) <= pmi_min_count) {
+                ++below_threshold;
+            }
+        }
+    }
+
+    int budget = (prune_cutoffs_.empty() ? 0 : prune_cutoffs_[level]);
+    int cuts = std::max(static_cast<int>(below_threshold), budget);
+    cuts = std::min(cuts, n);
+    if (cuts <= 0) return;
 
     // count_back[v] = Σ_u count(u, v). Dense vector keyed by token id.
     std::vector<std::uint64_t> count_back(opts_.token_count + 1, 0);
@@ -460,15 +476,20 @@ void Constructor::PruneBigramByPMI() {
             ++up_idx;
         }
         float_t cnt_uv = l2[idx].cnt;
-        float_t cnt_u = l1[up_idx].cnt;
-        TokenID v = l2[idx].id;
-        float_t cnt_back_v = (v < count_back.size())
-            ? static_cast<float_t>(count_back[v]) : 0.0;
-        // cnt_u / cnt_uv are always > 0 post-Cut; cnt_back_v is the sum of
-        // all surviving (·, v) bigram counts which is also > 0 because this
-        // very bigram contributes to it.
-        // S(u, v) = count(u, v)^2 / (count(u) * count_back(v))
-        float_t score = (cnt_uv * cnt_uv) / (cnt_u * cnt_back_v);
+        float_t score;
+        if (pmi_min_count > 0
+            && static_cast<std::uint32_t>(cnt_uv) <= pmi_min_count) {
+            // Below count floor: assign the lowest possible score so this
+            // bigram is cut first, before any PMI-ranking among survivors.
+            score = 0.0;
+        } else {
+            float_t cnt_u = l1[up_idx].cnt;
+            TokenID v = l2[idx].id;
+            float_t cnt_back_v = (v < count_back.size())
+                ? static_cast<float_t>(count_back[v]) : 0.0;
+            // S(u, v) = count(u, v)^2 / (count(u) * count_back(v))
+            score = (cnt_uv * cnt_uv) / (cnt_u * cnt_back_v);
+        }
         cands.push_back(NodeScore{score, static_cast<std::uint32_t>(idx),
                                   false});
     }

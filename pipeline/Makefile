@@ -61,7 +61,8 @@ $(OUT)/sime.raw.cnt: $(OUT)/raw.3gram $(OUT)/sime.token.dict.txt
 		-o $(OUT)/sime.raw.cnt \
 		-c 0,1,2 \
 		-w $$AV \
-		-r 2500000,1000000
+		-r 2500000,1000000 \
+		-m 15
 
 # Step 4.5: compact language model (strip bon/boe)
 compact: $(OUT)/sime.cnt

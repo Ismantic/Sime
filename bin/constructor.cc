@@ -28,11 +28,12 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
         {"wordcount", required_argument, nullptr, 'w'},
         {"prune-reserve", required_argument, nullptr, 'r'},
         {"discount", required_argument, nullptr, 'd'},
+        {"pmi-min-count", required_argument, nullptr, 'm'},
         {nullptr, 0, nullptr, 0}
     };
 
     int c;
-    while ((c = getopt_long(argc, argv, "n:o:c:w:r:d:", long_opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, "n:o:c:w:r:d:m:", long_opts, nullptr)) != -1) {
         switch (c) {
         case 'n':
             opts.num = std::stoi(optarg);
@@ -64,6 +65,9 @@ sime::ConstructOptions ParseArgs(int argc, char* argv[]) {
             }
             break;
         }
+        case 'm':
+            opts.pmi_min_count = static_cast<std::uint32_t>(std::stoul(optarg));
+            break;
         default:
             throw std::runtime_error("Invalid arguments");
         }

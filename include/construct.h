@@ -43,6 +43,11 @@ struct ConstructOptions {
     // prune_reserves[0] = bigram reserve, prune_reserves[1] = trigram reserve.
     // Unigrams are never pruned.
     std::vector<int> prune_reserves;
+    // PruneBigramByPMI count floor. Bigrams with raw count <= this are
+    // unconditionally cut before the PMI ranking, regardless of reserve.
+    // Filters out statistically unreliable low-count bigrams (e.g.
+    // (搞定了, 沈炼) cnt=4 picking up specious high PMI). 0 disables.
+    std::uint32_t pmi_min_count = 15;
 };
 
 class Constructor {
