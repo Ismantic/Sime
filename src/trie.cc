@@ -188,11 +188,12 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
     exact_results.reserve(max_num);
     fuzzy_results.reserve(max_num);
     std::unordered_set<uint64_t> seen;
-    auto add_result = [&](std::vector<SearchResult>& out, uint32_t val) {
+    auto add_result = [&](std::vector<SearchResult>& out, uint32_t val,
+                          bool fuzzy) {
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                      | static_cast<uint64_t>(input_len);
         if (!seen.insert(key).second) return;
-        out.push_back({val, input_len});
+        out.push_back({val, input_len, fuzzy});
     };
 
     for (const auto& s : states) {
@@ -201,9 +202,9 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
         if (vp >= size_ || !array_[vp].HasValue()) continue;
         uint32_t val = static_cast<uint32_t>(array_[vp].value);
         if (s.fuzzy) {
-            add_result(fuzzy_results, val);
+            add_result(fuzzy_results, val, true);
         } else {
-            add_result(exact_results, val);
+            add_result(exact_results, val, false);
         }
     }
 
@@ -221,7 +222,8 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
                     if (vp < size_ && array_[vp].HasValue()) {
                         add_result(
                             fuzzy_results,
-                            static_cast<uint32_t>(array_[vp].value));
+                            static_cast<uint32_t>(array_[vp].value),
+                            true);
                     }
                 }
                 uint32_t base = array_[pos].index;
@@ -408,7 +410,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                       | static_cast<uint64_t>(input_len);
         if (!exact_seen.insert(key).second) return;
-        exact_results.push_back({val, input_len});
+        exact_results.push_back({val, input_len, false});
         ++exact_len_count[input_len];
     };
     auto add_fuzzy = [&](uint32_t val, std::size_t input_len) {
@@ -416,7 +418,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                       | static_cast<uint64_t>(input_len);
         if (exact_seen.contains(key) || !fuzzy_seen.insert(key).second) return;
-        fuzzy_results.push_back({val, input_len});
+        fuzzy_results.push_back({val, input_len, true});
         ++fuzzy_len_count[input_len];
     };
 
@@ -788,14 +790,14 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                      | static_cast<uint64_t>(input_len);
         if (!exact_seen.insert(key).second) return;
-        exact_results.push_back({val, input_len});
+        exact_results.push_back({val, input_len, false});
     };
     auto add_fuzzy = [&](uint32_t val, std::size_t input_len) {
         if (fuzzy_results.size() >= max_num) return;
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                      | static_cast<uint64_t>(input_len);
         if (exact_seen.contains(key) || !fuzzy_seen.insert(key).second) return;
-        fuzzy_results.push_back({val, input_len});
+        fuzzy_results.push_back({val, input_len, true});
     };
     auto record_matches = [&](std::size_t input_len) {
         for (const auto& s : states) {

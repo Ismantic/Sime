@@ -75,6 +75,7 @@ private:
         float_t penalty = 0;           // syllable mismatch penalty
         bool expansion = false;        // tail-expansion edge (lower priority in PruneNode)
         bool english = false;          // edge from English DAT (lower priority than full pinyin)
+        bool fuzzy = false;            // matched via abbreviation/initial-skip (from Trie)
     };
 
     struct Node {

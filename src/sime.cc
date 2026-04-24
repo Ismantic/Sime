@@ -124,8 +124,8 @@ void Sime::InitNumNet(std::string_view start,
 
     auto emit = [&](std::size_t s, std::size_t new_col,
                     TokenID tid, const char* pieces,
-                    bool en = false) {
-        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
+                    bool en = false, bool fuzzy = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
     };
 
     auto emit_dat = [&](std::size_t s, Dict::DatType type,
@@ -139,7 +139,8 @@ void Sime::InitNumNet(std::string_view start,
             if (new_col > max_end) continue;
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
-                emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
+                emit(s, new_col, entry.items[i].id, entry.items[i].pieces,
+                     en, r.fuzzy);
             }
         }
     };
@@ -155,7 +156,8 @@ void Sime::InitNumNet(std::string_view start,
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
                 net[s].es.push_back({s, target_col, entry.items[i].id,
-                                     entry.items[i].pieces, 0, true, en});
+                                     entry.items[i].pieces, 0, true, en,
+                                     r.fuzzy});
             }
         }
     };
@@ -198,7 +200,7 @@ void Sime::InitNumNet(std::string_view start,
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             emit(s, new_col, entry.items[i].id,
-                                 entry.items[i].pieces, en);
+                                 entry.items[i].pieces, en, r.fuzzy);
                         }
                     }
                 };
@@ -227,7 +229,8 @@ void Sime::InitNumNet(std::string_view start,
                 if (new_col > total) continue;
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
-                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
+                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces,
+                         en, r.fuzzy);
                 }
             }
         };
@@ -253,7 +256,8 @@ void Sime::InitNumNet(std::string_view start,
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             net[s].es.push_back({s, total, entry.items[i].id,
-                                                 entry.items[i].pieces, 0, true, en});
+                                                 entry.items[i].pieces, 0, true, en,
+                                                 r.fuzzy});
                         }
                     }
                 };
@@ -261,6 +265,54 @@ void Sime::InitNumNet(std::string_view start,
                 t9_expand(Dict::LetterEn, Dict::NumToLetters, 1024, true);
             }
         }
+    }
+
+    // Tier-gated source filter: per (start, end) bucket, keep only the
+    // highest-priority tier present. Priority:
+    //   0: Pinyin Exact  (!expansion, !english, !fuzzy)
+    //   1: English Exact (!expansion, english, !fuzzy)
+    //   2: any Fuzzy     (!expansion, fuzzy)
+    //   3: tail-expansion (expansion)
+    // ExactMatch always beats fuzzy; within exact, Pinyin > English.
+    auto tier_of = [](const Link& e) -> uint8_t {
+        if (e.id == NotToken) return 0;       // sentinel edges always keep
+        if (e.expansion) return 3;
+        if (e.fuzzy)     return 2;
+        if (e.english)   return 1;
+        return 0;
+    };
+
+    // Global fuzzy gate: if the whole input has an exact full-coverage edge
+    // at (0, total), the user's input is complete and unambiguous — the
+    // Trie's "last-syllable DFS" fuzzy speculations at intermediate buckets
+    // (e.g. 不值得/不知道啊 for 28944326) are just noise. Drop all fuzzy
+    // globally. Tail-expansion and per-bucket english are already handled
+    // by the per-bucket tier filter below (they lose to Tier-0 at (0,total)).
+    bool has_full_cover_exact = false;
+    for (const auto& e : net[0].es) {
+        if (e.id != NotToken && e.end == total
+            && !e.fuzzy && !e.expansion) {
+            has_full_cover_exact = true;
+            break;
+        }
+    }
+
+    for (std::size_t i = 0; i < total; ++i) {
+        auto& edges = net[i].es;
+        if (edges.empty()) continue;
+        // Find best tier per `end` column.
+        std::unordered_map<std::size_t, uint8_t> best;
+        for (const auto& e : edges) {
+            uint8_t t = tier_of(e);
+            auto it = best.find(e.end);
+            if (it == best.end() || t < it->second) best[e.end] = t;
+        }
+        edges.erase(std::remove_if(edges.begin(), edges.end(),
+            [&](const Link& e) {
+                if (e.id == NotToken) return false;
+                if (has_full_cover_exact && e.fuzzy) return true;  // global gate
+                return tier_of(e) > best[e.end];                    // per-bucket
+            }), edges.end());
     }
 
     std::string combined(start);
@@ -633,8 +685,8 @@ void Sime::InitNet(std::string_view input,
 
     auto emit = [&](std::size_t s, std::size_t new_col,
                     TokenID tid, const char* pieces,
-                    bool en = false) {
-        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
+                    bool en = false, bool fuzzy = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
     };
 
     for (std::size_t s = 0; s < total; ++s) {
@@ -654,7 +706,7 @@ void Sime::InitNet(std::string_view input,
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
                     emit(s, s + r.length, entry.items[i].id,
-                         entry.items[i].pieces, en);
+                         entry.items[i].pieces, en, r.fuzzy);
                 }
             }
         };
@@ -676,7 +728,8 @@ void Sime::InitNet(std::string_view input,
                     auto entry = dict_.GetEntry(type, r.value);
                     for (uint32_t i = 0; i < entry.count; ++i) {
                         net[s].es.push_back({s, total, entry.items[i].id,
-                                             entry.items[i].pieces, 0, true, en});
+                                             entry.items[i].pieces, 0, true, en,
+                                             r.fuzzy});
                     }
                 }
             };
@@ -689,6 +742,47 @@ void Sime::InitNet(std::string_view input,
                     suffix, 1024),
                 Dict::LetterEn, suffix.size(), true);
         }
+    }
+
+    // Tier-gated source filter (matches InitNumNet):
+    //   0: Pinyin Exact  (!expansion, !english, !fuzzy)
+    //   1: English Exact (!expansion, english, !fuzzy)
+    //   2: any Fuzzy     (!expansion, fuzzy)
+    //   3: tail-expansion (expansion)
+    auto tier_of = [](const Link& e) -> uint8_t {
+        if (e.id == NotToken) return 0;
+        if (e.expansion) return 3;
+        if (e.fuzzy)     return 2;
+        if (e.english)   return 1;
+        return 0;
+    };
+
+    // Global fuzzy gate: if input has exact full-coverage at (0, total),
+    // drop all fuzzy edges globally (see DecodeNumSentence for rationale).
+    bool has_full_cover_exact = false;
+    for (const auto& e : net[0].es) {
+        if (e.id != NotToken && e.end == total
+            && !e.fuzzy && !e.expansion) {
+            has_full_cover_exact = true;
+            break;
+        }
+    }
+
+    for (std::size_t i = 0; i < total; ++i) {
+        auto& edges = net[i].es;
+        if (edges.empty()) continue;
+        std::unordered_map<std::size_t, uint8_t> best;
+        for (const auto& e : edges) {
+            uint8_t t = tier_of(e);
+            auto it = best.find(e.end);
+            if (it == best.end() || t < it->second) best[e.end] = t;
+        }
+        edges.erase(std::remove_if(edges.begin(), edges.end(),
+            [&](const Link& e) {
+                if (e.id == NotToken) return false;
+                if (has_full_cover_exact && e.fuzzy) return true;
+                return tier_of(e) > best[e.end];
+            }), edges.end());
     }
 
     for (std::size_t i = 0; i < total; ++i) {
