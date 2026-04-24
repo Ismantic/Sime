@@ -105,7 +105,8 @@ void Sime::ComputeEdgePenalties(std::vector<Node>& net,
             auto mismatch = CountSyllableMismatch(
                 edge.pieces, slice, is_t9);
             edge.penalty =
-                static_cast<float_t>(mismatch) * penalty_per_mismatch;
+                static_cast<float_t>(mismatch) * penalty_per_mismatch
+                + (edge.english ? EnglishPenalty : 0.0f);
         }
     }
 }
@@ -122,13 +123,14 @@ void Sime::InitNumNet(std::string_view start,
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    TokenID tid, const char* pieces) {
-        net[s].es.push_back({s, new_col, tid, pieces});
+                    TokenID tid, const char* pieces,
+                    bool en = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
     auto emit_dat = [&](std::size_t s, Dict::DatType type,
                         std::string_view suffix, std::size_t max_end,
-                        bool pinyin) {
+                        bool pinyin, bool en) {
         auto results = pinyin
             ? dict_.Dat(type).PrefixSearchPinyin(suffix, 512)
             : dict_.Dat(type).PrefixSearch(suffix, 512);
@@ -137,14 +139,14 @@ void Sime::InitNumNet(std::string_view start,
             if (new_col > max_end) continue;
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
-                emit(s, new_col, entry.items[i].id, entry.items[i].pieces);
+                emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
             }
         }
     };
 
     auto expand_dat = [&](std::size_t s, Dict::DatType type,
                           std::string_view tail, std::size_t target_col,
-                          std::size_t max_num, bool pinyin) {
+                          std::size_t max_num, bool pinyin, bool en) {
         auto results = pinyin
             ? dict_.Dat(type).FindWordsWithPrefixPinyin(tail, max_num)
             : dict_.Dat(type).FindWordsWithPrefix(tail, max_num);
@@ -153,7 +155,7 @@ void Sime::InitNumNet(std::string_view start,
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
                 net[s].es.push_back({s, target_col, entry.items[i].id,
-                                     entry.items[i].pieces, 0, true});
+                                     entry.items[i].pieces, 0, true, en});
             }
         }
     };
@@ -167,13 +169,13 @@ void Sime::InitNumNet(std::string_view start,
             }
 
             std::string_view suffix = start.substr(s);
-            emit_dat(s, Dict::LetterPinyin, suffix, p, true);
-            emit_dat(s, Dict::LetterEn, suffix, p, false);
+            emit_dat(s, Dict::LetterPinyin, suffix, p, true, false);
+            emit_dat(s, Dict::LetterEn, suffix, p, false, true);
 
             // Tail expansion for prefix letters
             if (expansion && !Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
-                expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true);
-                expand_dat(s, Dict::LetterEn, suffix, p, 1024, false);
+                expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true, false);
+                expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
             }
 
             // Cross-boundary: search with letters + digits combined.
@@ -186,7 +188,7 @@ void Sime::InitNumNet(std::string_view start,
                 cross += nums;
                 auto cross_emit = [&](Dict::DatType type,
                                       trie::DoubleArray::CharExpander expander,
-                                      std::size_t max_num) {
+                                      std::size_t max_num, bool en) {
                     auto results = dict_.Dat(type).PrefixSearchT9(
                         cross, expander, max_num);
                     for (const auto& r : results) {
@@ -196,12 +198,12 @@ void Sime::InitNumNet(std::string_view start,
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             emit(s, new_col, entry.items[i].id,
-                                 entry.items[i].pieces);
+                                 entry.items[i].pieces, en);
                         }
                     }
                 };
-                cross_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
-                cross_emit(Dict::LetterEn, Dict::NumToLetters, 512);
+                cross_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512, false);
+                cross_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
             }
             continue;
         }
@@ -217,7 +219,7 @@ void Sime::InitNumNet(std::string_view start,
         // T9: expand digits to letters and search letter DATs
         std::string_view num_suffix = nums.substr(dpos);
         auto t9_emit = [&](Dict::DatType type, trie::DoubleArray::CharExpander expander,
-                           std::size_t max_num) {
+                           std::size_t max_num, bool en) {
             auto results = dict_.Dat(type).PrefixSearchT9(
                 num_suffix, expander, max_num);
             for (const auto& r : results) {
@@ -225,14 +227,14 @@ void Sime::InitNumNet(std::string_view start,
                 if (new_col > total) continue;
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
-                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces);
+                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
                 }
             }
         };
         // Pinyin DAT: lowercase only (no uppercase in pinyin)
-        t9_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
+        t9_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512, false);
         // English DAT: both cases
-        t9_emit(Dict::LetterEn, Dict::NumToLetters, 512);
+        t9_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
 
         // Tail expansion for digits
         if (expansion) {
@@ -243,7 +245,7 @@ void Sime::InitNumNet(std::string_view start,
                 std::string tail(nums.substr(dpos, tail_len));
                 auto t9_expand = [&](Dict::DatType type,
                                      trie::DoubleArray::CharExpander expander,
-                                     std::size_t max_num) {
+                                     std::size_t max_num, bool en) {
                     auto results = dict_.Dat(type).FindWordsWithPrefixT9(
                         tail, expander, max_num);
                     for (const auto& r : results) {
@@ -251,12 +253,12 @@ void Sime::InitNumNet(std::string_view start,
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             net[s].es.push_back({s, total, entry.items[i].id,
-                                                 entry.items[i].pieces, 0, true});
+                                                 entry.items[i].pieces, 0, true, en});
                         }
                     }
                 };
-                t9_expand(Dict::LetterPinyin, Dict::NumToLettersLower, 512);
-                t9_expand(Dict::LetterEn, Dict::NumToLetters, 1024);
+                t9_expand(Dict::LetterPinyin, Dict::NumToLettersLower, 512, false);
+                t9_expand(Dict::LetterEn, Dict::NumToLetters, 1024, true);
             }
         }
     }
@@ -488,7 +490,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         Scorer::Pos epos{};
         Scorer::Pos enext{};
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
-                        - dist_penalty;
+                        - dist_penalty
+                        - (edge.english ? EnglishPenalty : 0.0f);
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
@@ -499,7 +502,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, cnt},
-             mismatch == 0});
+             mismatch == 0 && !edge.english});
     }
 
     for (auto& entry : best_l2) {
@@ -629,8 +632,9 @@ void Sime::InitNet(std::string_view input,
     net.resize(total + 2);
 
     auto emit = [&](std::size_t s, std::size_t new_col,
-                    TokenID tid, const char* pieces) {
-        net[s].es.push_back({s, new_col, tid, pieces});
+                    TokenID tid, const char* pieces,
+                    bool en = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
     for (std::size_t s = 0; s < total; ++s) {
@@ -645,49 +649,45 @@ void Sime::InitNet(std::string_view input,
         std::string_view suffix = input.substr(s);
 
         auto emit_results = [&](const std::vector<trie::SearchResult>& results,
-                                Dict::DatType type) {
+                                Dict::DatType type, bool en) {
             for (const auto& r : results) {
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
                     emit(s, s + r.length, entry.items[i].id,
-                         entry.items[i].pieces);
+                         entry.items[i].pieces, en);
                 }
             }
         };
 
         emit_results(
             dict_.Dat(Dict::LetterPinyin).PrefixSearchPinyin(suffix, 512),
-            Dict::LetterPinyin);
+            Dict::LetterPinyin, false);
         emit_results(
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
-            Dict::LetterEn);
+            Dict::LetterEn, true);
 
         // Tail expansion: use suffix as-is for both pinyin and English.
-        // PrefixSearchPinyin handles '\'' natively; English trie keys
-        // contain literal '\'' (don't, it's) so passing it through
-        // naturally rejects pinyin-separator patterns like g'b'd (no
-        // English word starts with "g'") while still matching don't.
         if (expansion && !Dict::IsKnownPinyin(std::string(suffix))) {
             auto expand_results = [&](
                 const std::vector<trie::SearchResult>& results,
-                Dict::DatType type, std::size_t tail_len) {
+                Dict::DatType type, std::size_t tail_len, bool en) {
                 for (const auto& r : results) {
                     if (r.length <= tail_len) continue;
                     auto entry = dict_.GetEntry(type, r.value);
                     for (uint32_t i = 0; i < entry.count; ++i) {
                         net[s].es.push_back({s, total, entry.items[i].id,
-                                             entry.items[i].pieces, 0, true});
+                                             entry.items[i].pieces, 0, true, en});
                     }
                 }
             };
             expand_results(
                 dict_.Dat(Dict::LetterPinyin).FindWordsWithPrefixPinyin(
                     suffix, 512),
-                Dict::LetterPinyin, suffix.size());
+                Dict::LetterPinyin, suffix.size(), false);
             expand_results(
                 dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(
                     suffix, 1024),
-                Dict::LetterEn, suffix.size());
+                Dict::LetterEn, suffix.size(), true);
         }
     }
 
@@ -749,6 +749,7 @@ void Sime::PruneNode(std::vector<Link>& edges,
             float_t score;
             std::size_t mismatch;
             bool expansion;
+            bool english;
             std::size_t idx;
         };
         std::vector<ScoredEdge> scored;
@@ -756,10 +757,12 @@ void Sime::PruneNode(std::vector<Link>& edges,
         for (auto idx : indices) {
             scored.push_back({get_score(edges[idx].id),
                               edge_mismatch[idx],
-                              edges[idx].expansion, idx});
+                              edges[idx].expansion,
+                              edges[idx].english, idx});
         }
 
-        // Priority: exact > abbreviated > expansion, then by score.
+        // Priority: exact pinyin > english > abbreviated > expansion,
+        // then by score.
         std::partial_sort(
             scored.begin(),
             scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
@@ -767,6 +770,7 @@ void Sime::PruneNode(std::vector<Link>& edges,
             [](const ScoredEdge& a, const ScoredEdge& b) {
                 if (a.expansion != b.expansion) return !a.expansion;
                 if (a.mismatch != b.mismatch) return a.mismatch < b.mismatch;
+                if (a.english != b.english) return !a.english;
                 return a.score < b.score;
             });
 
@@ -930,7 +934,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         Scorer::Pos epos{};
         Scorer::Pos enext{};
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
-                        - dist_penalty;
+                        - dist_penalty
+                        - (edge.english ? EnglishPenalty : 0.0f);
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
@@ -940,7 +945,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, edge.end},
-             mismatch == 0});
+             mismatch == 0 && !edge.english});
     }
 
     for (auto& entry : best_l2) {

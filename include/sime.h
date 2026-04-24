@@ -74,6 +74,7 @@ private:
         const char* pieces = nullptr;  // piece path, e.g. "ni'hao"
         float_t penalty = 0;           // syllable mismatch penalty
         bool expansion = false;        // tail-expansion edge (lower priority in PruneNode)
+        bool english = false;          // edge from English DAT (lower priority than full pinyin)
     };
 
     struct Node {
@@ -89,6 +90,10 @@ private:
     // before beam search so that fully-typed syllables outrank abbreviated
     // ones during Process. Layer 2 also applies it in post-processing.
     static constexpr float_t PinyinMatchPenalty = 3.2;
+    // Flat penalty for English edges so Chinese full-pinyin matches rank
+    // higher in beam search and Layer 2, while common English words
+    // (iphone, hello) still surface when there's no strong Chinese rival.
+    static constexpr float_t EnglishPenalty = 2.5;
 
     // Lattice building
     void InitNet(std::string_view input,
