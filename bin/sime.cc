@@ -20,6 +20,7 @@ struct Options {
     bool next_en = false;  // prediction mode, filter to English only
     bool en = false;       // pure English prefix completion
     bool mix = false;      // mixed (English + pinyin) prefix completion
+    bool cache = false;    // use cache-backed sentence decoders
 };
 
 void PrintUsage() {
@@ -36,7 +37,8 @@ void PrintUsage() {
               << "  --next              Prediction mode (input pinyin, get next-word suggestions)\n"
               << "  --next-en           Prediction mode, filter suggestions to English only\n"
               << "  --en                English-only prefix completion mode\n"
-              << "  --mix               Mixed (English + pinyin) prefix completion mode\n";
+              << "  --mix               Mixed (English + pinyin) prefix completion mode\n"
+              << "  --cache             Use cache-backed sentence decoders\n";
 }
 
 bool ParseArgs(int argc, char** argv, Options& opts) {
@@ -62,6 +64,8 @@ bool ParseArgs(int argc, char** argv, Options& opts) {
             opts.en = true;
         } else if (arg == "--mix") {
             opts.mix = true;
+        } else if (arg == "--cache") {
+            opts.cache = true;
         } else if (arg == "--help" || arg == "-h") {
             PrintUsage();
             return false;
@@ -258,8 +262,9 @@ int main(int argc, char** argv) {
             }
             // Pass `extra` directly (== extra Layer 1 sentences); -n
             // controls only how many results we display.
-            results = engine.DecodeNumSentence(
-                digits, prefix, opts.extra);
+            results = opts.cache
+                ? engine.DecodeNumSentenceCache(digits, prefix, opts.extra)
+                : engine.DecodeNumSentence(digits, prefix, opts.extra);
             if (results.size() > opts.n) results.resize(opts.n);
         } else if (opts.num) {
             std::string prefix;
@@ -270,7 +275,9 @@ int main(int argc, char** argv) {
             }
             results = engine.DecodeNumStr(digits, prefix, opts.n);
         } else if (opts.sentence) {
-            results = engine.DecodeSentence(line, opts.extra);
+            results = opts.cache
+                ? engine.DecodeSentenceCache(line, opts.extra)
+                : engine.DecodeSentence(line, opts.extra);
             if (results.size() > opts.n) results.resize(opts.n);
         } else {
             results = engine.DecodeStr(line, opts.n);

@@ -12,6 +12,7 @@
 import argparse
 import subprocess
 import sys
+import time
 
 
 def main():
@@ -22,6 +23,14 @@ def main():
     parser.add_argument("--cnt", default="output/sime.cnt")
     parser.add_argument("--num", action="store_true", help="num-key mode")
     parser.add_argument("-s", "--sentence", action="store_true", help="sentence mode")
+    parser.add_argument("--cache", action="store_true",
+                        help="use cache-backed sentence decoders")
+    parser.add_argument("--bench-append", action="store_true",
+                        help="benchmark append-only prefix latency")
+    parser.add_argument("--repeats", type=int, default=1,
+                        help="repeat benchmark N times")
+    parser.add_argument("--exact-len", type=int, default=0,
+                        help="only use cases whose query length equals N")
     parser.add_argument("--errors", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0,
                         help="max cases to evaluate (0=all)")
@@ -45,6 +54,15 @@ def main():
                 queries.append(parts[0])
                 pinyins.append(parts[0])
                 golds.append(parts[1])
+    if args.exact_len > 0:
+        filtered = [
+            (q, p, g)
+            for q, p, g in zip(queries, pinyins, golds)
+            if len(q) == args.exact_len
+        ]
+        queries = [q for q, _, _ in filtered]
+        pinyins = [p for _, p, _ in filtered]
+        golds = [g for _, _, g in filtered]
     if args.limit > 0:
         queries = queries[:args.limit]
         pinyins = pinyins[:args.limit]
@@ -60,6 +78,36 @@ def main():
         cmd.append("-s")
     if args.num:
         cmd.extend(["--num", "-s"])
+    if args.cache:
+        cmd.append("--cache")
+
+    if args.bench_append:
+        stream = []
+        total_prefixes = 0
+        for q in queries:
+            for i in range(1, len(q) + 1):
+                stream.append(q[:i])
+                total_prefixes += 1
+        input_text = "\n".join(stream) + "\n:quit\n"
+        times = []
+        for _ in range(max(args.repeats, 1)):
+            t0 = time.perf_counter()
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            proc.communicate(input_text.encode())
+            times.append(time.perf_counter() - t0)
+        best = min(times)
+        avg = sum(times) / len(times)
+        print(f"Prefixes: {total_prefixes}")
+        print(f"Best time: {best:.6f}s")
+        print(f"Avg time: {avg:.6f}s")
+        print(f"Best ms/prefix: {best * 1000 / max(total_prefixes, 1):.4f}")
+        print(f"Avg ms/prefix: {avg * 1000 / max(total_prefixes, 1):.4f}")
+        return
 
     input_text = "\n".join(queries) + "\n:quit\n"
     proc = subprocess.Popen(

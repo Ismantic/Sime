@@ -20,6 +20,7 @@ add_library(sime_core
     ${NEW_SRC_DIR}/state.cc
     ${NEW_SRC_DIR}/sime.cc
     ${NEW_SRC_DIR}/trie.cc
+    ${NEW_SRC_DIR}/cache_trie.cc
     ${NEW_SRC_DIR}/cut.cc
 )
 

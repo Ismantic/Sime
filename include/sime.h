@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "cache_trie.h"
 #include "score.h"
 #include "state.h"
 #include "dict.h"
@@ -32,6 +33,9 @@ public:
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
                                              std::size_t extra = 0) const;
+    std::vector<DecodeResult> DecodeSentenceCache(
+        std::string_view input,
+        std::size_t extra = 0) const;
 
     // Prediction: given confirmed token IDs as context, suggest next words.
     // When `en` is true, only English tokens are returned (for the English
@@ -63,6 +67,10 @@ public:
     // column. Both layers are scored against the
     // LM context produced by the prefix `start`.
     std::vector<DecodeResult> DecodeNumSentence(
+        std::string_view nums,
+        std::string_view start = {},
+        std::size_t extra = 0) const;
+    std::vector<DecodeResult> DecodeNumSentenceCache(
         std::string_view nums,
         std::string_view start = {},
         std::size_t extra = 0) const;
@@ -103,6 +111,9 @@ private:
 
     // Beam search
     void Process(std::vector<Node>& net) const;
+    void ProcessIncremental(std::vector<Node>& net,
+                            std::size_t recompute_from,
+                            const std::vector<Node>& cached_net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
 
@@ -127,10 +138,71 @@ private:
                      std::vector<Node>& net,
                      bool expansion = true) const;
 
+    struct SentenceStartCache {
+        bool active = false;
+        std::vector<trie::DoubleArray::PinyinState> py_states;
+        trie::DoubleArray::ExactState en_state{};
+    };
+
+    struct SentenceDecodeCache {
+        std::string input;
+        std::vector<SentenceStartCache> starts;
+        std::vector<std::vector<Link>> exact_edges;
+        std::vector<std::vector<Link>> expansion_edges;
+        std::vector<Node> processed_net;
+
+        void Clear() {
+            input.clear();
+            starts.clear();
+            exact_edges.clear();
+            expansion_edges.clear();
+            processed_net.clear();
+        }
+    };
+
+    struct NumStartCache {
+        bool digit_active = false;
+        bool cross_active = false;
+        trie::T9CacheSession py_t9_session;
+        trie::T9CacheSession en_t9_session;
+    };
+
+    struct NumDecodeCache {
+        std::string start;
+        std::string nums;
+        std::vector<NumStartCache> starts;
+        std::vector<std::vector<Link>> exact_edges;
+        std::vector<std::vector<Link>> static_expansion_edges;
+        std::vector<std::vector<Link>> dynamic_expansion_edges;
+        std::vector<Node> processed_net;
+
+        void Clear() {
+            start.clear();
+            nums.clear();
+            starts.clear();
+            exact_edges.clear();
+            static_expansion_edges.clear();
+            dynamic_expansion_edges.clear();
+            processed_net.clear();
+        }
+    };
+
+    static bool IsAppendOnly(std::string_view prev, std::string_view next);
+    void ResetSentenceDecodeCache(std::string_view input) const;
+    void AppendSentenceDecodeCache(std::string_view appended_tail) const;
+    void BuildSentenceNetFromCache(std::vector<Node>& net) const;
+
+    void ResetNumDecodeCache(std::string_view start,
+                             std::string_view nums) const;
+    void AppendNumDecodeCache(std::string_view appended_tail) const;
+    void BuildNumNetFromCache(std::vector<Node>& net) const;
+
     // Resources
     Dict dict_;
     Scorer scorer_;
     bool ready_ = false;
+    mutable SentenceDecodeCache sentence_cache_;
+    mutable NumDecodeCache num_cache_;
 };
 
 } // namespace sime

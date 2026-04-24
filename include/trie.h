@@ -13,6 +13,8 @@
 
 namespace trie {
 
+class T9CacheSession;
+
 struct ArrayUnit {
     uint8_t label = 0;
     bool eow = false;
@@ -75,6 +77,48 @@ public:
         std::string_view digits, CharExpander expand,
         std::size_t max_num = 96) const;
 
+    // Incremental frontier APIs used by decoder cache layers.
+    struct PinyinState {
+        std::size_t pos = 0;
+        uint8_t depth = 0;  // 0=boundary, 1=initial, 2+=deep in syllable
+        bool fuzzy = false; // true if this path used abbreviation/skip
+    };
+
+    struct ExactState {
+        std::size_t pos = 0;
+        bool valid = true;
+    };
+
+    std::vector<PinyinState> StartPinyinStates() const;
+    ExactState StartExactState() const;
+
+    void AdvancePinyinStates(std::vector<PinyinState>& states,
+                             uint8_t ch) const;
+    void AdvanceT9States(std::vector<PinyinState>& states,
+                         uint8_t ch,
+                         CharExpander expand) const;
+    void AdvanceExactState(ExactState& state, uint8_t ch) const;
+
+    std::vector<SearchResult> CollectPrefixMatchesPinyin(
+        const std::vector<PinyinState>& states,
+        std::size_t input_len,
+        std::size_t max_num = 96,
+        bool include_last_syllable = true) const;
+    std::vector<SearchResult> CollectPrefixMatchesExact(
+        const ExactState& state,
+        std::size_t input_len,
+        std::size_t max_num = 96) const;
+    std::vector<SearchResult> CollectCompletionsPinyin(
+        const std::vector<PinyinState>& states,
+        std::size_t prefix_len,
+        std::size_t max_num = 96,
+        bool stop_at_sep = true) const;
+    std::vector<SearchResult> CollectCompletionsExact(
+        const ExactState& state,
+        std::size_t prefix_len,
+        std::size_t max_num = 96,
+        bool stop_at_sep = false) const;
+
     // Serialization.
     void Serialize(std::vector<char>& buffer) const;
     bool Deserialize(const char* data, std::size_t size);
@@ -83,6 +127,8 @@ public:
     bool Empty() const { return size_ == 0; }
 
 private:
+    friend class T9CacheSession;
+
     void CollectWords(std::size_t pos, std::string& word,
                       std::vector<SearchResult>& results,
                       std::size_t max_num,
@@ -97,22 +143,14 @@ private:
                             std::vector<std::size_t>& out,
                             int max_depth) const;
 
-    // Core state-machine advance: given a set of (dat_pos, at_boundary)
-    // states and an input character, compute the next state set.
-    struct PinyinState {
-        std::size_t pos;
-        uint8_t depth;  // 0=boundary (root/after '), 1=initial matched, 2+=deep
-    };
+    // Core state-machine advance: given a set of DAT states and an input
+    // character, compute the next state set.
     void AdvancePinyin(std::vector<PinyinState>& states,
                        uint8_t ch) const;
     // Fused T9 advance: expand digit to letters and advance all states
     // in one pass, avoiding per-letter vector copies.
     void AdvanceT9(std::vector<PinyinState>& states,
                    const char* letters) const;
-    void RecordMatches(const std::vector<PinyinState>& states,
-                       std::size_t input_len,
-                       std::vector<SearchResult>& results,
-                       std::size_t max_num) const;
 
     const std::vector<std::size_t>& GetSepDescendants(std::size_t pos) const;
 

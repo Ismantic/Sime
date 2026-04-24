@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace sime {
@@ -359,6 +360,261 @@ std::size_t Sime::CountPathMismatch(const std::vector<Link>& path,
     return mismatch;
 }
 
+void Sime::BuildNumNetFromCache(std::vector<Node>& net) const {
+    const std::size_t p = num_cache_.start.size();
+    const std::size_t total = p + num_cache_.nums.size();
+    net.clear();
+    net.resize(total + 2);
+
+    for (std::size_t s = 0; s < total; ++s) {
+        bool is_sep = s < p
+            ? num_cache_.start[s] == '\''
+            : num_cache_.nums[s - p] == '\'';
+        if (is_sep) {
+            net[s].es.push_back({s, s + 1, NotToken});
+            continue;
+        }
+        net[s].es = num_cache_.exact_edges[s];
+        net[s].es.insert(net[s].es.end(),
+                         num_cache_.static_expansion_edges[s].begin(),
+                         num_cache_.static_expansion_edges[s].end());
+        net[s].es.insert(net[s].es.end(),
+                         num_cache_.dynamic_expansion_edges[s].begin(),
+                         num_cache_.dynamic_expansion_edges[s].end());
+        PruneNode(net[s].es);
+    }
+    net[total].es.push_back({total, total + 1, NotToken});
+}
+
+void Sime::ResetNumDecodeCache(std::string_view start,
+                               std::string_view nums) const {
+    num_cache_.Clear();
+    num_cache_.start.assign(start);
+    num_cache_.nums.assign(nums);
+
+    const std::size_t p = start.size();
+    const std::size_t d = nums.size();
+    const std::size_t total = p + d;
+    num_cache_.starts.resize(total);
+    num_cache_.exact_edges.resize(total);
+    num_cache_.static_expansion_edges.resize(total);
+    num_cache_.dynamic_expansion_edges.resize(total);
+
+    auto emit_exact = [&](std::size_t s,
+                          std::size_t max_end, Dict::DatType type,
+                          const std::vector<trie::SearchResult>& results,
+                          bool cross_only = false) {
+        for (const auto& r : results) {
+            std::size_t new_col = s + r.length;
+            if (new_col > max_end) continue;
+            if (cross_only && new_col <= p) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                num_cache_.exact_edges[s].push_back(
+                    {s, new_col, entry.items[i].id, entry.items[i].pieces});
+            }
+        }
+    };
+    auto emit_expand = [&](std::vector<Link>& out, std::size_t s,
+                           std::size_t target_col, std::size_t prefix_len,
+                           Dict::DatType type,
+                           const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            if (r.length <= prefix_len) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, target_col, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+
+    const auto& py_dat = dict_.Dat(Dict::LetterPinyin);
+    const auto& en_dat = dict_.Dat(Dict::LetterEn);
+
+    for (std::size_t s = 0; s < p; ++s) {
+        if (start[s] == '\'') continue;
+
+        auto suffix = start.substr(s);
+        emit_exact(s, p, Dict::LetterPinyin,
+                   py_dat.PrefixSearchPinyin(suffix, 512));
+        emit_exact(s, p, Dict::LetterEn,
+                   en_dat.PrefixSearch(suffix, 512));
+
+        if (!Dict::IsKnownPinyin(std::string(suffix))) {
+            emit_expand(num_cache_.static_expansion_edges[s], s, p,
+                        suffix.size(), Dict::LetterPinyin,
+                        py_dat.FindWordsWithPrefixPinyin(suffix, 512));
+            emit_expand(num_cache_.static_expansion_edges[s], s, p,
+                        suffix.size(), Dict::LetterEn,
+                        en_dat.FindWordsWithPrefix(suffix, 1024));
+        }
+
+        if (!nums.empty() && (p - s) <= 6) {
+            auto& state = num_cache_.starts[s];
+            state.cross_active = true;
+            state.py_t9_session.Bind(&py_dat, Dict::NumToLettersLower);
+            state.en_t9_session.Bind(&en_dat, Dict::NumToLetters);
+            std::string cross(suffix);
+            cross += nums;
+            state.py_t9_session.Append(cross);
+            state.en_t9_session.Append(cross);
+            emit_exact(s, total, Dict::LetterPinyin,
+                       py_dat.PrefixSearchT9(cross, Dict::NumToLettersLower,
+                                             512),
+                       true);
+            emit_exact(s, total, Dict::LetterEn,
+                       en_dat.PrefixSearchT9(cross, Dict::NumToLetters, 512),
+                       true);
+        }
+    }
+
+    for (std::size_t dpos = 0; dpos < d; ++dpos) {
+        const std::size_t s = p + dpos;
+        if (nums[dpos] == '\'') continue;
+
+        auto& state = num_cache_.starts[s];
+        state.digit_active = true;
+        state.py_t9_session.Bind(&py_dat, Dict::NumToLettersLower);
+        state.en_t9_session.Bind(&en_dat, Dict::NumToLetters);
+        auto suffix = nums.substr(dpos);
+        state.py_t9_session.Append(suffix);
+        state.en_t9_session.Append(suffix);
+
+        emit_exact(s, total, Dict::LetterPinyin,
+                   py_dat.PrefixSearchT9(suffix, Dict::NumToLettersLower, 512));
+        emit_exact(s, total, Dict::LetterEn,
+                   en_dat.PrefixSearchT9(suffix, Dict::NumToLetters, 512));
+    }
+
+    if (!nums.empty()) {
+        for (std::size_t dpos = 0; dpos < d; ++dpos) {
+            const std::size_t s = p + dpos;
+            if (nums[dpos] == '\'') continue;
+            std::size_t tail_len = 0;
+            while (dpos + tail_len < d && nums[dpos + tail_len] != '\'') {
+                ++tail_len;
+            }
+            if (dpos + tail_len != d || tail_len == 0) continue;
+            const auto& state = num_cache_.starts[s];
+            emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
+                        tail_len, Dict::LetterPinyin,
+                        state.py_t9_session.CollectCompletions(512, true));
+            emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
+                        tail_len, Dict::LetterEn,
+                        state.en_t9_session.CollectCompletions(1024, true));
+        }
+    }
+}
+
+void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
+    if (appended_tail.empty()) return;
+
+    auto emit_exact = [&](std::size_t s, std::size_t input_len,
+                          Dict::DatType type,
+                          const std::vector<trie::SearchResult>& results,
+                          bool cross_only = false) {
+        for (const auto& r : results) {
+            if (r.length != input_len) continue;
+            std::size_t new_col = s + r.length;
+            if (cross_only && new_col <= num_cache_.start.size()) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                num_cache_.exact_edges[s].push_back(
+                    {s, new_col, entry.items[i].id, entry.items[i].pieces});
+            }
+        }
+    };
+    auto emit_expand = [&](std::vector<Link>& out, std::size_t s,
+                           std::size_t target_col, std::size_t prefix_len,
+                           Dict::DatType type,
+                           const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            if (r.length <= prefix_len) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, target_col, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+
+    const auto& py_dat = dict_.Dat(Dict::LetterPinyin);
+    const auto& en_dat = dict_.Dat(Dict::LetterEn);
+    const std::size_t p = num_cache_.start.size();
+
+    for (char ch : appended_tail) {
+        const std::size_t old_d = num_cache_.nums.size();
+        const std::size_t old_total = p + old_d;
+        num_cache_.nums.push_back(ch);
+        num_cache_.starts.resize(old_total + 1);
+        num_cache_.exact_edges.resize(old_total + 1);
+        num_cache_.static_expansion_edges.resize(old_total + 1);
+        num_cache_.dynamic_expansion_edges.resize(old_total + 1);
+
+        for (std::size_t s = 0; s < p; ++s) {
+            auto& state = num_cache_.starts[s];
+            if (!state.cross_active) continue;
+            state.py_t9_session.Append(static_cast<uint8_t>(ch));
+            state.en_t9_session.Append(static_cast<uint8_t>(ch));
+            const std::size_t input_len = p + num_cache_.nums.size() - s;
+            emit_exact(s, input_len, Dict::LetterPinyin,
+                       state.py_t9_session.CollectPrefixMatchesCurrent(80),
+                       true);
+            emit_exact(s, input_len, Dict::LetterEn,
+                       state.en_t9_session.CollectPrefixMatchesCurrent(80),
+                       true);
+        }
+
+        for (std::size_t s = p; s < old_total; ++s) {
+            auto& state = num_cache_.starts[s];
+            if (!state.digit_active) continue;
+            state.py_t9_session.Append(static_cast<uint8_t>(ch));
+            state.en_t9_session.Append(static_cast<uint8_t>(ch));
+            const std::size_t input_len = p + num_cache_.nums.size() - s;
+            emit_exact(s, input_len, Dict::LetterPinyin,
+                       state.py_t9_session.CollectPrefixMatchesCurrent(80));
+            emit_exact(s, input_len, Dict::LetterEn,
+                       state.en_t9_session.CollectPrefixMatchesCurrent(80));
+        }
+
+        if (ch != '\'') {
+            auto& state = num_cache_.starts[old_total];
+            state.digit_active = true;
+            state.py_t9_session.Bind(&py_dat, Dict::NumToLettersLower);
+            state.en_t9_session.Bind(&en_dat, Dict::NumToLetters);
+            state.py_t9_session.Append(static_cast<uint8_t>(ch));
+            state.en_t9_session.Append(static_cast<uint8_t>(ch));
+            emit_exact(old_total, 1, Dict::LetterPinyin,
+                       state.py_t9_session.CollectPrefixMatchesCurrent(80));
+            emit_exact(old_total, 1, Dict::LetterEn,
+                       state.en_t9_session.CollectPrefixMatchesCurrent(80));
+        }
+    }
+
+    const std::size_t d = num_cache_.nums.size();
+    const std::size_t total = p + d;
+    for (std::size_t s = 0; s < total; ++s) {
+        num_cache_.dynamic_expansion_edges[s].clear();
+    }
+    for (std::size_t dpos = 0; dpos < d; ++dpos) {
+        const std::size_t s = p + dpos;
+        if (num_cache_.nums[dpos] == '\'') continue;
+        std::size_t tail_len = 0;
+        while (dpos + tail_len < d && num_cache_.nums[dpos + tail_len] != '\'') {
+            ++tail_len;
+        }
+        if (dpos + tail_len != d || tail_len == 0) continue;
+        const auto& state = num_cache_.starts[s];
+        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
+                    Dict::LetterPinyin,
+                    state.py_t9_session.CollectCompletions(512, true));
+        emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
+                    Dict::LetterEn,
+                    state.en_t9_session.CollectCompletions(1024, true));
+    }
+}
+
 std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
@@ -477,6 +733,131 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     return results;
 }
 
+std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
+    std::string_view nums,
+    std::string_view start,
+    std::size_t extra) const {
+    std::vector<DecodeResult> results;
+    if (!ready_) return results;
+    for (char c : nums) {
+        if (c == '\'') continue;
+        if (c < '2' || c > '9') return results;
+    }
+    if (nums.empty() && start.empty()) return results;
+
+    const std::size_t p = start.size();
+    const std::size_t d = nums.size();
+    const std::size_t total = p + d;
+    std::string combined_input(start);
+    combined_input += nums;
+
+    std::size_t recompute_from = 0;
+    bool incremental = false;
+    if (num_cache_.start != start || !IsAppendOnly(num_cache_.nums, nums)) {
+        ResetNumDecodeCache(start, nums);
+    } else if (num_cache_.nums != nums) {
+        recompute_from = num_cache_.start.size() + num_cache_.nums.size();
+        incremental = !num_cache_.processed_net.empty();
+        AppendNumDecodeCache(nums.substr(num_cache_.nums.size()));
+    }
+
+    std::vector<Node> net;
+    BuildNumNetFromCache(net);
+    ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
+
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
+    if (incremental) {
+        ProcessIncremental(net, recompute_from, num_cache_.processed_net);
+    } else {
+        State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+        net[0].states.Insert(init);
+        Process(net);
+    }
+
+    std::unordered_set<std::string> dedup;
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
+
+    {
+        const auto tail = net[total + 1].states.GetStates();
+        const std::size_t scan = std::min<std::size_t>(BeamSize, tail.size());
+        const std::size_t full_cnt = start.size() + d;
+        std::vector<DecodeResult> l1;
+        l1.reserve(scan);
+        std::unordered_set<std::string> l1_seen;
+        for (std::size_t rank = 0; rank < scan; ++rank) {
+            auto path = Backtrace(tail[rank], total + 1);
+            std::string text = ExtractText(path);
+            if (text.empty() || !l1_seen.insert(text).second) continue;
+            std::string py = ExtractUnits(path, combined_input);
+
+            l1.push_back({std::move(text), std::move(py),
+                          ExtractTokens(path),
+                          -tail[rank].score, full_cnt});
+        }
+        std::sort(l1.begin(), l1.end(),
+                  [](const DecodeResult& a, const DecodeResult& b) {
+                      return a.score > b.score;
+                  });
+        const std::size_t full_limit = 1 + extra;
+        for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
+             ++i) {
+            dedup.insert(l1[i].text);
+            results.push_back(std::move(l1[i]));
+        }
+    }
+
+    std::vector<DecodeResult> l2_full;
+    std::vector<DecodeResult> l2_abbrev;
+
+    for (const auto& edge : net[0].es) {
+        if (edge.id == NotToken) continue;
+
+        std::u32string text_u32 = ToText(edge);
+        if (text_u32.empty()) continue;
+
+        std::string text_utf8 = TextFromU32(text_u32);
+        if (!dedup.insert(text_utf8).second) continue;
+
+        std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
+        float_t dist_penalty =
+            static_cast<float_t>(distance) * penalty_per_unit;
+
+        bool is_t9 = (edge.start >= p);
+        auto slice = std::string_view(combined_input).substr(
+            edge.start, edge.end - edge.start);
+        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, is_t9);
+
+        Scorer::Pos epos{};
+        Scorer::Pos enext{};
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
+                        - dist_penalty;
+
+        std::string edge_py = edge.pieces
+            ? AbbreviatePieces(edge.pieces, slice)
+            : "";
+        std::size_t cnt = edge.end;
+        DecodeResult r{std::move(text_utf8), std::move(edge_py),
+                       ExtractTokens({edge}), score, cnt};
+        if (mismatch == 0) {
+            l2_full.push_back(std::move(r));
+        } else {
+            l2_abbrev.push_back(std::move(r));
+        }
+    }
+
+    auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
+        return a.score > b.score;
+    };
+    std::sort(l2_full.begin(), l2_full.end(), by_score);
+    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
+    for (auto& r : l2_full) results.push_back(std::move(r));
+    for (auto& r : l2_abbrev) results.push_back(std::move(r));
+
+    num_cache_.processed_net = std::move(net);
+    return results;
+}
+
 std::vector<DecodeResult> Sime::DecodeNumStr(
     std::string_view nums,
     std::string_view start,
@@ -541,6 +922,194 @@ std::string NormalizeInput(std::string_view input) {
 }
 
 } // namespace
+
+bool Sime::IsAppendOnly(std::string_view prev, std::string_view next) {
+    return next.size() >= prev.size() &&
+           next.substr(0, prev.size()) == prev;
+}
+
+void Sime::BuildSentenceNetFromCache(std::vector<Node>& net) const {
+    const auto& input = sentence_cache_.input;
+    const std::size_t total = input.size();
+    net.clear();
+    net.resize(total + 2);
+    for (std::size_t s = 0; s < total; ++s) {
+        if (input[s] == '\'') {
+            net[s].es.push_back({s, s + 1, NotToken});
+            continue;
+        }
+        net[s].es = sentence_cache_.exact_edges[s];
+        net[s].es.insert(net[s].es.end(),
+                         sentence_cache_.expansion_edges[s].begin(),
+                         sentence_cache_.expansion_edges[s].end());
+        PruneNode(net[s].es);
+    }
+    net[total].es.push_back({total, total + 1, NotToken});
+}
+
+void Sime::ResetSentenceDecodeCache(std::string_view input) const {
+    sentence_cache_.Clear();
+    sentence_cache_.input.assign(input);
+    const std::size_t total = input.size();
+    sentence_cache_.starts.resize(total);
+    sentence_cache_.exact_edges.resize(total);
+    sentence_cache_.expansion_edges.resize(total);
+
+    auto emit_exact = [&](std::vector<Link>& out, std::size_t s,
+                          Dict::DatType type,
+                          const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, s + r.length, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+    auto emit_expand = [&](std::vector<Link>& out, std::size_t s,
+                           std::size_t prefix_len,
+                           Dict::DatType type,
+                           const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            if (r.length <= prefix_len) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, total, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+
+    const auto& py_dat = dict_.Dat(Dict::LetterPinyin);
+    const auto& en_dat = dict_.Dat(Dict::LetterEn);
+
+    for (std::size_t s = 0; s < total; ++s) {
+        if (input[s] == '\'') continue;
+
+        auto suffix = input.substr(s);
+        auto& start = sentence_cache_.starts[s];
+        start.active = true;
+        start.py_states = py_dat.StartPinyinStates();
+        start.en_state = en_dat.StartExactState();
+        for (char ch : suffix) {
+            py_dat.AdvancePinyinStates(start.py_states,
+                                       static_cast<uint8_t>(ch));
+            en_dat.AdvanceExactState(start.en_state,
+                                     static_cast<uint8_t>(ch));
+        }
+
+        emit_exact(sentence_cache_.exact_edges[s], s, Dict::LetterPinyin,
+                   py_dat.PrefixSearchPinyin(suffix, 512));
+        emit_exact(sentence_cache_.exact_edges[s], s, Dict::LetterEn,
+                   en_dat.PrefixSearch(suffix, 512));
+
+        if (!Dict::IsKnownPinyin(std::string(suffix))) {
+            emit_expand(sentence_cache_.expansion_edges[s], s, suffix.size(),
+                        Dict::LetterPinyin,
+                        py_dat.CollectCompletionsPinyin(start.py_states,
+                                                        suffix.size(), 512));
+            emit_expand(sentence_cache_.expansion_edges[s], s, suffix.size(),
+                        Dict::LetterEn,
+                        en_dat.CollectCompletionsExact(start.en_state,
+                                                       suffix.size(), 1024));
+        }
+    }
+}
+
+void Sime::AppendSentenceDecodeCache(std::string_view appended_tail) const {
+    if (appended_tail.empty()) return;
+
+    auto emit_exact = [&](std::vector<Link>& out, std::size_t s,
+                          std::size_t input_len, Dict::DatType type,
+                          const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            if (r.length != input_len) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, s + r.length, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+    auto emit_expand = [&](std::vector<Link>& out, std::size_t s,
+                           std::size_t total, std::size_t prefix_len,
+                           Dict::DatType type,
+                           const std::vector<trie::SearchResult>& results) {
+        for (const auto& r : results) {
+            if (r.length <= prefix_len) continue;
+            auto entry = dict_.GetEntry(type, r.value);
+            for (uint32_t i = 0; i < entry.count; ++i) {
+                out.push_back({s, total, entry.items[i].id,
+                               entry.items[i].pieces});
+            }
+        }
+    };
+
+    const auto& py_dat = dict_.Dat(Dict::LetterPinyin);
+    const auto& en_dat = dict_.Dat(Dict::LetterEn);
+
+    for (char ch : appended_tail) {
+        const std::size_t old_total = sentence_cache_.input.size();
+        sentence_cache_.input.push_back(ch);
+        sentence_cache_.starts.resize(old_total + 1);
+        sentence_cache_.exact_edges.resize(old_total + 1);
+        sentence_cache_.expansion_edges.resize(old_total + 1);
+
+        for (std::size_t s = 0; s < old_total; ++s) {
+            auto& start = sentence_cache_.starts[s];
+            if (!start.active) continue;
+            py_dat.AdvancePinyinStates(start.py_states,
+                                       static_cast<uint8_t>(ch));
+            en_dat.AdvanceExactState(start.en_state,
+                                     static_cast<uint8_t>(ch));
+            const std::size_t input_len = sentence_cache_.input.size() - s;
+            emit_exact(sentence_cache_.exact_edges[s], s, input_len,
+                       Dict::LetterPinyin,
+                       py_dat.CollectPrefixMatchesPinyin(start.py_states,
+                                                         input_len, 512));
+            emit_exact(sentence_cache_.exact_edges[s], s, input_len,
+                       Dict::LetterEn,
+                       en_dat.CollectPrefixMatchesExact(start.en_state,
+                                                       input_len, 512));
+        }
+
+        if (ch != '\'') {
+            auto& start = sentence_cache_.starts[old_total];
+            start.active = true;
+            start.py_states = py_dat.StartPinyinStates();
+            start.en_state = en_dat.StartExactState();
+            py_dat.AdvancePinyinStates(start.py_states,
+                                       static_cast<uint8_t>(ch));
+            en_dat.AdvanceExactState(start.en_state,
+                                     static_cast<uint8_t>(ch));
+            emit_exact(sentence_cache_.exact_edges[old_total], old_total, 1,
+                       Dict::LetterPinyin,
+                       py_dat.CollectPrefixMatchesPinyin(start.py_states,
+                                                         1, 512));
+            emit_exact(sentence_cache_.exact_edges[old_total], old_total, 1,
+                       Dict::LetterEn,
+                       en_dat.CollectPrefixMatchesExact(start.en_state,
+                                                       1, 512));
+        }
+    }
+
+    const std::size_t total = sentence_cache_.input.size();
+    for (std::size_t s = 0; s < total; ++s) {
+        sentence_cache_.expansion_edges[s].clear();
+        if (sentence_cache_.input[s] == '\'') continue;
+        auto suffix = std::string_view(sentence_cache_.input).substr(s);
+        if (Dict::IsKnownPinyin(std::string(suffix))) continue;
+        const auto& start = sentence_cache_.starts[s];
+        emit_expand(sentence_cache_.expansion_edges[s], s, total, suffix.size(),
+                    Dict::LetterPinyin,
+                    py_dat.CollectCompletionsPinyin(start.py_states,
+                                                    suffix.size(), 512));
+        emit_expand(sentence_cache_.expansion_edges[s], s, total, suffix.size(),
+                    Dict::LetterEn,
+                    en_dat.CollectCompletionsExact(start.en_state,
+                                                   suffix.size(), 1024));
+    }
+}
 
 std::vector<DecodeResult> Sime::DecodeStr(
     std::string_view input,
@@ -723,6 +1292,91 @@ void Sime::Process(std::vector<Node>& net) const {
     }
 }
 
+void Sime::ProcessIncremental(std::vector<Node>& net,
+                              std::size_t recompute_from,
+                              const std::vector<Node>& cached_net) const {
+    if (recompute_from == 0 || cached_net.empty()) {
+        Process(net);
+        return;
+    }
+
+    const std::size_t prefix_cols =
+        std::min(recompute_from, std::min(net.size(), cached_net.size()));
+
+    std::unordered_map<const State*, const State*> rebased;
+    rebased.reserve(prefix_cols * BeamSize);
+
+    for (std::size_t col = 0; col < prefix_cols; ++col) {
+        net[col].states = cached_net[col].states;
+        auto& old_states = const_cast<NetStates&>(cached_net[col].states);
+        auto old_it = old_states.begin();
+        auto new_it = net[col].states.begin();
+        for (; old_it != old_states.end() &&
+               new_it != net[col].states.end();
+             ++old_it, ++new_it) {
+            rebased.emplace(&*old_it, &*new_it);
+        }
+    }
+
+    for (std::size_t col = 0; col < prefix_cols; ++col) {
+        for (auto it = net[col].states.begin(); it != net[col].states.end(); ++it) {
+            if (!it->backtrace_state) continue;
+            auto found = rebased.find(it->backtrace_state);
+            if (found != rebased.end()) {
+                it->backtrace_state = found->second;
+            } else {
+                it->backtrace_state = nullptr;
+            }
+        }
+    }
+
+    for (std::size_t col = prefix_cols; col < net.size(); ++col) {
+        net[col].states.Clear();
+    }
+
+    for (std::size_t col = 0; col < prefix_cols; ++col) {
+        const auto& cached_column = net[col];
+        const auto& edges = net[col].es;
+        auto& cached_states = const_cast<NetStates&>(cached_column.states);
+        for (auto it = cached_states.begin();
+             it != cached_states.end(); ++it) {
+            const auto& value = *it;
+            for (const auto& word : edges) {
+                if (word.end < recompute_from) continue;
+                Scorer::Pos cur_pos = value.pos;
+                Scorer::Pos next_pos{};
+                float_t step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
+                scorer_.Back(next_pos);
+                cur_pos = next_pos;
+
+                float_t next_cost = value.score + step + word.penalty;
+                State next(next_cost, word.end, cur_pos, &value, word.id,
+                           word.pieces);
+                net[word.end].states.Insert(next);
+            }
+        }
+    }
+
+    for (std::size_t col = recompute_from; col < net.size(); ++col) {
+        auto& column = net[col];
+        for (auto it = column.states.begin(); it != column.states.end(); ++it) {
+            const auto& value = *it;
+            for (const auto& word : column.es) {
+                Scorer::Pos cur_pos = value.pos;
+                Scorer::Pos next_pos{};
+                float_t step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
+                scorer_.Back(next_pos);
+                cur_pos = next_pos;
+
+                float_t next_cost = value.score + step + word.penalty;
+                State next(next_cost, word.end, cur_pos, &value, word.id,
+                           word.pieces);
+                net[word.end].states.Insert(next);
+            }
+        }
+    }
+}
+
 std::vector<Sime::Link> Sime::Backtrace(
     const State& tail_state,
     std::size_t end) {
@@ -874,6 +1528,133 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     for (auto& r : l2_full) results.push_back(std::move(r));
     for (auto& r : l2_abbrev) results.push_back(std::move(r));
 
+    return results;
+}
+
+std::vector<DecodeResult> Sime::DecodeSentenceCache(
+    std::string_view input,
+    std::size_t extra) const {
+    std::vector<DecodeResult> results;
+    if (!ready_ || input.empty()) return results;
+
+    std::string lower = NormalizeInput(input);
+    if (lower.empty()) return results;
+
+    std::size_t recompute_from = 0;
+    bool incremental = false;
+    if (sentence_cache_.input.empty() ||
+        !IsAppendOnly(sentence_cache_.input, lower)) {
+        ResetSentenceDecodeCache(lower);
+    } else if (sentence_cache_.input != lower) {
+        recompute_from = sentence_cache_.input.size();
+        incremental = !sentence_cache_.processed_net.empty();
+        AppendSentenceDecodeCache(
+            std::string_view(lower).substr(sentence_cache_.input.size()));
+    }
+
+    const std::size_t total = lower.size();
+    std::vector<Node> net;
+    BuildSentenceNetFromCache(net);
+    ComputeEdgePenalties(net, lower, PinyinMatchPenalty, total + 1);
+
+    for (auto& col : net) col.states.SetMaxTop(BeamSize);
+    if (incremental) {
+        ProcessIncremental(net, recompute_from, sentence_cache_.processed_net);
+    } else {
+        State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+        net[0].states.Insert(init);
+        Process(net);
+    }
+
+    std::unordered_set<std::string> dedup;
+    const float_t penalty_per_unit =
+        std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
+
+    {
+        const auto tail = net.back().states.GetStates();
+        const std::size_t scan =
+            std::min<std::size_t>(BeamSize, tail.size());
+        std::vector<DecodeResult> l1;
+        l1.reserve(scan);
+        std::unordered_set<std::string> l1_seen;
+        for (std::size_t rank = 0; rank < scan; ++rank) {
+            auto path = Backtrace(tail[rank], net.size() - 1);
+            if (path.empty()) continue;
+            std::string text = ExtractText(path);
+            if (text.empty() || !l1_seen.insert(text).second) continue;
+            std::string py = ExtractUnits(path, lower);
+
+            std::size_t piece_len = 0;
+            for (char c : py) {
+                if (c != '\'') ++piece_len;
+            }
+            std::size_t distance =
+                (piece_len > total) ? (piece_len - total) : 0;
+            float_t dist_penalty =
+                static_cast<float_t>(distance) * penalty_per_unit;
+
+            l1.push_back({std::move(text), std::move(py),
+                          ExtractTokens(path),
+                          -tail[rank].score - dist_penalty,
+                          input.size()});
+        }
+        std::sort(l1.begin(), l1.end(),
+                  [](const DecodeResult& a, const DecodeResult& b) {
+                      return a.score > b.score;
+                  });
+        const std::size_t full_limit = 1 + extra;
+        for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
+             ++i) {
+            dedup.insert(l1[i].text);
+            results.push_back(std::move(l1[i]));
+        }
+    }
+
+    std::vector<DecodeResult> l2_full;
+    std::vector<DecodeResult> l2_abbrev;
+
+    for (const auto& edge : net[0].es) {
+        if (edge.id == NotToken) continue;
+
+        std::u32string text_u32 = ToText(edge);
+        if (text_u32.empty()) continue;
+        std::string text_utf8 = TextFromU32(text_u32);
+        if (!dedup.insert(text_utf8).second) continue;
+
+        std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
+        float_t dist_penalty =
+            static_cast<float_t>(distance) * penalty_per_unit;
+
+        auto slice = std::string_view(lower).substr(
+            edge.start, edge.end - edge.start);
+        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, false);
+
+        Scorer::Pos epos{};
+        Scorer::Pos enext{};
+        float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
+                        - dist_penalty;
+
+        std::string edge_py = edge.pieces
+            ? AbbreviatePieces(edge.pieces, slice)
+            : "";
+        DecodeResult r{std::move(text_utf8), std::move(edge_py),
+                       ExtractTokens({edge}), score, edge.end};
+        if (mismatch == 0) {
+            l2_full.push_back(std::move(r));
+        } else {
+            l2_abbrev.push_back(std::move(r));
+        }
+    }
+
+    auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
+        return a.score > b.score;
+    };
+    std::sort(l2_full.begin(), l2_full.end(), by_score);
+    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
+    for (auto& r : l2_full) results.push_back(std::move(r));
+    for (auto& r : l2_abbrev) results.push_back(std::move(r));
+
+    sentence_cache_.processed_net = std::move(net);
     return results;
 }
 
