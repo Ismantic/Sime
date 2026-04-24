@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common.h"
-#include "cache_trie.h"
+#include "cache.h"
 #include "score.h"
 #include "state.h"
 #include "dict.h"
@@ -83,6 +83,7 @@ private:
         TokenID id = 0;
         const char* pieces = nullptr;  // piece path, e.g. "ni'hao"
         float_t penalty = 0;           // syllable mismatch penalty
+        bool expansion = false;        // tail-expansion edge (lower priority in PruneNode)
     };
 
     struct Node {
@@ -108,6 +109,8 @@ private:
                                      float_t penalty_per_mismatch,
                                      std::size_t t9_boundary);
     void PruneNode(std::vector<Link>& edges,
+                   std::string_view input,
+                   std::size_t t9_boundary,
                    std::unordered_map<TokenID, float_t>* score_cache = nullptr) const;
 
     // Beam search
