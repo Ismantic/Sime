@@ -14,6 +14,7 @@ import com.semantic.sime.ime.ChineseLayout;
 public final class SimePrefs {
 
     private static final String KEY_CHINESE_LAYOUT = "chinese_layout";
+    private static final String KEY_PREDICTION_ENABLED = "prediction_enabled";
 
     private final SharedPreferences sp;
 
@@ -32,5 +33,13 @@ public final class SimePrefs {
 
     public void setChineseLayout(ChineseLayout l) {
         sp.edit().putString(KEY_CHINESE_LAYOUT, l.name()).apply();
+    }
+
+    public boolean getPredictionEnabled() {
+        return sp.getBoolean(KEY_PREDICTION_ENABLED, true);
+    }
+
+    public void setPredictionEnabled(boolean enabled) {
+        sp.edit().putBoolean(KEY_PREDICTION_ENABLED, enabled).apply();
     }
 }

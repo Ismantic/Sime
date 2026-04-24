@@ -213,4 +213,15 @@ public final class InputState {
     public boolean isEmpty() {
         return buffer.isEmpty() && selections.isEmpty();
     }
+
+    /** Defensive copy of UI-visible fields (excludes undoStack/contextIds). */
+    public InputState copy() {
+        InputState c = new InputState();
+        c.buffer = this.buffer;
+        c.cursor = this.cursor;
+        c.lettersEnd = this.lettersEnd;
+        c.predicting = this.predicting;
+        c.selections.addAll(this.selections);
+        return c;
+    }
 }

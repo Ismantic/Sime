@@ -75,6 +75,15 @@ public class ExpandedCandidatesView extends LinearLayout {
     private OnFallbackLetterListener fallbackLetterListener;
     private OnCollapseListener collapseListener;
 
+    // View pools — grow on demand, never shrink.
+    private final java.util.List<TextView> gridCellPool = new java.util.ArrayList<>();
+    private final java.util.List<android.view.View> gridFillerPool = new java.util.ArrayList<>();
+    private final java.util.List<LinearLayout> rowPool = new java.util.ArrayList<>();
+    private final java.util.List<android.view.View> leftItemPool = new java.util.ArrayList<>();
+    private int cellsUsed, fillersUsed, rowsUsed, leftItemsUsed;
+    private StateListDrawable sharedCellBg;
+    private StateListDrawable sharedFunctionBg;
+
     public ExpandedCandidatesView(Context ctx) {
         super(ctx);
         theme = SimeTheme.fromContext(ctx);
@@ -191,36 +200,49 @@ public class ExpandedCandidatesView extends LinearLayout {
     }
 
     private void renderLeftStrip(List<InputKernel.PinyinAlt> alts, String fallbackLetters) {
-        leftStrip.removeAllViews();
+        leftItemsUsed = 0;
         java.util.HashSet<String> shown = new java.util.HashSet<>();
-        // Pinyin alts first
         for (int i = 0; i < alts.size(); i++) {
             final int idx = i;
             String label = alts.get(i).letters;
-            leftStrip.addView(makeLeftItem(label, () -> {
+            android.view.View item = getOrCreateLeftItem(label, () -> {
                 if (altPickListener != null) altPickListener.onPinyinAltPick(idx);
-            }));
+            });
+            item.setVisibility(VISIBLE);
             shown.add(label);
         }
-        // Then fallback letters for the first digit (e.g. p/q/r/s for
-        // T9 digit 7) — same convention as the T9 keyboard's left strip.
         for (int i = 0; i < fallbackLetters.length(); i++) {
             final char ch = fallbackLetters.charAt(i);
             String label = String.valueOf(ch);
             if (shown.contains(label)) continue;
-            leftStrip.addView(makeLeftItem(label, () -> {
+            android.view.View item = getOrCreateLeftItem(label, () -> {
                 if (fallbackLetterListener != null) fallbackLetterListener.onFallbackLetter(ch);
-            }));
+            });
+            item.setVisibility(VISIBLE);
             shown.add(label);
+        }
+        // Hide unused pool items.
+        for (int i = leftItemsUsed; i < leftItemPool.size(); i++) {
+            leftItemPool.get(i).setVisibility(GONE);
         }
     }
 
-    private TextView makeLeftItem(String label, Runnable onClick) {
-        // Pinyin alts: function-style (darker gray) rectangle cells,
-        // visually distinct from the white hanzi cells on the right.
-        // Matches the reference IME layout.
-        return StripHelper.makeStripCell(
-                getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
+    private android.view.View getOrCreateLeftItem(String label, Runnable onClick) {
+        android.view.View item;
+        if (leftItemsUsed < leftItemPool.size()) {
+            item = leftItemPool.get(leftItemsUsed);
+            if (item instanceof TextView) {
+                ((TextView) item).setText(label);
+            }
+            item.setOnClickListener(v -> onClick.run());
+        } else {
+            item = StripHelper.makeStripCell(
+                    getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
+            leftItemPool.add(item);
+            leftStrip.addView(item);
+        }
+        leftItemsUsed++;
+        return item;
     }
 
     private StateListDrawable makeFunctionCellBg() {
@@ -243,32 +265,89 @@ public class ExpandedCandidatesView extends LinearLayout {
      * scroll vertically; the right column's ∧/∨ buttons handle paging.
      */
     private void renderGrid(List<DecodeResult> candidates, int startIdx) {
-        grid.removeAllViews();
         int n = candidates == null ? 0 : candidates.size();
         startIdx = Math.min(startIdx, n);
-        if (startIdx >= n) return;
 
-        LinearLayout currentRow = null;
+        cellsUsed = 0;
+        fillersUsed = 0;
+        rowsUsed = 0;
+
         int colsRemaining = 0;
+        LinearLayout currentRow = null;
 
         for (int i = startIdx; i < n; i++) {
             DecodeResult c = candidates.get(i);
             int span = colSpanFor(c.text);
             if (currentRow == null || colsRemaining < span) {
                 if (currentRow != null) {
-                    fillRemaining(currentRow, colsRemaining);
-                    grid.addView(currentRow);
+                    fillRemainingPooled(currentRow, colsRemaining);
                 }
-                currentRow = newRow();
+                currentRow = getOrCreateRow();
+                currentRow.removeAllViews();
                 colsRemaining = GRID_COLS;
             }
-            currentRow.addView(makeCandidateCell(c.text, i, span));
+            currentRow.addView(getOrCreateCell(c.text, i, span));
             colsRemaining -= span;
         }
         if (currentRow != null) {
-            fillRemaining(currentRow, colsRemaining);
-            grid.addView(currentRow);
+            fillRemainingPooled(currentRow, colsRemaining);
         }
+        // Hide unused rows.
+        for (int i = rowsUsed; i < rowPool.size(); i++) {
+            rowPool.get(i).setVisibility(GONE);
+        }
+    }
+
+    private LinearLayout getOrCreateRow() {
+        LinearLayout row;
+        if (rowsUsed < rowPool.size()) {
+            row = rowPool.get(rowsUsed);
+            row.setVisibility(VISIBLE);
+        } else {
+            row = new LinearLayout(getContext());
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(GRID_ROW_HEIGHT_DP));
+            row.setLayoutParams(lp);
+            rowPool.add(row);
+            grid.addView(row);
+        }
+        rowsUsed++;
+        return row;
+    }
+
+    private TextView getOrCreateCell(String text, int idx, int span) {
+        TextView tv;
+        if (cellsUsed < gridCellPool.size()) {
+            tv = gridCellPool.get(cellsUsed);
+            // Detach from old parent if needed.
+            if (tv.getParent() != null) {
+                ((android.view.ViewGroup) tv.getParent()).removeView(tv);
+            }
+        } else {
+            tv = new TextView(getContext());
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+            tv.setGravity(Gravity.CENTER);
+            tv.setTextColor(theme.candidateText);
+            tv.setPadding(dp(8), 0, dp(8), 0);
+            tv.setBackground(getCellBg());
+            tv.setClickable(true);
+            tv.setFocusable(true);
+            gridCellPool.add(tv);
+        }
+        tv.setText(text);
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) tv.getLayoutParams();
+        if (lp == null || lp.weight != span) {
+            lp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, span);
+            lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+            tv.setLayoutParams(lp);
+        }
+        tv.setOnClickListener(v -> {
+            if (pickListener != null) pickListener.onCandidatePick(idx);
+        });
+        cellsUsed++;
+        return tv;
     }
 
     private static int colSpanFor(String text) {
@@ -278,64 +357,35 @@ public class ExpandedCandidatesView extends LinearLayout {
         return GRID_COLS;
     }
 
-    private void fillRemaining(LinearLayout row, int cols) {
-        // Add one filler View per remaining column with the SAME
-        // margins as a real cell, otherwise the cells in a partially-
-        // filled row would compute slightly wider than cells in fully
-        // packed rows (different sum_of_margins → different
-        // weight-distributed widths) and the user would notice the
-        // mismatch (e.g. row 5's "送" cell appearing wider than the
-        // cells above it).
+    private void fillRemainingPooled(LinearLayout row, int cols) {
         for (int i = 0; i < cols; i++) {
-            android.view.View filler = new android.view.View(getContext());
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
-            lp.setMargins(dp(2), dp(2), dp(2), dp(2));
-            filler.setLayoutParams(lp);
+            android.view.View filler;
+            if (fillersUsed < gridFillerPool.size()) {
+                filler = gridFillerPool.get(fillersUsed);
+                if (filler.getParent() != null) {
+                    ((android.view.ViewGroup) filler.getParent()).removeView(filler);
+                }
+            } else {
+                filler = new android.view.View(getContext());
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.MATCH_PARENT, 1);
+                lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+                filler.setLayoutParams(lp);
+                gridFillerPool.add(filler);
+            }
             row.addView(filler);
+            fillersUsed++;
         }
     }
 
-    private LinearLayout newRow() {
-        LinearLayout row = new LinearLayout(getContext());
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        // Fixed row height so the grid is naturally scrollable when
-        // candidates exceed the viewport. 5 of these fit a 240dp
-        // keyboard area; extras scroll.
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(GRID_ROW_HEIGHT_DP));
-        row.setLayoutParams(lp);
-        return row;
-    }
-
-    private TextView makeCandidateCell(String text, int idx, int span) {
-        TextView tv = new TextView(getContext());
-        tv.setText(text);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
-        tv.setGravity(Gravity.CENTER);
-        tv.setTextColor(theme.candidateText);
-        tv.setPadding(dp(8), 0, dp(8), 0);
-        tv.setBackground(makeCellBg());
-        tv.setClickable(true);
-        tv.setFocusable(true);
-        // Fill the row height (MATCH_PARENT) for consistent cell sizing.
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, span);
-        lp.setMargins(dp(2), dp(2), dp(2), dp(2));
-        tv.setLayoutParams(lp);
-        tv.setOnClickListener(v -> {
-            if (pickListener != null) pickListener.onCandidatePick(idx);
-        });
-        return tv;
-    }
-
-
-    private StateListDrawable makeCellBg() {
-        StateListDrawable sl = new StateListDrawable();
-        sl.addState(new int[]{android.R.attr.state_pressed},
-                roundedRect(theme.keyBackgroundPressed));
-        sl.addState(new int[]{}, roundedRect(theme.keyBackground));
-        return sl;
+    private StateListDrawable getCellBg() {
+        if (sharedCellBg == null) {
+            sharedCellBg = new StateListDrawable();
+            sharedCellBg.addState(new int[]{android.R.attr.state_pressed},
+                    roundedRect(theme.keyBackgroundPressed));
+            sharedCellBg.addState(new int[]{}, roundedRect(theme.keyBackground));
+        }
+        return (StateListDrawable) sharedCellBg.getConstantState().newDrawable();
     }
 
     private GradientDrawable roundedRect(int color) {

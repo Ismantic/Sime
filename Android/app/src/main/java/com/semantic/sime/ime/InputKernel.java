@@ -6,6 +6,10 @@ import com.semantic.sime.ime.PinyinUtil;
 import com.semantic.sime.ime.keyboard.KeyType;
 import com.semantic.sime.ime.keyboard.SimeKey;
 
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -47,17 +51,45 @@ public class InputKernel {
         void onSetComposingText(String preedit);
     }
 
-    /** Pulled by the UI whenever the state changes. */
+    /** UI subscribes to immutable snapshots. */
     public interface StateObserver {
-        void onStateChanged(InputState state, List<DecodeResult> candidates);
+        void onStateChanged(Snapshot snapshot);
+    }
+
+    /** Immutable snapshot of all UI-visible state. */
+    public static final class Snapshot {
+        public final InputState state;
+        public final List<DecodeResult> candidates;
+        public final List<PinyinAlt> pinyinAlts;
+        public final String topUnits;
+        public final KeyboardMode mode;
+        public final ChineseLayout chineseLayout;
+        public final String englishBuffer;
+
+        public Snapshot(InputState state, List<DecodeResult> candidates,
+                 List<PinyinAlt> pinyinAlts, String topUnits,
+                 KeyboardMode mode, ChineseLayout chineseLayout,
+                 String englishBuffer) {
+            this.state = state;
+            this.candidates = candidates;
+            this.pinyinAlts = pinyinAlts;
+            this.topUnits = topUnits;
+            this.mode = mode;
+            this.chineseLayout = chineseLayout;
+            this.englishBuffer = englishBuffer;
+        }
     }
 
     private final Decoder decoder;
     private final InputState state = new InputState();
+    private final HandlerThread engineThread;
+    private final Handler engineHandler;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private KeyboardMode mode = KeyboardMode.CHINESE;
     private KeyboardMode previousMode = KeyboardMode.CHINESE;
     private ChineseLayout chineseLayout = ChineseLayout.QWERTY;
+    private boolean predictionEnabled = true;
 
     private List<DecodeResult> candidates = Collections.emptyList();
     /**
@@ -106,6 +138,9 @@ public class InputKernel {
     public InputKernel(Decoder decoder) {
         this.decoder = decoder;
         state.maxContextIds = decoder.contextSize();
+        engineThread = new HandlerThread("sime-engine");
+        engineThread.start();
+        engineHandler = new Handler(engineThread.getLooper());
     }
 
     // ===== Lifecycle =====
@@ -118,38 +153,55 @@ public class InputKernel {
     public void detach() {
         this.listener = null;
         this.observer = null;
+        engineThread.quitSafely();
     }
 
     public void onStartInput() {
-        resetAll();
+        engineHandler.post(this::resetAll);
     }
 
     public void onFinishInput() {
-        resetAll();
+        engineHandler.post(this::resetAll);
     }
 
     // ===== State accessors =====
 
-    public InputState getState()             { return state; }
-    public KeyboardMode getMode()            { return mode; }
-    public ChineseLayout getChineseLayout()  { return chineseLayout; }
-    public List<DecodeResult> getCandidates()   { return candidates; }
-    public List<PinyinAlt> getPinyinAlts()   { return pinyinAlts; }
-    public String getTopUnits()              { return topUnits; }
-    public String getEnglishBuffer()         { return englishBuffer.toString(); }
-    public boolean isPredicting()            { return state.predicting; }
+    /** Only for creating initial snapshot before engine thread starts. */
+    public ChineseLayout getInitialChineseLayout() { return chineseLayout; }
 
     public void setChineseLayout(ChineseLayout l) {
-        this.chineseLayout = l;
+        engineHandler.post(() -> { this.chineseLayout = l; });
     }
 
-    // ===== Key dispatch =====
+    public void setPredictionEnabled(boolean enabled) {
+        engineHandler.post(() -> {
+            this.predictionEnabled = enabled;
+            if (!enabled && state.predicting) {
+                exitPrediction();
+                publish();
+            }
+        });
+    }
+
+    // ===== Key dispatch (posts to engine thread) =====
 
     public void onKey(SimeKey key) {
         if (key == null) return;
-        // The T9 "1 key" picker is a modal candidate strip. Re-pressing
-        // the same key keeps it open; any other key dismisses it first
-        // and then runs its normal handler.
+        engineHandler.post(() -> onKeyInternal(key));
+    }
+
+    /** Unified candidate pick — routes by mode on the engine thread. */
+    public void onCandidatePick(int index) {
+        engineHandler.post(() -> {
+            if (mode == KeyboardMode.ENGLISH) {
+                onEnglishCompletionPickInternal(index);
+            } else {
+                onHanziCandidatePickInternal(index);
+            }
+        });
+    }
+
+    private void onKeyInternal(SimeKey key) {
         if (inPunctuationPicker && key.type != KeyType.NUM_PUNCTUATION) {
             dismissPunctuationPicker(/*publish=*/false);
         }
@@ -163,18 +215,31 @@ public class InputKernel {
             case CLEAR:           resetAll(); break;
             case PUNCTUATION:     handlePunctuation(key.text); break;
             case NUM_PUNCTUATION: showPunctuationPicker(); break;
-            case TO_NUMBER:       switchMode(KeyboardMode.NUMBER); break;
-            case TO_SYMBOL:       switchMode(KeyboardMode.SYMBOL); break;
-            case TO_BACK:         switchMode(previousMode); break;
+            case TO_NUMBER:       switchModeInternal(KeyboardMode.NUMBER); break;
+            case TO_SYMBOL:       switchModeInternal(KeyboardMode.SYMBOL); break;
+            case TO_BACK:         switchModeInternal(previousMode); break;
             case TOGGLE_LANG:     handleToggleLang(); break;
         }
     }
 
+    // ===== Listener fire methods (post to main thread) =====
+
+    private void fireCommitText(String text) {
+        mainHandler.post(() -> { if (listener != null) listener.onCommitText(text); });
+    }
+    private void fireDeleteBefore(int count) {
+        mainHandler.post(() -> { if (listener != null) listener.onDeleteBefore(count); });
+    }
+    private void fireSendEnter() {
+        mainHandler.post(() -> { if (listener != null) listener.onSendEnter(); });
+    }
+    private void fireSetComposingText(String text) {
+        mainHandler.post(() -> { if (listener != null) listener.onSetComposingText(text); });
+    }
+
     private void showPunctuationPicker() {
         if (mode != KeyboardMode.CHINESE) {
-            // Outside of Chinese mode the picker has nowhere to render
-            // — fall back to committing the first punctuation directly.
-            if (listener != null) listener.onCommitText(T9_NUM_PUNCTUATION[0]);
+            fireCommitText(T9_NUM_PUNCTUATION[0]);
             return;
         }
         // T9: while composing, the 1 key inserts a separator instead
@@ -208,12 +273,12 @@ public class InputKernel {
         if (mode == KeyboardMode.ENGLISH) {
             exitPrediction();
             englishBuffer.append(c);
-            if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+            fireSetComposingText(englishBuffer.toString());
             refreshEnglishCompletions();
             return;
         }
         if (mode != KeyboardMode.CHINESE) {
-            if (listener != null) listener.onCommitText(String.valueOf(c));
+            fireCommitText(String.valueOf(c));
             return;
         }
         // QWERTY or T9 fallback letter: insert at lettersEnd, extend the
@@ -230,7 +295,7 @@ public class InputKernel {
 
     private void handleDigit(char c) {
         if (mode != KeyboardMode.CHINESE || chineseLayout != ChineseLayout.T9) {
-            if (listener != null) listener.onCommitText(String.valueOf(c));
+            fireCommitText(String.valueOf(c));
             return;
         }
         // T9 digit: append to the end of the buffer (after any letters).
@@ -243,12 +308,12 @@ public class InputKernel {
         if (mode == KeyboardMode.ENGLISH) {
             // Apostrophe in English mode: append to buffer (e.g. "don't")
             englishBuffer.append('\'');
-            if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+            fireSetComposingText(englishBuffer.toString());
             refreshEnglishCompletions();
             return;
         }
         if (mode != KeyboardMode.CHINESE) {
-            if (listener != null) listener.onCommitText("'");
+            fireCommitText("'");
             return;
         }
         // Mirror Linux sime.cc L493: only respond when buffer is non-empty.
@@ -283,25 +348,22 @@ public class InputKernel {
             if (englishBuffer.length() > 0) {
                 commitEnglishBuffer();
             } else {
-                if (listener != null) listener.onCommitText(" ");
+                fireCommitText(" ");
             }
             return;
         }
         if (state.predicting) {
-            // In prediction mode, space picks the first prediction.
             if (!candidates.isEmpty()) {
-                onPredictionPick(0);
+                onPredictionPickInternal(0);
             }
             return;
         }
         if (state.buffer.isEmpty()) {
-            if (listener != null) listener.onCommitText(" ");
+            fireCommitText(" ");
             return;
         }
-        // Input active: pick the first hanzi candidate (same as clicking
-        // the #0 slot in the candidates bar).
         if (!candidates.isEmpty()) {
-            onHanziCandidatePick(0);
+            onHanziCandidatePickInternal(0);
         }
     }
 
@@ -310,18 +372,18 @@ public class InputKernel {
             if (englishBuffer.length() > 0) {
                 commitEnglishBuffer();
             } else {
-                if (listener != null) listener.onSendEnter();
+                fireSendEnter();
             }
             return;
         }
         if (state.predicting) {
             exitPrediction();
             publish();
-            if (listener != null) listener.onSendEnter();
+            fireSendEnter();
             return;
         }
         if (state.buffer.isEmpty()) {
-            if (listener != null) listener.onSendEnter();
+            fireSendEnter();
             return;
         }
         // Commit what the user actually sees in the preedit:
@@ -338,7 +400,7 @@ public class InputKernel {
             tail = state.remaining();
         }
         String out = state.committedText() + tail;
-        if (listener != null) listener.onCommitText(out);
+        fireCommitText(out);
         resetAll();
     }
 
@@ -376,7 +438,7 @@ public class InputKernel {
         if (mode == KeyboardMode.ENGLISH) {
             if (englishBuffer.length() > 0) {
                 englishBuffer.deleteCharAt(englishBuffer.length() - 1);
-                if (listener != null) listener.onSetComposingText(englishBuffer.toString());
+                fireSetComposingText(englishBuffer.toString());
                 if (englishBuffer.length() > 0) {
                     refreshEnglishCompletions();
                 } else {
@@ -384,7 +446,7 @@ public class InputKernel {
                     publish();
                 }
             } else {
-                if (listener != null) listener.onDeleteBefore(1);
+                fireDeleteBefore(1);
             }
             return;
         }
@@ -394,7 +456,7 @@ public class InputKernel {
             return;
         }
         if (state.buffer.isEmpty() && state.selections.isEmpty()) {
-            if (listener != null) listener.onDeleteBefore(1);
+            fireDeleteBefore(1);
             return;
         }
 
@@ -440,7 +502,8 @@ public class InputKernel {
         }
         exitPrediction();
         state.clearContext();
-        if (listener != null) listener.onCommitText(text);
+        fireCommitText(text);
+        publish();
     }
 
     private void commitFirstCandidateInline() {
@@ -448,11 +511,11 @@ public class InputKernel {
         state.select(c.text, c.units, c.consumed);
         if (state.fullySelected()) {
             String out = state.committedText();
-            if (listener != null) listener.onCommitText(out);
+            fireCommitText(out);
             resetAll();
         } else {
             // Flush the committed portion so the app sees it immediately.
-            if (listener != null) listener.onCommitText(state.committedText());
+            fireCommitText(state.committedText());
             // Keep only the remaining raw tail as a fresh state.
             String rem = state.remaining();
             int letterTail = Math.max(0, state.lettersEnd - state.selectedLength());
@@ -473,63 +536,55 @@ public class InputKernel {
      */
     public void onPinyinCandidatePick(String digits, String letters, boolean fallback) {
         if (digits == null || letters == null) return;
-        if (mode != KeyboardMode.CHINESE) return;
-        state.applyLetterPick(digits, letters, fallback);
-        redecodeAndPublish();
+        engineHandler.post(() -> {
+            if (mode != KeyboardMode.CHINESE) return;
+            state.applyLetterPick(digits, letters, fallback);
+            redecodeAndPublish();
+        });
     }
 
-    /**
-     * Pick one of the pinyin alternatives computed during the last decode
-     * (see {@link #getPinyinAlts()}).
-     */
     public void onPinyinAltPick(int index) {
-        if (index < 0 || index >= pinyinAlts.size()) return;
-        if (mode != KeyboardMode.CHINESE) return;
-        PinyinAlt alt = pinyinAlts.get(index);
-        // Skip any separator that applyLetterPick auto-inserted between
-        // the previous letter region and the digit region. Advance
-        // lettersEnd past it so applyLetterPick sees the actual digit.
-        while (state.lettersEnd < state.buffer.length()
-                && state.buffer.charAt(state.lettersEnd) == '\'') {
-            state.lettersEnd++;
-        }
-        int start = state.lettersEnd;
-        int end = Math.min(start + alt.digitCount, state.buffer.length());
-        if (end <= start) return;
-        String digits = state.buffer.substring(start, end);
-        state.applyLetterPick(digits, alt.letters, false);
-        redecodeAndPublish();
+        engineHandler.post(() -> {
+            if (index < 0 || index >= pinyinAlts.size()) return;
+            if (mode != KeyboardMode.CHINESE) return;
+            PinyinAlt alt = pinyinAlts.get(index);
+            while (state.lettersEnd < state.buffer.length()
+                    && state.buffer.charAt(state.lettersEnd) == '\'') {
+                state.lettersEnd++;
+            }
+            int start = state.lettersEnd;
+            int end = Math.min(start + alt.digitCount, state.buffer.length());
+            if (end <= start) return;
+            String digits = state.buffer.substring(start, end);
+            state.applyLetterPick(digits, alt.letters, false);
+            redecodeAndPublish();
+        });
     }
 
-    /**
-     * Pick a fallback letter for the first digit in the undecided region.
-     * Used by the T9 left strip's single-letter buttons.
-     */
     public void onFallbackLetterPick(char letter) {
-        if (mode != KeyboardMode.CHINESE) return;
-        // Skip separator between letter region and digit region.
-        while (state.lettersEnd < state.buffer.length()
-                && state.buffer.charAt(state.lettersEnd) == '\'') {
-            state.lettersEnd++;
-        }
-        int start = state.lettersEnd;
-        if (start >= state.buffer.length()) return;
-        String digits = state.buffer.substring(start, start + 1);
-        state.applyLetterPick(digits, String.valueOf(letter), true);
-        redecodeAndPublish();
+        engineHandler.post(() -> {
+            if (mode != KeyboardMode.CHINESE) return;
+            while (state.lettersEnd < state.buffer.length()
+                    && state.buffer.charAt(state.lettersEnd) == '\'') {
+                state.lettersEnd++;
+            }
+            int start = state.lettersEnd;
+            if (start >= state.buffer.length()) return;
+            String digits = state.buffer.substring(start, start + 1);
+            state.applyLetterPick(digits, String.valueOf(letter), true);
+            redecodeAndPublish();
+        });
     }
 
-    public void onHanziCandidatePick(int index) {
+    private void onHanziCandidatePickInternal(int index) {
         if (index < 0 || index >= candidates.size()) return;
         if (state.predicting) {
-            onPredictionPick(index);
+            onPredictionPickInternal(index);
             return;
         }
         DecodeResult c = candidates.get(index);
         if (inPunctuationPicker) {
-            // The "1 key" picker commits the punctuation as raw text and
-            // immediately collapses the bar. There's no buffer to consume.
-            if (listener != null) listener.onCommitText(c.text);
+            fireCommitText(c.text);
             dismissPunctuationPicker(/*publish=*/true);
             return;
         }
@@ -537,7 +592,7 @@ public class InputKernel {
         selectionTokenIds.add(c.tokenIds);
         if (state.fullySelected()) {
             String out = state.committedText();
-            if (listener != null) listener.onCommitText(out);
+            fireCommitText(out);
             pushSelectionContext();
             resetInput();
             showPredictions(false);
@@ -546,31 +601,31 @@ public class InputKernel {
         }
     }
 
-    /** Pick a prediction candidate (shown after full selection). */
-    public void onPredictionPick(int index) {
+    private void onPredictionPickInternal(int index) {
         if (index < 0 || index >= candidates.size()) return;
         DecodeResult c = candidates.get(index);
         state.pushContext(c.tokenIds);
-        if (listener != null) listener.onCommitText(c.text);
+        fireCommitText(c.text);
         showPredictions(false);
     }
 
-    /** Pick an English completion candidate. */
-    public void onEnglishCompletionPick(int index) {
+    private void onEnglishCompletionPickInternal(int index) {
         if (index < 0 || index >= candidates.size()) return;
         DecodeResult c = candidates.get(index);
         state.pushContext(c.tokenIds);
         englishBuffer.setLength(0);
-        if (listener != null) {
-            listener.onCommitText(c.text);
-            listener.onSetComposingText("");
-        }
+        fireCommitText(c.text);
+        fireSetComposingText("");
         showPredictions(true);
     }
 
     // ===== Mode switching =====
 
     public void switchMode(KeyboardMode next) {
+        engineHandler.post(() -> switchModeInternal(next));
+    }
+
+    private void switchModeInternal(KeyboardMode next) {
         if (next == mode) return;
         // Only remember "real" input modes as previousMode, so TO_BACK from
         // NUMBER/SYMBOL/SETTINGS returns to CHINESE or ENGLISH.
@@ -594,11 +649,11 @@ public class InputKernel {
     }
 
     public void switchChineseLayout(ChineseLayout layout) {
-        if (layout == chineseLayout) return;
-        // Switching layout mid-input is allowed but re-runs the decoder
-        // because T9 and QWERTY take different code paths.
-        this.chineseLayout = layout;
-        if (mode == KeyboardMode.CHINESE) redecodeAndPublish();
+        engineHandler.post(() -> {
+            if (layout == chineseLayout) return;
+            this.chineseLayout = layout;
+            if (mode == KeyboardMode.CHINESE) redecodeAndPublish();
+        });
     }
 
     private void handleToggleLang() {
@@ -607,8 +662,18 @@ public class InputKernel {
                 : KeyboardMode.ENGLISH;
         // Flush any in-flight composition when leaving CHINESE.
         if (mode == KeyboardMode.CHINESE && !state.buffer.isEmpty()) {
-            String out = state.committedText() + state.remaining();
-            if (listener != null) listener.onCommitText(out);
+            String committed = state.committedText();
+            String tail;
+            if (!candidates.isEmpty()) {
+                // Commit first candidate's hanzi instead of raw digits/letters.
+                tail = candidates.get(0).text;
+            } else if (chineseLayout == ChineseLayout.T9
+                    && topUnits != null && !topUnits.isEmpty()) {
+                tail = mergeUnitsWithRawSeparators(state.remaining(), topUnits);
+            } else {
+                tail = state.remaining();
+            }
+            fireCommitText(committed + tail);
             resetInput();
         }
         // Flush English buffer when leaving ENGLISH.
@@ -616,32 +681,19 @@ public class InputKernel {
             commitEnglishBuffer();
         }
         exitPrediction();
-        switchMode(target);
+        switchModeInternal(target);
     }
 
     // ===== Decoding =====
 
     private void redecodeAndPublish() {
+        exitPrediction();
         decode();
         publish();
     }
 
-    /**
-     * Recompute candidates / alts / topUnits from a single synchronous
-     * decoder call.
-     *
-     * <p>Model is dead-simple: the kernel slices the buffer into a
-     * letter region and a digit region (skipping bytes already covered
-     * by hanzi selections), passes them as {@code start} and
-     * {@code digits} to the decoder, and shows whatever the decoder
-     * returns. No filtering, no synthesis, no prefix stripping. The
-     * only post-processing is a {@code (text, consumed)} dedup pass to
-     * collapse the case where Layer 1 and a multi-char Layer 2 edge
-     * happen to return the exact same hanzi for the exact same span.
-     */
+    /** Synchronous decode on engine thread. */
     private void decode() {
-        // New input dismisses prediction mode
-        exitPrediction();
         if (mode != KeyboardMode.CHINESE || state.buffer.isEmpty()) {
             candidates = Collections.emptyList();
             pinyinAlts = Collections.emptyList();
@@ -649,8 +701,6 @@ public class InputKernel {
             return;
         }
 
-        // Buffer slicing — start AFTER any hanzi selections, since those
-        // bytes are no longer "in flux".
         int sel = state.selectedLength();
         int len = state.buffer.length();
         int letterStart = Math.min(sel, state.lettersEnd);
@@ -663,13 +713,6 @@ public class InputKernel {
                 ? state.buffer.substring(digitStart, len)
                 : "";
 
-        // start IS bufferLetters. Selections.pinyin is NOT included —
-        // those syllables are committed (gone from `state.remaining()`)
-        // and the next decode is for what comes after them.
-        // Strip leading separator: applyLetterPick auto-inserts '\''
-        // between letter regions; if a hanzi selection later consumes the
-        // first region, the separator becomes an orphan at the start and
-        // would cripple InitNet (column 0 = NotToken skip, Layer 2 empty).
         String start = bufferLetters;
         int startStripped = 0;
         while (start.startsWith("'")) {
@@ -686,9 +729,6 @@ public class InputKernel {
             raw = new DecodeResult[0];
         }
 
-        // Pass-through with dedup. When leading separators were stripped
-        // from start, add that offset back to each consumed so select()
-        // correctly covers the orphan separator bytes in the buffer.
         List<DecodeResult> out = new ArrayList<>(raw.length);
         java.util.HashSet<String> seenKeys = new java.util.HashSet<>();
         DecodeResult topCandidate = null;
@@ -705,9 +745,6 @@ public class InputKernel {
         }
         candidates = out;
 
-        // topUnits = the top candidate's pinyin, clipped against tail
-        // expansion (the C++ may complete an incomplete initial like
-        // "k" → "kan", which we trim back to the user's actual chars).
         String topU = topCandidate != null ? topCandidate.units : "";
         if (!topU.isEmpty()) {
             int rawLen = PinyinUtil.countRealChars(bufferLetters) + PinyinUtil.countRealChars(digits);
@@ -715,11 +752,6 @@ public class InputKernel {
         }
         topUnits = topU;
 
-        // Pinyin alts for the NEXT syllable position: take raw[]'s units,
-        // skip the syllables already fixed by `start`, and the next
-        // segment is a candidate next-syllable label. Bounded by the
-        // remaining digit count so tail-expanded entries (which would
-        // consume past the end of the buffer) are not offered.
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
             pinyinAlts = computePinyinAltsFromRaw(
                     raw, countSyllables(start), digits.length(), digits);
@@ -841,7 +873,7 @@ public class InputKernel {
      * @param enOnly true when in English mode
      */
     private void showPredictions(boolean enOnly) {
-        if (state.contextIds.isEmpty()) {
+        if (!predictionEnabled || state.contextIds.isEmpty()) {
             exitPrediction();
             publish();
             return;
@@ -897,10 +929,8 @@ public class InputKernel {
     private void commitEnglishBuffer() {
         String text = englishBuffer.toString();
         englishBuffer.setLength(0);
-        if (listener != null) {
-            listener.onCommitText(text);
-            listener.onSetComposingText("");
-        }
+        fireCommitText(text);
+        fireSetComposingText("");
         candidates = Collections.emptyList();
         // No context push for raw text (no token IDs)
         publish();
@@ -920,6 +950,16 @@ public class InputKernel {
     }
 
     private void publish() {
-        if (observer != null) observer.onStateChanged(state, candidates);
+        Snapshot snap = new Snapshot(
+                state.copy(),
+                new ArrayList<>(candidates),
+                new ArrayList<>(pinyinAlts),
+                topUnits,
+                mode,
+                chineseLayout,
+                englishBuffer.toString());
+        mainHandler.post(() -> {
+            if (observer != null) observer.onStateChanged(snap);
+        });
     }
 }

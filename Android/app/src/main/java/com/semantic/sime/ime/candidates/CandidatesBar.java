@@ -17,6 +17,7 @@ import android.widget.TextView;
 
 import com.semantic.sime.ime.InputKernel;
 import com.semantic.sime.ime.InputState;
+import com.semantic.sime.ime.KeyboardMode;
 import com.semantic.sime.ime.PinyinUtil;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.theme.SimeTheme;
@@ -179,20 +180,18 @@ public class CandidatesBar extends FrameLayout {
         return tv;
     }
 
-    public void render(InputKernel kernel, InputState state, List<DecodeResult> candidates) {
+    public void render(InputKernel.Snapshot snap) {
+        InputState state = snap.state;
+        List<DecodeResult> candidates = snap.candidates;
         boolean stateActive = (state != null) && !state.isEmpty();
         boolean hasCandidates = (candidates != null) && !candidates.isEmpty();
-        String engBuf = kernel != null ? kernel.getEnglishBuffer() : "";
-        boolean hasEnglishInput = !engBuf.isEmpty();
-        // Show "active" mode whenever there's something to display.
-        // The T9 "1 key" picker has an empty state but a non-empty
-        // candidate list — it should still occupy the bar.
+        boolean hasEnglishInput = !snap.englishBuffer.isEmpty();
         if (stateActive || hasCandidates || hasEnglishInput) {
             showActive();
             if (hasEnglishInput) {
-                preeditView.setText(engBuf);
+                preeditView.setText(snap.englishBuffer);
             } else {
-                preeditView.setText(stateActive ? buildPreedit(kernel, state) : "");
+                preeditView.setText(stateActive ? buildPreedit(snap, state) : "");
             }
             populateCandidates(candidates);
         } else {
@@ -217,14 +216,14 @@ public class CandidatesBar extends FrameLayout {
      * (bufferLetters) — is wrapped in a {@link BackgroundColorSpan} so
      * the user can see what's been locked in vs what's still tentative.
      */
-    private CharSequence buildPreedit(InputKernel kernel, InputState state) {
+    private CharSequence buildPreedit(InputKernel.Snapshot snap, InputState state) {
         StringBuilder sb = new StringBuilder();
         String committed = state.committedText();
         if (!committed.isEmpty()) {
             sb.append(committed).append(' ');
         }
         int annotStart = sb.length();
-        String units = kernel != null ? kernel.getTopUnits() : "";
+        String units = snap.topUnits != null ? snap.topUnits : "";
         sb.append(annotateRemaining(state.remaining(),
                 units != null ? units : ""));
 

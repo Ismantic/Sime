@@ -33,8 +33,13 @@ public class SettingsKeyboardView extends KeyboardView {
         void onExitSettings();
     }
 
+    public interface OnPredictionChangedListener {
+        void onPredictionChanged(boolean enabled);
+    }
+
     private OnLayoutChangedListener layoutListener;
     private OnExitListener exitListener;
+    private OnPredictionChangedListener predictionListener;
 
     private final SimePrefs prefs;
     private KeyboardContainer container;
@@ -52,6 +57,10 @@ public class SettingsKeyboardView extends KeyboardView {
 
     public void setOnExitListener(OnExitListener l) {
         this.exitListener = l;
+    }
+
+    public void setOnPredictionChangedListener(OnPredictionChangedListener l) {
+        this.predictionListener = l;
     }
 
     private void build() {
@@ -76,7 +85,10 @@ public class SettingsKeyboardView extends KeyboardView {
                 () -> pickLayout(ChineseLayout.T9),
                 () -> prefs.getChineseLayout() == ChineseLayout.T9);
         SettingsNode keyboardCat = SettingsNode.category("键盘", qwerty, t9);
-        return SettingsNode.category("设置", keyboardCat);
+        SettingsNode prediction = SettingsNode.toggle("联想",
+                () -> togglePrediction(),
+                () -> prefs.getPredictionEnabled());
+        return SettingsNode.category("设置", keyboardCat, prediction);
     }
 
     private void push(SettingsNode node) {
@@ -110,10 +122,13 @@ public class SettingsKeyboardView extends KeyboardView {
                 if (action != KeyView.KeyAction.CLICK) return;
                 if (child.isLeaf()) {
                     if (child.action != null) child.action.run();
-                    // Auto-exit settings after picking a leaf so the
-                    // user immediately sees the new option take effect
-                    // — matches the pre-refactor UX.
-                    if (exitListener != null) exitListener.onExitSettings();
+                    if (child.toggle) {
+                        // Toggle: re-render to update highlight state.
+                        renderTop();
+                    } else {
+                        // Normal leaf: auto-exit settings.
+                        if (exitListener != null) exitListener.onExitSettings();
+                    }
                 } else {
                     push(child);
                 }
@@ -124,5 +139,11 @@ public class SettingsKeyboardView extends KeyboardView {
     private void pickLayout(ChineseLayout layout) {
         prefs.setChineseLayout(layout);
         if (layoutListener != null) layoutListener.onLayoutChanged(layout);
+    }
+
+    private void togglePrediction() {
+        boolean next = !prefs.getPredictionEnabled();
+        prefs.setPredictionEnabled(next);
+        if (predictionListener != null) predictionListener.onPredictionChanged(next);
     }
 }

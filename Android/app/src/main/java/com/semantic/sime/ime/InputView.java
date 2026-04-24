@@ -33,6 +33,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
 
     private KeyboardMode shownMode = null;
     private ChineseLayout shownLayout = null;
+    private InputKernel.Snapshot lastSnapshot = null;
     /** When true, the keyboard slot is occupied by {@link #expandedView}. */
     private boolean expanded = false;
 
@@ -68,12 +69,13 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         return candidatesBar;
     }
 
-    public void attach(InputKernel kernel) {
+    public void attach(InputKernel kernel, InputKernel.Snapshot initialSnapshot) {
         this.kernel = kernel;
+        this.lastSnapshot = initialSnapshot;
         candidatesBar.setOnExpandToggleListener(this::toggleExpanded);
         candidatesBar.setOnSettingsBackListener(this::onSettingsBack);
         // Install initial keyboard.
-        swapKeyboardIfNeeded();
+        swapKeyboardIfNeeded(initialSnapshot);
     }
 
     /**
@@ -89,8 +91,11 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     }
 
     @Override
-    public void onStateChanged(InputState state, List<DecodeResult> candidates) {
+    public void onStateChanged(InputKernel.Snapshot snap) {
         if (kernel == null) return;
+        lastSnapshot = snap;
+
+        InputState state = snap.state;
 
         // If the buffer cleared (e.g., the user committed) while the
         // expanded grid was open, collapse back to the keyboard before
@@ -99,29 +104,29 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             setExpanded(false);
         }
 
-        candidatesBar.render(kernel, state, candidates);
+        candidatesBar.render(snap);
 
         if (expanded) {
             if (expandedView != null) {
-                expandedView.render(candidates,
-                        kernel.getPinyinAlts(),
+                expandedView.render(snap.candidates,
+                        snap.pinyinAlts,
                         firstDigitLetters(state),
                         candidatesBar.getVisibleCandidateCount());
             }
             return;
         }
 
-        swapKeyboardIfNeeded();
+        swapKeyboardIfNeeded(snap);
         // Push T9 dual-state + left strip if applicable.
         if (currentKeyboard instanceof T9KeyboardView) {
             T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
             boolean active = state != null && !state.isEmpty();
-            t9.setActive(active, kernel.getPinyinAlts(),
+            t9.setActive(active, snap.pinyinAlts,
                     firstDigitLetters(state));
         }
         if (currentKeyboard instanceof QwertyKeyboardView) {
             QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
-            qw.setMode(kernel.getMode());
+            qw.setMode(snap.mode);
             qw.setActive(state != null && !state.isEmpty());
         }
     }
@@ -129,8 +134,9 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     private void toggleExpanded() {
         if (kernel == null) return;
         // Don't expand into nothing.
-        if (!expanded && (kernel.getCandidates() == null
-                || kernel.getCandidates().isEmpty())) {
+        if (!expanded && (lastSnapshot == null
+                || lastSnapshot.candidates == null
+                || lastSnapshot.candidates.isEmpty())) {
             return;
         }
         setExpanded(!expanded);
@@ -147,7 +153,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             // Force keyboard rebuild on the next swapKeyboardIfNeeded.
             shownMode = null;
             shownLayout = null;
-            swapKeyboardIfNeeded();
+            if (lastSnapshot != null) swapKeyboardIfNeeded(lastSnapshot);
         }
     }
 
@@ -159,7 +165,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         if (expandedView == null) {
             expandedView = new ExpandedCandidatesView(getContext());
             expandedView.setOnCandidatePickListener(idx -> {
-                if (kernel != null) kernel.onHanziCandidatePick(idx);
+                if (kernel != null) kernel.onCandidatePick(idx);
             });
             expandedView.setOnPinyinAltPickListener(idx -> {
                 if (kernel != null) kernel.onPinyinAltPick(idx);
@@ -173,9 +179,9 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             expandedView.setOnCollapseListener(() -> setExpanded(false));
         }
         expandedView.render(
-                kernel != null ? kernel.getCandidates() : null,
-                kernel != null ? kernel.getPinyinAlts() : null,
-                kernel != null ? firstDigitLetters(kernel.getState()) : null,
+                lastSnapshot != null ? lastSnapshot.candidates : null,
+                lastSnapshot != null ? lastSnapshot.pinyinAlts : null,
+                lastSnapshot != null ? firstDigitLetters(lastSnapshot.state) : null,
                 candidatesBar.getVisibleCandidateCount());
         LayoutParams lp = new LayoutParams(
                 LayoutParams.MATCH_PARENT, getKeyboardHeightPx());
@@ -195,10 +201,10 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         return T9KeyboardView.lettersForDigit(state.buffer.charAt(i));
     }
 
-    private void swapKeyboardIfNeeded() {
+    private void swapKeyboardIfNeeded(InputKernel.Snapshot snap) {
         if (kernel == null) return;
-        KeyboardMode mode = kernel.getMode();
-        ChineseLayout layout = kernel.getChineseLayout();
+        KeyboardMode mode = snap.mode;
+        ChineseLayout layout = snap.chineseLayout;
         if (mode == shownMode && layout == shownLayout && currentKeyboard != null) {
             return;
         }
@@ -223,6 +229,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             SettingsKeyboardView sk = (SettingsKeyboardView) next;
             sk.setOnLayoutChangedListener(picked -> kernel.setChineseLayout(picked));
             sk.setOnExitListener(() -> kernel.onKey(SimeKey.toBack()));
+            sk.setOnPredictionChangedListener(enabled -> kernel.setPredictionEnabled(enabled));
         }
         if (currentKeyboard != null) {
             removeView(currentKeyboard);

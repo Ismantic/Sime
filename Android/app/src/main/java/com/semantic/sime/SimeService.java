@@ -8,9 +8,9 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 
 import com.semantic.sime.ime.InputKernel;
+import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.InputView;
 import com.semantic.sime.ime.KeyboardMode;
-import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
 
@@ -47,20 +47,21 @@ public class SimeService extends InputMethodService
     private void applyPrefs() {
         SimePrefs prefs = new SimePrefs(this);
         kernel.setChineseLayout(prefs.getChineseLayout());
+        kernel.setPredictionEnabled(prefs.getPredictionEnabled());
     }
 
     @Override
     public View onCreateInputView() {
         inputView = new InputView(this);
-        inputView.attach(kernel);
+        InputKernel.Snapshot initialSnapshot = new InputKernel.Snapshot(
+                new InputState(), java.util.Collections.emptyList(),
+                java.util.Collections.emptyList(), "",
+                KeyboardMode.CHINESE, kernel.getInitialChineseLayout(), "");
+        inputView.attach(kernel, initialSnapshot);
         kernel.attach(this, inputView);
         inputView.getCandidatesBar().setOnCandidatePickListener(idx -> {
-            Log.d(TAG, "candidate pick: " + idx + " mode=" + kernel.getMode());
-            if (kernel.getMode() == KeyboardMode.ENGLISH) {
-                kernel.onEnglishCompletionPick(idx);
-            } else {
-                kernel.onHanziCandidatePick(idx);
-            }
+            Log.d(TAG, "candidate pick: " + idx);
+            kernel.onCandidatePick(idx);
         });
         inputView.getCandidatesBar().setOnSettingsListener(() -> {
             Log.d(TAG, "settings gear tapped");

@@ -21,17 +21,21 @@ public final class SettingsNode {
     public final List<SettingsNode> children;
     public final Runnable action;
     public final BooleanSupplier isSelected;
+    /** True for toggle leaves — clicking re-renders instead of auto-exiting. */
+    public final boolean toggle;
 
     private SettingsNode(String label,
                          List<SettingsNode> children,
                          Runnable action,
-                         BooleanSupplier isSelected) {
+                         BooleanSupplier isSelected,
+                         boolean toggle) {
         this.label = label;
         this.children = children != null
                 ? Collections.unmodifiableList(children)
                 : Collections.<SettingsNode>emptyList();
         this.action = action;
         this.isSelected = isSelected;
+        this.toggle = toggle;
     }
 
     public boolean isLeaf() {
@@ -41,15 +45,21 @@ public final class SettingsNode {
     public static SettingsNode category(String label, SettingsNode... children) {
         List<SettingsNode> list = new ArrayList<>(children.length);
         for (SettingsNode c : children) list.add(c);
-        return new SettingsNode(label, list, null, null);
+        return new SettingsNode(label, list, null, null, false);
     }
 
     public static SettingsNode leaf(String label, Runnable action,
                                     BooleanSupplier isSelected) {
-        return new SettingsNode(label, null, action, isSelected);
+        return new SettingsNode(label, null, action, isSelected, false);
     }
 
     public static SettingsNode leaf(String label, Runnable action) {
         return leaf(label, action, null);
+    }
+
+    /** Toggle leaf — clicking runs the action and re-renders (no auto-exit). */
+    public static SettingsNode toggle(String label, Runnable action,
+                                      BooleanSupplier isSelected) {
+        return new SettingsNode(label, null, action, isSelected, true);
     }
 }

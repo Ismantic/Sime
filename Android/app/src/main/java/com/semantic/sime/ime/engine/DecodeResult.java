@@ -28,15 +28,4 @@ public final class DecodeResult {
     }
 
     private static final int[] EMPTY_IDS = new int[0];
-
-    /** Parse "92703,12345" → int[]. */
-    public static int[] parseTokenIds(String s) {
-        if (s == null || s.isEmpty()) return EMPTY_IDS;
-        String[] parts = s.split(",");
-        int[] ids = new int[parts.length];
-        for (int i = 0; i < parts.length; i++) {
-            ids[i] = Integer.parseInt(parts[i]);
-        }
-        return ids;
-    }
 }
