@@ -47,6 +47,37 @@ std::size_t CountSyllableMismatch(const char* pieces,
     return mismatch;
 }
 
+struct Layer2Entry {
+    DecodeResult result;
+    bool exact = false;
+};
+
+bool BetterLayer2Entry(const Layer2Entry& lhs, const Layer2Entry& rhs) {
+    if (lhs.exact != rhs.exact) return lhs.exact && !rhs.exact;
+    if (lhs.result.score != rhs.result.score) {
+        return lhs.result.score > rhs.result.score;
+    }
+    if (lhs.result.cnt != rhs.result.cnt) {
+        return lhs.result.cnt > rhs.result.cnt;
+    }
+    return lhs.result.units.size() > rhs.result.units.size();
+}
+
+void PushBestLayer2Entry(std::vector<Layer2Entry>& best_entries,
+                         std::unordered_map<std::string, std::size_t>& index_by_text,
+                         Layer2Entry candidate) {
+    auto it = index_by_text.find(candidate.result.text);
+    if (it == index_by_text.end()) {
+        index_by_text.emplace(candidate.result.text, best_entries.size());
+        best_entries.push_back(std::move(candidate));
+        return;
+    }
+    auto& current = best_entries[it->second];
+    if (BetterLayer2Entry(candidate, current)) {
+        current = std::move(candidate);
+    }
+}
+
 } // namespace
 
 Sime::Sime(const std::filesystem::path& dict_path,
@@ -496,13 +527,15 @@ void Sime::ResetNumDecodeCache(std::string_view start,
                 ++tail_len;
             }
             if (dpos + tail_len != d || tail_len == 0) continue;
-            const auto& state = num_cache_.starts[s];
+            std::string tail(nums.substr(dpos, tail_len));
             emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
                         tail_len, Dict::LetterPinyin,
-                        state.py_t9_session.CollectCompletions(512, true));
+                        py_dat.FindWordsWithPrefixT9(
+                            tail, Dict::NumToLettersLower, 512));
             emit_expand(num_cache_.dynamic_expansion_edges[s], s, total,
                         tail_len, Dict::LetterEn,
-                        state.en_t9_session.CollectCompletions(1024, true));
+                        en_dat.FindWordsWithPrefixT9(
+                            tail, Dict::NumToLetters, 1024));
         }
     }
 }
@@ -559,10 +592,10 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             state.en_t9_session.Append(static_cast<uint8_t>(ch));
             const std::size_t input_len = p + num_cache_.nums.size() - s;
             emit_exact(s, input_len, Dict::LetterPinyin,
-                       state.py_t9_session.CollectPrefixMatchesCurrent(80),
+                       state.py_t9_session.CollectPrefixMatchesCurrent(512),
                        true);
             emit_exact(s, input_len, Dict::LetterEn,
-                       state.en_t9_session.CollectPrefixMatchesCurrent(80),
+                       state.en_t9_session.CollectPrefixMatchesCurrent(512),
                        true);
         }
 
@@ -573,9 +606,9 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             state.en_t9_session.Append(static_cast<uint8_t>(ch));
             const std::size_t input_len = p + num_cache_.nums.size() - s;
             emit_exact(s, input_len, Dict::LetterPinyin,
-                       state.py_t9_session.CollectPrefixMatchesCurrent(80));
+                       state.py_t9_session.CollectPrefixMatchesCurrent(512));
             emit_exact(s, input_len, Dict::LetterEn,
-                       state.en_t9_session.CollectPrefixMatchesCurrent(80));
+                       state.en_t9_session.CollectPrefixMatchesCurrent(512));
         }
 
         if (ch != '\'') {
@@ -586,9 +619,9 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             state.py_t9_session.Append(static_cast<uint8_t>(ch));
             state.en_t9_session.Append(static_cast<uint8_t>(ch));
             emit_exact(old_total, 1, Dict::LetterPinyin,
-                       state.py_t9_session.CollectPrefixMatchesCurrent(80));
+                       state.py_t9_session.CollectPrefixMatchesCurrent(512));
             emit_exact(old_total, 1, Dict::LetterEn,
-                       state.en_t9_session.CollectPrefixMatchesCurrent(80));
+                       state.en_t9_session.CollectPrefixMatchesCurrent(512));
         }
     }
 
@@ -605,13 +638,15 @@ void Sime::AppendNumDecodeCache(std::string_view appended_tail) const {
             ++tail_len;
         }
         if (dpos + tail_len != d || tail_len == 0) continue;
-        const auto& state = num_cache_.starts[s];
+        std::string tail(num_cache_.nums.substr(dpos, tail_len));
         emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
                     Dict::LetterPinyin,
-                    state.py_t9_session.CollectCompletions(512, true));
+                    py_dat.FindWordsWithPrefixT9(
+                        tail, Dict::NumToLettersLower, 512));
         emit_expand(num_cache_.dynamic_expansion_edges[s], s, total, tail_len,
                     Dict::LetterEn,
-                    state.en_t9_session.CollectCompletions(1024, true));
+                    en_dat.FindWordsWithPrefixT9(
+                        tail, Dict::NumToLetters, 1024));
     }
 }
 
@@ -683,6 +718,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     // === Layer 2: unigram alternatives at column 0 ===
     // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
     // then abbreviated prefix matches (mismatch>0), each sorted by score.
+    std::vector<Layer2Entry> best_l2;
+    std::unordered_map<std::string, std::size_t> l2_index_by_text;
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
@@ -693,7 +730,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         if (text_u32.empty()) continue;
 
         std::string text_utf8 = TextFromU32(text_u32);
-        if (!dedup.insert(text_utf8).second) continue;
+        if (dedup.contains(text_utf8)) continue;
 
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
@@ -713,12 +750,19 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
         std::size_t cnt = edge.end;
-        DecodeResult r{std::move(text_utf8), std::move(edge_py),
-                       ExtractTokens({edge}), score, cnt};
-        if (mismatch == 0) {
-            l2_full.push_back(std::move(r));
+        PushBestLayer2Entry(
+            best_l2,
+            l2_index_by_text,
+            {{std::move(text_utf8), std::move(edge_py),
+              ExtractTokens({edge}), score, cnt},
+             mismatch == 0});
+    }
+
+    for (auto& entry : best_l2) {
+        if (entry.exact) {
+            l2_full.push_back(std::move(entry.result));
         } else {
-            l2_abbrev.push_back(std::move(r));
+            l2_abbrev.push_back(std::move(entry.result));
         }
     }
 
@@ -751,13 +795,10 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
     std::string combined_input(start);
     combined_input += nums;
 
-    std::size_t recompute_from = 0;
-    bool incremental = false;
-    if (num_cache_.start != start || !IsAppendOnly(num_cache_.nums, nums)) {
+    if (num_cache_.start != start || num_cache_.nums.empty() ||
+        !IsAppendOnly(num_cache_.nums, nums)) {
         ResetNumDecodeCache(start, nums);
     } else if (num_cache_.nums != nums) {
-        recompute_from = num_cache_.start.size() + num_cache_.nums.size();
-        incremental = !num_cache_.processed_net.empty();
         AppendNumDecodeCache(nums.substr(num_cache_.nums.size()));
     }
 
@@ -766,13 +807,9 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
     ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    if (incremental) {
-        ProcessIncremental(net, recompute_from, num_cache_.processed_net);
-    } else {
-        State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
-        net[0].states.Insert(init);
-        Process(net);
-    }
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    net[0].states.Insert(init);
+    Process(net);
 
     std::unordered_set<std::string> dedup;
     const float_t penalty_per_unit =
@@ -807,6 +844,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
         }
     }
 
+    std::vector<Layer2Entry> best_l2;
+    std::unordered_map<std::string, std::size_t> l2_index_by_text;
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
@@ -817,7 +856,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
         if (text_u32.empty()) continue;
 
         std::string text_utf8 = TextFromU32(text_u32);
-        if (!dedup.insert(text_utf8).second) continue;
+        if (dedup.contains(text_utf8)) continue;
 
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
@@ -837,12 +876,19 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
         std::size_t cnt = edge.end;
-        DecodeResult r{std::move(text_utf8), std::move(edge_py),
-                       ExtractTokens({edge}), score, cnt};
-        if (mismatch == 0) {
-            l2_full.push_back(std::move(r));
+        PushBestLayer2Entry(
+            best_l2,
+            l2_index_by_text,
+            {{std::move(text_utf8), std::move(edge_py),
+              ExtractTokens({edge}), score, cnt},
+             mismatch == 0});
+    }
+
+    for (auto& entry : best_l2) {
+        if (entry.exact) {
+            l2_full.push_back(std::move(entry.result));
         } else {
-            l2_abbrev.push_back(std::move(r));
+            l2_abbrev.push_back(std::move(entry.result));
         }
     }
 
@@ -854,7 +900,6 @@ std::vector<DecodeResult> Sime::DecodeNumSentenceCache(
     for (auto& r : l2_full) results.push_back(std::move(r));
     for (auto& r : l2_abbrev) results.push_back(std::move(r));
 
-    num_cache_.processed_net = std::move(net);
     return results;
 }
 
@@ -1259,8 +1304,9 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
             scored.begin(),
             scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
             scored.end(),
-            [](const auto& a, const auto& b) {
-                return a.first < b.first;
+            [&edges](const auto& a, const auto& b) {
+                if (a.first != b.first) return a.first < b.first;
+                return edges[a.second].id < edges[b.second].id;
             });
 
         for (std::size_t i = 0; i < NodeSize; ++i) {
@@ -1273,91 +1319,6 @@ void Sime::PruneNode(std::vector<Link>& edges) const {
 
 void Sime::Process(std::vector<Node>& net) const {
     for (std::size_t col = 0; col < net.size(); ++col) {
-        auto& column = net[col];
-        for (auto it = column.states.begin(); it != column.states.end(); ++it) {
-            const auto& value = *it;
-            for (const auto& word : column.es) {
-                Scorer::Pos cur_pos = value.pos;
-                Scorer::Pos next_pos{};
-                float_t step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
-                scorer_.Back(next_pos);
-                cur_pos = next_pos;
-
-                float_t next_cost = value.score + step + word.penalty;
-                State next(next_cost, word.end, cur_pos, &value, word.id,
-                           word.pieces);
-                net[word.end].states.Insert(next);
-            }
-        }
-    }
-}
-
-void Sime::ProcessIncremental(std::vector<Node>& net,
-                              std::size_t recompute_from,
-                              const std::vector<Node>& cached_net) const {
-    if (recompute_from == 0 || cached_net.empty()) {
-        Process(net);
-        return;
-    }
-
-    const std::size_t prefix_cols =
-        std::min(recompute_from, std::min(net.size(), cached_net.size()));
-
-    std::unordered_map<const State*, const State*> rebased;
-    rebased.reserve(prefix_cols * BeamSize);
-
-    for (std::size_t col = 0; col < prefix_cols; ++col) {
-        net[col].states = cached_net[col].states;
-        auto& old_states = const_cast<NetStates&>(cached_net[col].states);
-        auto old_it = old_states.begin();
-        auto new_it = net[col].states.begin();
-        for (; old_it != old_states.end() &&
-               new_it != net[col].states.end();
-             ++old_it, ++new_it) {
-            rebased.emplace(&*old_it, &*new_it);
-        }
-    }
-
-    for (std::size_t col = 0; col < prefix_cols; ++col) {
-        for (auto it = net[col].states.begin(); it != net[col].states.end(); ++it) {
-            if (!it->backtrace_state) continue;
-            auto found = rebased.find(it->backtrace_state);
-            if (found != rebased.end()) {
-                it->backtrace_state = found->second;
-            } else {
-                it->backtrace_state = nullptr;
-            }
-        }
-    }
-
-    for (std::size_t col = prefix_cols; col < net.size(); ++col) {
-        net[col].states.Clear();
-    }
-
-    for (std::size_t col = 0; col < prefix_cols; ++col) {
-        const auto& cached_column = net[col];
-        const auto& edges = net[col].es;
-        auto& cached_states = const_cast<NetStates&>(cached_column.states);
-        for (auto it = cached_states.begin();
-             it != cached_states.end(); ++it) {
-            const auto& value = *it;
-            for (const auto& word : edges) {
-                if (word.end < recompute_from) continue;
-                Scorer::Pos cur_pos = value.pos;
-                Scorer::Pos next_pos{};
-                float_t step = scorer_.ScoreMove(cur_pos, word.id, next_pos);
-                scorer_.Back(next_pos);
-                cur_pos = next_pos;
-
-                float_t next_cost = value.score + step + word.penalty;
-                State next(next_cost, word.end, cur_pos, &value, word.id,
-                           word.pieces);
-                net[word.end].states.Insert(next);
-            }
-        }
-    }
-
-    for (std::size_t col = recompute_from; col < net.size(); ++col) {
         auto& column = net[col];
         for (auto it = column.states.begin(); it != column.states.end(); ++it) {
             const auto& value = *it;
@@ -1484,6 +1445,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     // === Layer 2: word/char alternatives at position 0 ===
     // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
     // then abbreviated prefix matches (mismatch>0), each sorted by score.
+    std::vector<Layer2Entry> best_l2;
+    std::unordered_map<std::string, std::size_t> l2_index_by_text;
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
@@ -1493,7 +1456,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
         std::string text_utf8 = TextFromU32(text_u32);
-        if (!dedup.insert(text_utf8).second) continue;
+        if (dedup.contains(text_utf8)) continue;
 
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
@@ -1511,12 +1474,19 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
-        DecodeResult r{std::move(text_utf8), std::move(edge_py),
-                       ExtractTokens({edge}), score, edge.end};
-        if (mismatch == 0) {
-            l2_full.push_back(std::move(r));
+        PushBestLayer2Entry(
+            best_l2,
+            l2_index_by_text,
+            {{std::move(text_utf8), std::move(edge_py),
+              ExtractTokens({edge}), score, edge.end},
+             mismatch == 0});
+    }
+
+    for (auto& entry : best_l2) {
+        if (entry.exact) {
+            l2_full.push_back(std::move(entry.result));
         } else {
-            l2_abbrev.push_back(std::move(r));
+            l2_abbrev.push_back(std::move(entry.result));
         }
     }
 
@@ -1540,14 +1510,10 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
     std::string lower = NormalizeInput(input);
     if (lower.empty()) return results;
 
-    std::size_t recompute_from = 0;
-    bool incremental = false;
     if (sentence_cache_.input.empty() ||
         !IsAppendOnly(sentence_cache_.input, lower)) {
         ResetSentenceDecodeCache(lower);
     } else if (sentence_cache_.input != lower) {
-        recompute_from = sentence_cache_.input.size();
-        incremental = !sentence_cache_.processed_net.empty();
         AppendSentenceDecodeCache(
             std::string_view(lower).substr(sentence_cache_.input.size()));
     }
@@ -1558,13 +1524,9 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
     ComputeEdgePenalties(net, lower, PinyinMatchPenalty, total + 1);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    if (incremental) {
-        ProcessIncremental(net, recompute_from, sentence_cache_.processed_net);
-    } else {
-        State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
-        net[0].states.Insert(init);
-        Process(net);
-    }
+    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    net[0].states.Insert(init);
+    Process(net);
 
     std::unordered_set<std::string> dedup;
     const float_t penalty_per_unit =
@@ -1610,6 +1572,8 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
         }
     }
 
+    std::vector<Layer2Entry> best_l2;
+    std::unordered_map<std::string, std::size_t> l2_index_by_text;
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
@@ -1619,7 +1583,7 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
         std::u32string text_u32 = ToText(edge);
         if (text_u32.empty()) continue;
         std::string text_utf8 = TextFromU32(text_u32);
-        if (!dedup.insert(text_utf8).second) continue;
+        if (dedup.contains(text_utf8)) continue;
 
         std::size_t distance = (total > edge.end) ? (total - edge.end) : 0;
         float_t dist_penalty =
@@ -1637,12 +1601,19 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
-        DecodeResult r{std::move(text_utf8), std::move(edge_py),
-                       ExtractTokens({edge}), score, edge.end};
-        if (mismatch == 0) {
-            l2_full.push_back(std::move(r));
+        PushBestLayer2Entry(
+            best_l2,
+            l2_index_by_text,
+            {{std::move(text_utf8), std::move(edge_py),
+              ExtractTokens({edge}), score, edge.end},
+             mismatch == 0});
+    }
+
+    for (auto& entry : best_l2) {
+        if (entry.exact) {
+            l2_full.push_back(std::move(entry.result));
         } else {
-            l2_abbrev.push_back(std::move(r));
+            l2_abbrev.push_back(std::move(entry.result));
         }
     }
 
@@ -1654,7 +1625,6 @@ std::vector<DecodeResult> Sime::DecodeSentenceCache(
     for (auto& r : l2_full) results.push_back(std::move(r));
     for (auto& r : l2_abbrev) results.push_back(std::move(r));
 
-    sentence_cache_.processed_net = std::move(net);
     return results;
 }
 

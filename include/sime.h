@@ -111,9 +111,6 @@ private:
 
     // Beam search
     void Process(std::vector<Node>& net) const;
-    void ProcessIncremental(std::vector<Node>& net,
-                            std::size_t recompute_from,
-                            const std::vector<Node>& cached_net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
 
@@ -149,14 +146,12 @@ private:
         std::vector<SentenceStartCache> starts;
         std::vector<std::vector<Link>> exact_edges;
         std::vector<std::vector<Link>> expansion_edges;
-        std::vector<Node> processed_net;
 
         void Clear() {
             input.clear();
             starts.clear();
             exact_edges.clear();
             expansion_edges.clear();
-            processed_net.clear();
         }
     };
 
@@ -174,7 +169,6 @@ private:
         std::vector<std::vector<Link>> exact_edges;
         std::vector<std::vector<Link>> static_expansion_edges;
         std::vector<std::vector<Link>> dynamic_expansion_edges;
-        std::vector<Node> processed_net;
 
         void Clear() {
             start.clear();
@@ -183,7 +177,6 @@ private:
             exact_edges.clear();
             static_expansion_edges.clear();
             dynamic_expansion_edges.clear();
-            processed_net.clear();
         }
     };
 

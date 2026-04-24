@@ -35,7 +35,7 @@ public class SimeEngine {
      * a marker file with the version it was extracted from; mismatches
      * trigger a re-extract on the next {@link #start(Context)}.
      */
-    private static final int ASSET_VERSION = 4;
+    private static final int ASSET_VERSION = 5;
     private static final String ASSET_VERSION_MARKER = ".deployed_version";
 
     private static boolean sLoaded = false;
