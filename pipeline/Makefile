@@ -13,7 +13,13 @@ EN_WORDS = en_dict.raw
 PUNCT = punct.txt
 OUT = output-new
 
-all: $(OUT)/sime.cnt $(OUT)/sime.dict
+all: $(OUT)/sime.cnt $(OUT)/sime.dict $(OUT)/sime.ft.dict.txt
+
+# Optional: simplified→traditional vocab (parallel to sime.token.dict.txt).
+# Used by the Android IME's 繁体 toggle.
+ft: $(OUT)/sime.ft.dict.txt
+$(OUT)/sime.ft.dict.txt: $(OUT)/sime.token.dict.txt gen_ft_dict.py
+	$(PYTHON) gen_ft_dict.py $(OUT)/sime.token.dict.txt $(OUT)/sime.ft.dict.txt
 
 # Step 0: segment raw text
 cut: $(CORPUS)

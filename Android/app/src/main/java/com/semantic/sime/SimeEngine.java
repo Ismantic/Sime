@@ -32,7 +32,7 @@ public class SimeEngine {
      * a marker file with the version it was extracted from; mismatches
      * trigger a re-extract on the next {@link #start(Context)}.
      */
-    private static final int ASSET_VERSION = 6;
+    private static final int ASSET_VERSION = 7;
     private static final String ASSET_VERSION_MARKER = ".deployed_version";
 
     private static boolean sLoaded = false;
@@ -180,10 +180,12 @@ public class SimeEngine {
                     + ", re-extracting");
             new File(dataDir, "sime.dict").delete();
             new File(dataDir, "sime.cnt").delete();
+            new File(dataDir, "sime.ft.dict.txt").delete();
         }
         boolean trieOk = extractAsset(ctx, "sime.dict", dataDir);
         boolean cntOk  = extractAsset(ctx, "sime.cnt",  dataDir);
-        if (trieOk && cntOk && deployed != ASSET_VERSION) {
+        boolean ftOk   = extractAsset(ctx, "sime.ft.dict.txt", dataDir);
+        if (trieOk && cntOk && ftOk && deployed != ASSET_VERSION) {
             writeMarkerVersion(marker, ASSET_VERSION);
         }
     }

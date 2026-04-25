@@ -243,6 +243,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             sk.setOnLayoutChangedListener(picked -> kernel.setChineseLayout(picked));
             sk.setOnExitListener(() -> kernel.onKey(SimeKey.toBack()));
             sk.setOnPredictionChangedListener(enabled -> kernel.setPredictionEnabled(enabled));
+            sk.setOnTraditionalChangedListener(enabled -> kernel.setTraditionalEnabled(enabled));
             sk.setOnOpenPanelListener(panelKey -> {
                 if (SettingsKeyboardView.PANEL_QUICK_PHRASE.equals(panelKey)) {
                     kernel.switchMode(KeyboardMode.QUICK_PHRASE);

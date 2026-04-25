@@ -101,6 +101,8 @@ public class InputKernel {
     }
     private ChineseLayout chineseLayout = ChineseLayout.QWERTY;
     private boolean predictionEnabled = true;
+    private boolean traditionalEnabled = false;
+    private com.semantic.sime.ime.data.TraditionalConverter tradConverter;
 
     private List<DecodeResult> candidates = Collections.emptyList();
     /**
@@ -194,6 +196,19 @@ public class InputKernel {
         });
     }
 
+    public void setTraditionalEnabled(boolean enabled) {
+        engineHandler.post(() -> {
+            this.traditionalEnabled = enabled;
+            // Re-publish with trad-mapped candidate text (or simp if off).
+            publish();
+        });
+    }
+
+    public void setTraditionalConverter(
+            com.semantic.sime.ime.data.TraditionalConverter c) {
+        this.tradConverter = c;
+    }
+
     /**
      * Commit text picked from a sub-panel (quick-phrase / clipboard /
      * emoji / etc.). Flushes any in-flight composition the same way a
@@ -207,7 +222,7 @@ public class InputKernel {
             if (isChineseLike() && !state.buffer.isEmpty()) {
                 String committed = state.committedText();
                 String tail = !candidates.isEmpty()
-                        ? candidates.get(0).text
+                        ? tradTextOf(candidates.get(0))
                         : state.remaining();
                 fireCommitText(committed + tail);
                 resetInput();
@@ -545,7 +560,7 @@ public class InputKernel {
 
     private void commitFirstCandidateInline() {
         DecodeResult c = candidates.get(0);
-        state.select(c.text, c.units, c.consumed);
+        state.select(tradTextOf(c), c.units, c.consumed);
         if (state.fullySelected()) {
             String out = state.committedText();
             fireCommitText(out);
@@ -625,7 +640,7 @@ public class InputKernel {
             dismissPunctuationPicker(/*publish=*/true);
             return;
         }
-        state.select(c.text, c.units, c.consumed);
+        state.select(tradTextOf(c), c.units, c.consumed);
         selectionTokenIds.add(c.tokenIds);
         if (state.fullySelected()) {
             String out = state.committedText();
@@ -642,7 +657,7 @@ public class InputKernel {
         if (index < 0 || index >= candidates.size()) return;
         DecodeResult c = candidates.get(index);
         state.pushContext(c.tokenIds);
-        fireCommitText(c.text);
+        fireCommitText(tradTextOf(c));
         showPredictions(false);
     }
 
@@ -651,7 +666,10 @@ public class InputKernel {
         DecodeResult c = candidates.get(index);
         state.pushContext(c.tokenIds);
         englishBuffer.setLength(0);
-        fireCommitText(c.text);
+        // English completion is for English buffer — trad doesn't apply
+        // (English text doesn't get converted), but call through anyway
+        // for consistency.
+        fireCommitText(tradTextOf(c));
         fireSetComposingText("");
         showPredictions(true);
     }
@@ -705,7 +723,7 @@ public class InputKernel {
             String tail;
             if (!candidates.isEmpty()) {
                 // Commit first candidate's hanzi instead of raw digits/letters.
-                tail = candidates.get(0).text;
+                tail = tradTextOf(candidates.get(0));
             } else if (chineseLayout == ChineseLayout.T9
                     && topUnits != null && !topUnits.isEmpty()) {
                 tail = mergeUnitsWithRawSeparators(state.remaining(), topUnits);
@@ -991,7 +1009,7 @@ public class InputKernel {
     private void publish() {
         Snapshot snap = new Snapshot(
                 state.copy(),
-                new ArrayList<>(candidates),
+                tradTransform(candidates),
                 new ArrayList<>(pinyinAlts),
                 topUnits,
                 mode,
@@ -1000,5 +1018,32 @@ public class InputKernel {
         mainHandler.post(() -> {
             if (observer != null) observer.onStateChanged(snap);
         });
+    }
+
+    /**
+     * Apply traditional conversion to a candidate list (per-token via
+     * {@link com.semantic.sime.ime.data.TraditionalConverter}). Returns
+     * a defensive copy regardless so the caller can mutate freely.
+     */
+    private List<DecodeResult> tradTransform(List<DecodeResult> in) {
+        if (!traditionalEnabled || tradConverter == null || in.isEmpty()) {
+            return new ArrayList<>(in);
+        }
+        List<DecodeResult> out = new ArrayList<>(in.size());
+        for (DecodeResult r : in) {
+            String trad = tradConverter.convert(r.tokenIds, r.text);
+            if (trad.equals(r.text)) {
+                out.add(r);
+            } else {
+                out.add(new DecodeResult(trad, r.units, r.consumed, r.tokenIds));
+            }
+        }
+        return out;
+    }
+
+    /** Trad-aware text accessor for a single DecodeResult. */
+    private String tradTextOf(DecodeResult r) {
+        if (!traditionalEnabled || tradConverter == null) return r.text;
+        return tradConverter.convert(r.tokenIds, r.text);
     }
 }

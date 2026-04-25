@@ -38,6 +38,10 @@ public class SettingsKeyboardView extends KeyboardView {
         void onPredictionChanged(boolean enabled);
     }
 
+    public interface OnTraditionalChangedListener {
+        void onTraditionalChanged(boolean enabled);
+    }
+
     public interface OnOpenPanelListener {
         /** Open a sub-panel (clipboard / quick-phrase / etc.). */
         void onOpenPanel(String panelKey);
@@ -50,6 +54,7 @@ public class SettingsKeyboardView extends KeyboardView {
     private OnLayoutChangedListener layoutListener;
     private OnExitListener exitListener;
     private OnPredictionChangedListener predictionListener;
+    private OnTraditionalChangedListener traditionalListener;
     private OnOpenPanelListener openPanelListener;
 
     private final SimePrefs prefs;
@@ -74,6 +79,10 @@ public class SettingsKeyboardView extends KeyboardView {
         this.predictionListener = l;
     }
 
+    public void setOnTraditionalChangedListener(OnTraditionalChangedListener l) {
+        this.traditionalListener = l;
+    }
+
     public void setOnOpenPanelListener(OnOpenPanelListener l) {
         this.openPanelListener = l;
     }
@@ -91,7 +100,7 @@ public class SettingsKeyboardView extends KeyboardView {
     /**
      * Settings tree. Add new categories / options here.
      * <pre>
-     * 根 → row1: 键盘 → {全键盘, 九宫格}, 表情, 常用语, 剪切板
+     * 根 → row1: 键盘 → {全键盘, 九宫格}, 表情, 剪切板, 常用语
      *      row2: 声音, 震动, 繁体, 联想
      * </pre>
      * 繁体 / 表情 functional state varies — see panel listener wiring
@@ -127,7 +136,7 @@ public class SettingsKeyboardView extends KeyboardView {
                 () -> togglePrediction(),
                 () -> prefs.getPredictionEnabled());
         return SettingsNode.category("设置",
-                keyboardCat, emoji, quickPhrase, clipboard,
+                keyboardCat, emoji, clipboard, quickPhrase,
                 sound, vibration, traditional, prediction);
     }
 
@@ -202,8 +211,7 @@ public class SettingsKeyboardView extends KeyboardView {
     private void toggleTraditional() {
         boolean next = !prefs.getTraditionalEnabled();
         prefs.setTraditionalEnabled(next);
-        // TODO: wire this into the commit path so candidates are
-        // converted simp → trad before being committed.
+        if (traditionalListener != null) traditionalListener.onTraditionalChanged(next);
     }
 
     private void openPanel(String panelKey) {

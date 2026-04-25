@@ -12,8 +12,11 @@ import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.InputView;
 import com.semantic.sime.ime.KeyboardMode;
 import com.semantic.sime.ime.data.ClipboardWatcher;
+import com.semantic.sime.ime.data.TraditionalConverter;
 import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
+
+import java.io.File;
 
 /**
  * Thin IME host. Life-cycle + {@link InputConnection} bridging only —
@@ -28,6 +31,7 @@ public class SimeService extends InputMethodService
     private InputKernel kernel;
     private InputView inputView;
     private ClipboardWatcher clipboardWatcher;
+    private TraditionalConverter tradConverter;
 
     /**
      * When non-null, commits / deletes / preedit are routed here
@@ -49,6 +53,23 @@ public class SimeService extends InputMethodService
         kernel = new InputKernel(new SimeEngineDecoder(engine));
         clipboardWatcher = new ClipboardWatcher(this);
         clipboardWatcher.start();
+        // Load the trad table on a background thread so we don't stall
+        // IME startup on the ~2MB file read. Engine.start() already runs
+        // its own background extraction; we piggyback after a short delay
+        // so the assets are likely on disk by the time we read.
+        tradConverter = new TraditionalConverter();
+        kernel.setTraditionalConverter(tradConverter);
+        new Thread(() -> {
+            File ftDict = new File(
+                    new File(getApplicationContext().getFilesDir(), "sime"),
+                    "sime.ft.dict.txt");
+            // Spin briefly until the asset extraction (in SimeEngine.doStart)
+            // has materialized the file. Bounded to ~3s.
+            for (int i = 0; i < 30 && !ftDict.exists(); i++) {
+                try { Thread.sleep(100); } catch (InterruptedException e) { break; }
+            }
+            tradConverter.load(ftDict);
+        }, "sime-trad-load").start();
         applyPrefs();
     }
 
@@ -65,6 +86,7 @@ public class SimeService extends InputMethodService
         SimePrefs prefs = new SimePrefs(this);
         kernel.setChineseLayout(prefs.getChineseLayout());
         kernel.setPredictionEnabled(prefs.getPredictionEnabled());
+        kernel.setTraditionalEnabled(prefs.getTraditionalEnabled());
         com.semantic.sime.ime.feedback.InputFeedbacks.setSoundEnabled(
                 prefs.getSoundEnabled());
         com.semantic.sime.ime.feedback.InputFeedbacks.setVibrationEnabled(
