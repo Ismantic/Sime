@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  <rect width="48" height="48" rx="10" fill="#E8640A"/>
-  <text x="24" y="34" font-family="sans-serif" font-size="28" font-weight="bold"
-        fill="white" text-anchor="middle">是</text>
+  <rect width="48" height="48" rx="10" fill="#4A90E2"/>
+  <text x="23.5" y="33" font-family="Noto Sans CJK SC, sans-serif" font-size="25" font-weight="bold"
+        fill="white" text-anchor="middle">语</text>
 </svg>

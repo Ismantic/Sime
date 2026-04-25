@@ -15,6 +15,14 @@
 
 namespace fcitx {
 
+namespace {
+constexpr int kPageSize = 9;
+const KeyList &selectionKeys() {
+    static const KeyList keys = Key::keyListFromString("1 2 3 4 5 6 7 8 9");
+    return keys;
+}
+}  // namespace
+
 // ===== Candidate word =====
 
 class SimeCandidateWord : public CandidateWord {
@@ -79,12 +87,13 @@ void Sime::reloadConfig() {
 }
 
 void Sime::initSime() {
-    sime_ = std::make_unique<sime::Sime>(
-        *config_.dictPath, *config_.lmPath);
+    static constexpr const char *kDictPath = "/usr/share/sime/sime.dict";
+    static constexpr const char *kLmPath = "/usr/share/sime/sime.cnt";
+    sime_ = std::make_unique<sime::Sime>(kDictPath, kLmPath);
     if (!sime_->Ready()) {
         FCITX_ERROR() << "Sime: failed to load resources"
-                      << " dict=" << *config_.dictPath
-                      << " lm=" << *config_.lmPath;
+                      << " dict=" << kDictPath
+                      << " lm=" << kLmPath;
         sime_.reset();
     } else {
         FCITX_INFO() << "Sime: resources loaded";
@@ -204,7 +213,7 @@ void Sime::showPredictions(InputContext *ic) {
     }
 
     auto results = sime_->NextTokens(st->context_ids,
-        static_cast<std::size_t>(*config_.pageSize));
+        static_cast<std::size_t>(kPageSize));
 
     if (results.empty()) {
         st->predicting = false;
@@ -216,9 +225,9 @@ void Sime::showPredictions(InputContext *ic) {
     st->predicting = true;
 
     auto cl = std::make_unique<CommonCandidateList>();
-    cl->setPageSize(*config_.pageSize);
+    cl->setPageSize(kPageSize);
     cl->setLayoutHint(CandidateLayoutHint::Horizontal);
-    cl->setSelectionKey(*config_.selectionKeys);
+    cl->setSelectionKey(selectionKeys());
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
     for (const auto& r : results) {
@@ -347,9 +356,9 @@ void Sime::updateUI(InputContext *ic) {
 
     // Build candidate list from remaining input
     auto cl = std::make_unique<CommonCandidateList>();
-    cl->setPageSize(*config_.pageSize);
+    cl->setPageSize(kPageSize);
     cl->setLayoutHint(CandidateLayoutHint::Horizontal);
-    cl->setSelectionKey(*config_.selectionKeys);
+    cl->setSelectionKey(selectionKeys());
     cl->setCursorPositionAfterPaging(CursorPositionAfterPaging::ResetToFirst);
 
     for (const auto &r : results) {
@@ -383,7 +392,7 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
     // Prediction mode: handle selection or exit
     if (st->predicting && cl) {
         // Selection keys: select prediction candidate
-        auto idx = key.keyListIndex(*config_.selectionKeys);
+        auto idx = key.keyListIndex(selectionKeys());
         if (idx >= 0 && idx < cl->size()) {
             cl->candidate(idx).select(ic);
             event.filterAndAccept();
@@ -432,7 +441,7 @@ void Sime::keyEvent(const InputMethodEntry &, KeyEvent &event) {
 
     // Selection keys (1-9 by default): select candidate
     if (!st->empty() && cl) {
-        auto idx = key.keyListIndex(*config_.selectionKeys);
+        auto idx = key.keyListIndex(selectionKeys());
         if (idx >= 0 && idx < cl->size()) {
             cl->candidate(idx).select(ic);
             event.filterAndAccept();

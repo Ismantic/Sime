@@ -50,7 +50,7 @@ public:
     std::vector<InputMethodEntry> listInputMethods() override {
         std::vector<InputMethodEntry> result;
         InputMethodEntry entry("sime-pinyin", _("Sime"), "zh_CN", "sime");
-        entry.setLabel("是").setIcon("fcitx-pinyin").setConfigurable(true);
+        entry.setLabel("语").setConfigurable(true);
         result.push_back(std::move(entry));
         return result;
     }
@@ -67,15 +67,7 @@ public:
     int contextSize() const { return sime_ ? sime_->ContextSize() : 2; }
 
     struct Config : public Configuration {
-        // Resources
-        Option<std::string> dictPath{this, "DictPath", _("词表路径"),
-                                      "/usr/share/sime/sime.dict"};
-        Option<std::string> lmPath{this, "ModelPath", _("模型路径"),
-                                   "/usr/share/sime/sime.cnt"};
-        Option<std::string> userDictPath{this, "UserDictPath", _("自定义词表路径"),
-                                         ""};
         // Candidates
-        Option<int> pageSize{this, "PageSize", _("页候选数"), 9};
         Option<int> nbest{this, "NBest", _("额外全句数"), 0};
         Option<bool> prediction{this, "Prediction", _("联想"), true};
 
@@ -91,10 +83,6 @@ public:
                                       SwitchInputMethodBehavior::CommitPreedit};
 
         // Key bindings
-        KeyListOption selectionKeys{
-            this, "SelectionKeys", _("候选选择键"),
-            Key::keyListFromString("1 2 3 4 5 6 7 8 9"),
-            KeyListConstrain({KeyConstrainFlag::AllowModifierLess})};
         KeyListOption prevPage{
             this, "PrevPage", _("上一页"),
             {Key(FcitxKey_minus), Key(FcitxKey_Up), Key(FcitxKey_Page_Up)},
