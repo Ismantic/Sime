@@ -19,6 +19,7 @@ import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
 
 import java.io.File;
+import java.text.BreakIterator;
 
 /**
  * Thin IME host. Life-cycle + {@link InputConnection} bridging only —
@@ -180,7 +181,30 @@ public class SimeService extends InputMethodService
             return;
         }
         InputConnection ic = getCurrentInputConnection();
-        if (ic != null) ic.deleteSurroundingText(count, 0);
+        if (ic == null) return;
+        // Walk back `count` grapheme clusters and delete that many UTF-16
+        // chars in one call. Without this, emoji (surrogate pairs) and
+        // ZWJ sequences (家庭表情等) take multiple presses to disappear.
+        ic.deleteSurroundingText(graphemeUnitsBefore(ic, count), 0);
+    }
+
+    private static int graphemeUnitsBefore(InputConnection ic, int graphemes) {
+        // Pull a generous window before the cursor — enough to cover the
+        // longest plausible ZWJ emoji sequence times `graphemes`.
+        CharSequence before = ic.getTextBeforeCursor(64 * graphemes, 0);
+        if (before == null || before.length() == 0) return graphemes;
+        BreakIterator it = BreakIterator.getCharacterInstance();
+        it.setText(before.toString());
+        int boundary = before.length();
+        for (int i = 0; i < graphemes; i++) {
+            int prev = it.preceding(boundary);
+            if (prev == BreakIterator.DONE) break;
+            boundary = prev;
+        }
+        int deleted = before.length() - boundary;
+        // Fallback to char-count if the buffer was empty / iterator did
+        // nothing — never return 0 when the caller asked for a deletion.
+        return deleted > 0 ? deleted : graphemes;
     }
 
     @Override

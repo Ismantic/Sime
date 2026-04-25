@@ -19,8 +19,8 @@ android {
         applicationId = "com.semantic.sime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 55
-        versionName = "0.14.4"
+        versionCode = 63
+        versionName = "0.14.12"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -49,7 +49,12 @@ android {
             }
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }
