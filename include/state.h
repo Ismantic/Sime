@@ -50,6 +50,12 @@ public:
     const_iterator begin() const { return heap_.begin(); }
     const_iterator end() const { return heap_.end(); }
 
+    // Cached position of this bucket inside NetStates::top_score_; updated by
+    // NetStates as it shuffles the score-heap. Avoids a second map lookup
+    // per Insert (was: top_index_ map keyed on Scorer::Pos).
+    std::size_t heap_idx = 0;
+    Scorer::Pos pos{};
+
 private:
     std::vector<State> heap_;
     std::size_t size_;
@@ -91,7 +97,7 @@ public:
     iterator end();
 
 private:
-    void PushScoreHeap(float_t score, const Scorer::Pos& pos);
+    void PushScoreHeap(float_t score, TopStates* bucket);
     void PopScoreHeap();
     void RefreshTopIndex(std::size_t index);
     void AdjustUp(std::size_t node);
@@ -104,8 +110,10 @@ private:
     std::size_t state_size_ = 0;
     std::size_t max_top_ = 2;
 
-    std::map<Scorer::Pos, std::size_t> top_index_;
-    std::vector<std::pair<float_t, Scorer::Pos>> top_score_;
+    // Score-heap of (worst-score-in-bucket, bucket-ptr). Bucket pointers are
+    // stable because std::map node addresses don't move on insert/erase of
+    // other keys. Each bucket caches its index here in TopStates::heap_idx.
+    std::vector<std::pair<float_t, TopStates*>> top_score_;
 };
 
 } // namespace sime

@@ -320,15 +320,15 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
+    // `best[end]` = lowest tier seen for any edge ending at column `end`.
+    // Reused across columns: clear then refill. Sentinel 0xFF = unset.
+    std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
-        // Find best tier per `end` column.
-        std::unordered_map<std::size_t, uint8_t> best;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            auto it = best.find(e.end);
-            if (it == best.end() || t < it->second) best[e.end] = t;
+            if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
@@ -336,6 +336,7 @@ void Sime::InitNumNet(std::string_view start,
                 if (has_full_cover_exact && e.fuzzy) return true;  // global gate
                 return tier_of(e) > best[e.end];                    // per-bucket
             }), edges.end());
+        for (const auto& e : edges) best[e.end] = 0xFF;  // clear touched slots
     }
 
     std::string combined(start);
@@ -798,14 +799,13 @@ void Sime::InitNet(std::string_view input,
         }
     }
 
+    std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
-        std::unordered_map<std::size_t, uint8_t> best;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            auto it = best.find(e.end);
-            if (it == best.end() || t < it->second) best[e.end] = t;
+            if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
@@ -813,6 +813,7 @@ void Sime::InitNet(std::string_view input,
                 if (has_full_cover_exact && e.fuzzy) return true;
                 return tier_of(e) > best[e.end];
             }), edges.end());
+        for (const auto& e : edges) best[e.end] = 0xFF;
     }
 
     for (std::size_t i = 0; i < total; ++i) {
@@ -827,7 +828,14 @@ void Sime::PruneNode(std::vector<Link>& edges,
                      std::unordered_map<TokenID, float_t>* score_cache) const {
     if (edges.size() <= NodeSize) return;
 
-    std::unordered_map<std::size_t, std::vector<std::size_t>> groups;
+    // span = e.end - e.start; bounded by max word length (≤ ~12). Use a flat
+    // vector indexed by span; leaves unused slots empty but avoids hashing.
+    std::size_t max_span = 0;
+    for (const auto& e : edges) {
+        std::size_t span = e.end - e.start;
+        if (span > max_span) max_span = span;
+    }
+    std::vector<std::vector<std::size_t>> groups(max_span + 1);
     for (std::size_t i = 0; i < edges.size(); ++i) {
         groups[edges[i].end - edges[i].start].push_back(i);
     }
@@ -864,7 +872,8 @@ void Sime::PruneNode(std::vector<Link>& edges,
     std::vector<Link> pruned;
     pruned.reserve(edges.size());
 
-    for (auto& [span, indices] : groups) {
+    for (auto& indices : groups) {
+        if (indices.empty()) continue;
         if (indices.size() <= NodeSize) {
             for (auto idx : indices) {
                 pruned.push_back(edges[idx]);

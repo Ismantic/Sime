@@ -49,7 +49,6 @@ NetStates::NetStates() = default;
 
 void NetStates::Clear() {
     pos_map_.clear();
-    top_index_.clear();
     top_score_.clear();
     state_size_ = 0;
 }
@@ -68,15 +67,17 @@ void NetStates::Insert(const State& state) {
     bool inserted = false;
 
     if (it == pos_map_.end()) {
-        TopStates bucket(max_top_);
-        inserted = bucket.Push(state);
-        pos_map_.emplace(state.pos, bucket);
-        PushScoreHeap(state.score, state.pos);
+        auto [emp_it, ok] = pos_map_.emplace(state.pos, TopStates(max_top_));
+        (void)ok;
+        emp_it->second.pos = state.pos;
+        inserted = emp_it->second.Push(state);
+        PushScoreHeap(state.score, &emp_it->second);
     } else {
-        inserted = it->second.Push(state);
-        auto heap_it = top_index_.find(state.pos);
-        if (heap_it != top_index_.end() && heap_it->second < top_score_.size()) {
-            AdjustDown(heap_it->second);
+        TopStates& bucket = it->second;
+        inserted = bucket.Push(state);
+        if (bucket.heap_idx < top_score_.size() &&
+            top_score_[bucket.heap_idx].second == &bucket) {
+            AdjustDown(bucket.heap_idx);
         }
     }
 
@@ -85,27 +86,22 @@ void NetStates::Insert(const State& state) {
     }
 
     while (state_size_ > BeamSize && !top_score_.empty()) {
-        const auto& top = top_score_.front().second;
-        auto bucket_it = pos_map_.find(top);
-        if (bucket_it == pos_map_.end()) {
+        TopStates* worst = top_score_.front().second;
+        worst->Pop();
+        if (worst->Size() == 0) {
+            Scorer::Pos pos = worst->pos;
             PopScoreHeap();
-            continue;
-        }
-        bucket_it->second.Pop();
-        if (bucket_it->second.Size() == 0) {
-            pos_map_.erase(bucket_it);
-            PopScoreHeap();
+            pos_map_.erase(pos);
         } else {
-            top_score_.front().first = bucket_it->second.Top().score;
+            top_score_.front().first = worst->Top().score;
             AdjustDown(0);
         }
         --state_size_;
     }
 }
 
-void NetStates::PushScoreHeap(float_t score,
-                              const Scorer::Pos& pos) {
-    top_score_.emplace_back(score, pos);
+void NetStates::PushScoreHeap(float_t score, TopStates* bucket) {
+    top_score_.emplace_back(score, bucket);
     AdjustUp(top_score_.size() - 1);
 }
 
@@ -113,7 +109,6 @@ void NetStates::PopScoreHeap() {
     if (top_score_.empty()) {
         return;
     }
-    top_index_.erase(top_score_.front().second);
     top_score_.front() = top_score_.back();
     top_score_.pop_back();
     if (!top_score_.empty()) {
@@ -126,7 +121,7 @@ void NetStates::RefreshTopIndex(std::size_t index) {
     if (index >= top_score_.size()) {
         return;
     }
-    top_index_[top_score_[index].second] = index;
+    top_score_[index].second->heap_idx = index;
 }
 
 void NetStates::AdjustUp(std::size_t node) {
