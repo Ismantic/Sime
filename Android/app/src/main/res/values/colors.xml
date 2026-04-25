@@ -5,4 +5,5 @@
   values/ entry; new entries should be added to SimeTheme instead.
 -->
 <resources>
+    <color name="ic_launcher_background">#4A90E2</color>
 </resources>
