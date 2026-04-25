@@ -140,7 +140,7 @@ Android 用自己的 Gradle/NDK 构建（见 `Android/BUILD.md`），不走根 C
 
 ### 训练 Pipeline
 
-训练流程在 `pipeline/` 目录下。前置准备：`sentences.cut.txt`（切词后语料，空格分隔）+ `units.txt`（拼音表）。
+训练流程在 `pipeline/` 目录下。前置准备：`sentences.cut.txt`（切词后语料，空格分隔）+ `dict.unit`（拼音表）。
 
 ```bash
 cd pipeline
@@ -151,9 +151,7 @@ make construct   # 4. 构建语言模型
 make convert     # 5. 编译拼音 Trie
 ```
 
-产出：`pipeline/output/sime.dict` 和 `pipeline/output/sime.raw.cnt`。
-
-`pipeline/en/` 与 `pipeline/nine/` 是英文模型与 T9 二元模型的并行管道，结构相同。
+产出：`pipeline/output/sime.dict` 和 `pipeline/output/sime.cnt`。
 
 ---
 
