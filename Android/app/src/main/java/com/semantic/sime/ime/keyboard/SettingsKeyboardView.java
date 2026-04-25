@@ -91,11 +91,11 @@ public class SettingsKeyboardView extends KeyboardView {
     /**
      * Settings tree. Add new categories / options here.
      * <pre>
-     * 根 → row1: 键盘 → {全键盘, 九宫格}, 联想, 繁体, 表情
-     *      row2: 声音, 震动, 常用语, 剪切板
+     * 根 → row1: 键盘 → {全键盘, 九宫格}, 表情, 常用语, 剪切板
+     *      row2: 声音, 震动, 繁体, 联想
      * </pre>
-     * 繁体 / 表情 / 常用语 / 剪切板 are placeholders — UI only for now,
-     * functional implementation comes later.
+     * 繁体 / 表情 functional state varies — see panel listener wiring
+     * in {@link com.semantic.sime.ime.InputView}.
      */
     private SettingsNode buildRoot() {
         SettingsNode qwerty = SettingsNode.leaf("全键盘",
@@ -105,30 +105,30 @@ public class SettingsKeyboardView extends KeyboardView {
                 () -> pickLayout(ChineseLayout.T9),
                 () -> prefs.getChineseLayout() == ChineseLayout.T9);
         SettingsNode keyboardCat = SettingsNode.category("键盘", qwerty, t9);
-        SettingsNode prediction = SettingsNode.toggle("联想",
-                () -> togglePrediction(),
-                () -> prefs.getPredictionEnabled());
-        SettingsNode traditional = SettingsNode.toggle("繁体",
-                () -> toggleTraditional(),
-                () -> prefs.getTraditionalEnabled());
         // Panel openers use toggle() with a fixed false selector so the
         // tap doesn't auto-exit settings (which would race the panel
         // mode switch and bounce us back to CHINESE). Highlight stays off.
         SettingsNode emoji = SettingsNode.toggle("表情",
                 () -> openPanel(PANEL_EMOJI), () -> false);
+        SettingsNode quickPhrase = SettingsNode.toggle("常用语",
+                () -> openPanel(PANEL_QUICK_PHRASE), () -> false);
+        SettingsNode clipboard = SettingsNode.toggle("剪切板",
+                () -> openPanel(PANEL_CLIPBOARD), () -> false);
         SettingsNode sound = SettingsNode.toggle("声音",
                 () -> toggleSound(),
                 () -> prefs.getSoundEnabled());
         SettingsNode vibration = SettingsNode.toggle("震动",
                 () -> toggleVibration(),
                 () -> prefs.getVibrationEnabled());
-        SettingsNode quickPhrase = SettingsNode.toggle("常用语",
-                () -> openPanel(PANEL_QUICK_PHRASE), () -> false);
-        SettingsNode clipboard = SettingsNode.toggle("剪切板",
-                () -> openPanel(PANEL_CLIPBOARD), () -> false);
+        SettingsNode traditional = SettingsNode.toggle("繁体",
+                () -> toggleTraditional(),
+                () -> prefs.getTraditionalEnabled());
+        SettingsNode prediction = SettingsNode.toggle("联想",
+                () -> togglePrediction(),
+                () -> prefs.getPredictionEnabled());
         return SettingsNode.category("设置",
-                keyboardCat, prediction, traditional, emoji,
-                sound, vibration, quickPhrase, clipboard);
+                keyboardCat, emoji, quickPhrase, clipboard,
+                sound, vibration, traditional, prediction);
     }
 
     private void push(SettingsNode node) {
