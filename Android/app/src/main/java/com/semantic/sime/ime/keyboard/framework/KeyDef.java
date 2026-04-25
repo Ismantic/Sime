@@ -21,7 +21,6 @@ public final class KeyDef {
 
     public final String label;
     public final String hintLabel;        // small label drawn top-right
-    public final String topLabel;         // small label drawn centered above the main label
     public final float widthWeight;
     public final KeyAppearance appearance;
     public final SimeKey clickAction;
@@ -34,7 +33,6 @@ public final class KeyDef {
     private KeyDef(Builder b) {
         this.label = b.label;
         this.hintLabel = b.hintLabel;
-        this.topLabel = b.topLabel;
         this.widthWeight = b.widthWeight;
         this.appearance = b.appearance;
         this.clickAction = b.clickAction;
@@ -67,7 +65,6 @@ public final class KeyDef {
     public static final class Builder {
         private String label = "";
         private String hintLabel = null;
-        private String topLabel = null;
         private float widthWeight = 1f;
         private KeyAppearance appearance = KeyAppearance.NORMAL;
         private SimeKey clickAction = null;
@@ -78,7 +75,6 @@ public final class KeyDef {
 
         public Builder label(String s)        { this.label = s; return this; }
         public Builder hint(String s)         { this.hintLabel = s; return this; }
-        public Builder topLabel(String s)     { this.topLabel = s; return this; }
         public Builder width(float w)         { this.widthWeight = w; return this; }
         public Builder appearance(KeyAppearance a) { this.appearance = a; return this; }
         public Builder click(SimeKey k)       { this.clickAction = k; return this; }

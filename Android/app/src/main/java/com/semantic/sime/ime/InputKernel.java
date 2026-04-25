@@ -65,11 +65,23 @@ public class InputKernel {
         public final KeyboardMode mode;
         public final ChineseLayout chineseLayout;
         public final String englishBuffer;
+        /** True while the candidate strip is showing the T9 "1 key"
+         *  punctuation picker. Treated by the UI like prediction mode
+         *  (right-edge button becomes "×" to dismiss). */
+        public final boolean inPunctuationPicker;
 
         public Snapshot(InputState state, List<DecodeResult> candidates,
                  List<PinyinAlt> pinyinAlts, String topUnits,
                  KeyboardMode mode, ChineseLayout chineseLayout,
                  String englishBuffer) {
+            this(state, candidates, pinyinAlts, topUnits, mode,
+                    chineseLayout, englishBuffer, false);
+        }
+
+        public Snapshot(InputState state, List<DecodeResult> candidates,
+                 List<PinyinAlt> pinyinAlts, String topUnits,
+                 KeyboardMode mode, ChineseLayout chineseLayout,
+                 String englishBuffer, boolean inPunctuationPicker) {
             this.state = state;
             this.candidates = candidates;
             this.pinyinAlts = pinyinAlts;
@@ -77,6 +89,7 @@ public class InputKernel {
             this.mode = mode;
             this.chineseLayout = chineseLayout;
             this.englishBuffer = englishBuffer;
+            this.inPunctuationPicker = inPunctuationPicker;
         }
     }
 
@@ -103,6 +116,10 @@ public class InputKernel {
     private boolean predictionEnabled = true;
     private boolean traditionalEnabled = false;
     private com.semantic.sime.ime.data.TraditionalConverter tradConverter;
+    /** Set true while the user is in a password / OTP / "no personalized
+     *  learning" field. Suppresses prediction without changing the user's
+     *  saved pref — flips back automatically when the field changes. */
+    private boolean privateField = false;
 
     private List<DecodeResult> candidates = Collections.emptyList();
     /**
@@ -201,6 +218,40 @@ public class InputKernel {
             this.traditionalEnabled = enabled;
             // Re-publish with trad-mapped candidate text (or simp if off).
             publish();
+        });
+    }
+
+    /** Public hook for the candidates bar's "×" button: drop the
+     *  current prediction strip without committing anything. */
+    public void dismissPredictions() {
+        engineHandler.post(() -> {
+            if (state.predicting) {
+                exitPrediction();
+                publish();
+            }
+        });
+    }
+
+    /** Same idea for the T9 "1 key" punctuation strip. */
+    public void dismissPunctuationPickerPublic() {
+        engineHandler.post(() -> {
+            if (inPunctuationPicker) {
+                dismissPunctuationPicker(/*publish=*/true);
+            }
+        });
+    }
+
+    public void setPrivateField(boolean privateField) {
+        engineHandler.post(() -> {
+            if (this.privateField == privateField) return;
+            this.privateField = privateField;
+            // Bail out of any active prediction when entering a sensitive
+            // field; restore on the next non-sensitive focus naturally
+            // (predictions are demand-shown).
+            if (privateField && state.predicting) {
+                exitPrediction();
+                publish();
+            }
         });
     }
 
@@ -941,7 +992,7 @@ public class InputKernel {
      * @param enOnly true when in English mode
      */
     private void showPredictions(boolean enOnly) {
-        if (!predictionEnabled || state.contextIds.isEmpty()) {
+        if (!predictionEnabled || privateField || state.contextIds.isEmpty()) {
             exitPrediction();
             publish();
             return;
@@ -1025,7 +1076,8 @@ public class InputKernel {
                 topUnits,
                 mode,
                 chineseLayout,
-                englishBuffer.toString());
+                englishBuffer.toString(),
+                inPunctuationPicker);
         mainHandler.post(() -> {
             if (observer != null) observer.onStateChanged(snap);
         });

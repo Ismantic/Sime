@@ -52,7 +52,7 @@ public final class NumberLayout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("符号", SimeKey.toSymbol())
-                                .width(1f).labelSize(14f)))
+                                .labelSize(14f)))
                 .build();
     }
 
@@ -82,9 +82,9 @@ public final class NumberLayout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("返回", SimeKey.toBack())
-                                .width(1f).labelSize(14f))
-                        .key(digit("0").width(1f))
-                        .key(punc(".").width(1f)))
+                                .labelSize(14f))
+                        .key(digit("0"))
+                        .key(punc(".")))
                 .build();
     }
 
@@ -100,21 +100,21 @@ public final class NumberLayout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("⌫", SimeKey.backspace())
-                                .width(1f).repeatable(true)))
+                                .repeatable(true)))
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("空格", SimeKey.space())
-                                .width(1f).labelSize(14f)))
+                                .labelSize(14f)))
                 .row(KeyRow.builder(2f)
                         .key(KeyDef.function("换行", SimeKey.enter())
-                                .width(1f).labelSize(14f)))
+                                .labelSize(14f)))
                 .build();
     }
 
     private static KeyDef.Builder digit(String d) {
-        return KeyDef.normal(d, SimeKey.punctuation(d)).width(1f);
+        return KeyDef.normal(d, SimeKey.punctuation(d));
     }
 
     private static KeyDef.Builder punc(String s) {
-        return KeyDef.normal(s, SimeKey.punctuation(s)).width(1f).labelSize(15f);
+        return KeyDef.normal(s, SimeKey.punctuation(s)).labelSize(15f);
     }
 }

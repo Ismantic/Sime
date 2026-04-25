@@ -96,9 +96,12 @@ public class T9KeyboardView extends KeyboardView {
 
     private void build() {
         // ===== Left block: dynamic strip on top (3f) + 符号 (1f) =====
+        // Width weights symmetric around the center digit grid:
+        //   left 0.9 : center 3.2 : right 0.9  (was 1:3:1).
+        // Wider center, equally narrowed sides.
         LinearLayout leftBlock = new LinearLayout(getContext());
         leftBlock.setOrientation(VERTICAL);
-        addView(leftBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        addView(leftBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.9f));
 
         leftScroll = new ScrollView(getContext());
         leftScroll.setVerticalScrollBarEnabled(false);
@@ -121,7 +124,7 @@ public class T9KeyboardView extends KeyboardView {
         // ===== Center block: 3×3 digit grid (3f) + center bottom row (1f) =====
         LinearLayout centerBlock = new LinearLayout(getContext());
         centerBlock.setOrientation(VERTICAL);
-        addView(centerBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 3f));
+        addView(centerBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 3.2f));
 
         mainGrid = new KeyboardContainer(getContext(), theme);
         mainGrid.setOnKeyEmitListener(this::emit);
@@ -139,7 +142,7 @@ public class T9KeyboardView extends KeyboardView {
         rightCol = new KeyboardContainer(getContext(), theme);
         rightCol.setOnKeyEmitListener(this::emit);
         rightCol.setLayout(T9Layout.buildRightColumn());
-        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.9f));
 
         installDualStateHandlers();
         refreshDualStateKeys();

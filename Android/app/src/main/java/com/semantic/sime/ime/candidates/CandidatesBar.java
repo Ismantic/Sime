@@ -32,11 +32,18 @@ import java.util.List;
  */
 public class CandidatesBar extends FrameLayout {
 
-    public interface OnCandidatePickListener { void onCandidatePick(int index); }
-    public interface OnSettingsListener       { void onSettingsClick(); }
-    public interface OnHideListener           { void onHideClick(); }
-    public interface OnExpandToggleListener   { void onExpandToggle(); }
-    public interface OnSettingsBackListener   { void onSettingsBackClick(); }
+    /**
+     * Single listener for all bar events. Default no-op methods so each
+     * caller only overrides what it needs.
+     */
+    public interface Listener {
+        default void onCandidatePick(int index) {}
+        default void onSettingsClick() {}
+        default void onHideClick() {}
+        default void onExpandToggle() {}
+        default void onDismissPrediction() {}
+        default void onSettingsBackClick() {}
+    }
 
     private final SimeTheme theme;
 
@@ -44,17 +51,43 @@ public class CandidatesBar extends FrameLayout {
     private LinearLayout activeView;
     private TextView preeditView;
     private LinearLayout candidateContainer;
-    private HorizontalScrollView candidateScroll;
+    private LockableHorizontalScrollView candidateScroll;
+    private boolean expanded = false;
+
+    /** HorizontalScrollView whose horizontal scrolling can be disabled
+     *  per state. Children still receive touches (so candidate taps
+     *  still register), only the scroll behavior is suppressed. */
+    private static class LockableHorizontalScrollView extends HorizontalScrollView {
+        boolean scrollLocked = false;
+        LockableHorizontalScrollView(Context ctx) { super(ctx); }
+        @Override
+        public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+            if (scrollLocked) return false;
+            return super.onInterceptTouchEvent(ev);
+        }
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent ev) {
+            if (scrollLocked) return false;
+            return super.onTouchEvent(ev);
+        }
+    }
     private TextView expandToggleButton;
     /** Idle view's leftmost button — flips between ⚙ and ← in settings mode. */
     private TextView idleLeftButton;
     private boolean settingsMode = false;
 
-    private OnCandidatePickListener pickListener;
-    private OnSettingsListener settingsListener;
-    private OnHideListener hideListener;
-    private OnExpandToggleListener expandToggleListener;
-    private OnSettingsBackListener settingsBackListener;
+    private Listener listener = new Listener() {};
+
+    /** When true, the right-edge button shows "×" and dismisses the
+     *  prediction strip instead of expanding the candidates grid.
+     *  The 10-prediction limit makes the expand affordance redundant. */
+    private boolean predicting = false;
+
+    /** Cached count of active candidates from the last render — used to
+     *  restore visibility when collapsing the expanded grid (since the
+     *  bar hides truncated cells while expanded, and no re-render
+     *  happens on the collapse-only state change). */
+    private int activeCandidateCount = 0;
 
     public CandidatesBar(Context context) {
         super(context);
@@ -83,11 +116,8 @@ public class CandidatesBar extends FrameLayout {
 
         idleLeftButton = iconButton("⚙");
         InputFeedbacks.wireClick(idleLeftButton, () -> {
-            if (settingsMode) {
-                if (settingsBackListener != null) settingsBackListener.onSettingsBackClick();
-            } else {
-                if (settingsListener != null) settingsListener.onSettingsClick();
-            }
+            if (settingsMode) listener.onSettingsBackClick();
+            else listener.onSettingsClick();
         });
         idleView.addView(idleLeftButton);
 
@@ -98,9 +128,7 @@ public class CandidatesBar extends FrameLayout {
         idleView.addView(spacer);
 
         TextView hide = iconButton("∨");
-        InputFeedbacks.wireClick(hide, () -> {
-            if (hideListener != null) hideListener.onHideClick();
-        });
+        InputFeedbacks.wireClick(hide, () -> listener.onHideClick());
         idleView.addView(hide);
 
         addView(idleView, new LayoutParams(
@@ -139,7 +167,7 @@ public class CandidatesBar extends FrameLayout {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         bottomRow.setLayoutParams(brLp);
 
-        candidateScroll = new HorizontalScrollView(getContext());
+        candidateScroll = new LockableHorizontalScrollView(getContext());
         candidateScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
@@ -156,7 +184,8 @@ public class CandidatesBar extends FrameLayout {
 
         expandToggleButton = iconButton("∨");
         InputFeedbacks.wireClick(expandToggleButton, () -> {
-            if (expandToggleListener != null) expandToggleListener.onExpandToggle();
+            if (predicting) listener.onDismissPrediction();
+            else listener.onExpandToggle();
         });
         bottomRow.addView(expandToggleButton);
 
@@ -335,6 +364,7 @@ public class CandidatesBar extends FrameLayout {
 
     private void populateCandidates(List<DecodeResult> candidates) {
         int n = candidates == null ? 0 : candidates.size();
+        this.activeCandidateCount = n;
 
         // Grow the pool to cover the current candidate count. New
         // entries are appended in pair order (candidate then divider)
@@ -376,9 +406,7 @@ public class CandidatesBar extends FrameLayout {
                     tv.setTextColor(theme.candidateText);
                     tv.setTypeface(null, Typeface.NORMAL);
                 }
-                InputFeedbacks.wireClick(tv, () -> {
-                    if (pickListener != null) pickListener.onCandidatePick(idx);
-                });
+                InputFeedbacks.wireClick(tv, () -> listener.onCandidatePick(idx));
                 tv.setVisibility(VISIBLE);
                 // Last visible slot hides its trailing divider so the
                 // bar doesn't end with a stray vertical line.
@@ -390,11 +418,19 @@ public class CandidatesBar extends FrameLayout {
         }
     }
 
-    public void setOnCandidatePickListener(OnCandidatePickListener l) { this.pickListener = l; }
-    public void setOnSettingsListener(OnSettingsListener l)           { this.settingsListener = l; }
-    public void setOnHideListener(OnHideListener l)                   { this.hideListener = l; }
-    public void setOnExpandToggleListener(OnExpandToggleListener l)   { this.expandToggleListener = l; }
-    public void setOnSettingsBackListener(OnSettingsBackListener l)   { this.settingsBackListener = l; }
+    public void setListener(Listener l) {
+        this.listener = (l != null) ? l : new Listener() {};
+    }
+
+    /** Update the right-edge button glyph + behavior based on whether
+     *  the bar is showing a prediction strip vs in-flight candidates. */
+    public void setPredicting(boolean p) {
+        if (this.predicting == p) return;
+        this.predicting = p;
+        if (expandToggleButton != null) {
+            expandToggleButton.setText(p ? "×" : "∨");
+        }
+    }
 
     /**
      * Toggle the bar between normal mode (left icon = ⚙ → opens
@@ -418,10 +454,37 @@ public class CandidatesBar extends FrameLayout {
      * ExpandedCandidatesView's right column has its own 返回 button.
      */
     public void setExpanded(boolean expanded) {
-        if (expandToggleButton != null) {
-            expandToggleButton.setText(expanded ? "∧" : "∨");
-            expandToggleButton.setVisibility(expanded ? GONE : VISIBLE);
+        this.expanded = expanded;
+        // Lock horizontal scroll while expanded — the grid below shows
+        // the overflow, so allowing the bar to scroll would just give
+        // the user two ways to see the same candidates and confuse the
+        // bar/grid split.
+        if (candidateScroll != null) {
+            candidateScroll.scrollLocked = expanded;
+            if (expanded) {
+                candidateScroll.scrollTo(0, 0);
+                // After layout settles, hide any candidate that's not
+                // fully visible (the half-truncated one at the right
+                // edge would otherwise also appear as the first cell of
+                // the grid → overlap).
+                candidateScroll.post(this::hideTruncatedCandidates);
+            } else {
+                // Restore the cells we hid when expanding. A new
+                // render() would do this automatically but the collapse
+                // alone doesn't trigger one.
+                restoreCandidateVisibility();
+            }
         }
+        if (expandToggleButton == null) return;
+        if (predicting) {
+            // Prediction mode keeps the dismiss "×" regardless of any
+            // stale expand state.
+            expandToggleButton.setText("×");
+            expandToggleButton.setVisibility(VISIBLE);
+            return;
+        }
+        expandToggleButton.setText(expanded ? "∧" : "∨");
+        expandToggleButton.setVisibility(expanded ? GONE : VISIBLE);
     }
 
     /**
@@ -429,6 +492,49 @@ public class CandidatesBar extends FrameLayout {
      * portion of the candidate scroll. Used by the expanded view to
      * skip these and only show overflow candidates in the grid.
      */
+    /** Re-show all cells that should be active per last render. */
+    private void restoreCandidateVisibility() {
+        int n = activeCandidateCount;
+        for (int i = 0; i < candidatePool.size(); i++) {
+            TextView tv = candidatePool.get(i);
+            tv.setVisibility(i < n ? VISIBLE : GONE);
+            if (i < dividerPool.size()) {
+                View div = dividerPool.get(i);
+                // Trailing divider on the last visible cell stays GONE.
+                div.setVisibility(i < n - 1 ? VISIBLE : GONE);
+            }
+        }
+    }
+
+    /** Hide any candidate cell whose right edge exceeds the visible
+     *  scroll width — i.e. the cell is half-truncated or fully
+     *  off-screen. Only called while the panel is expanded. */
+    private void hideTruncatedCandidates() {
+        if (candidateScroll == null || candidateContainer == null) return;
+        int scrollWidth = candidateScroll.getWidth();
+        if (scrollWidth <= 0) return;
+        for (int i = 0; i < candidatePool.size(); i++) {
+            TextView tv = candidatePool.get(i);
+            if (tv.getVisibility() != VISIBLE) continue;
+            int right = tv.getLeft() + tv.getWidth();
+            if (right > scrollWidth) {
+                tv.setVisibility(GONE);
+                if (i < dividerPool.size()) {
+                    dividerPool.get(i).setVisibility(GONE);
+                }
+            }
+        }
+        // Also hide the trailing divider on the now-last visible cell.
+        for (int i = candidatePool.size() - 1; i >= 0; i--) {
+            if (candidatePool.get(i).getVisibility() == VISIBLE) {
+                if (i < dividerPool.size()) {
+                    dividerPool.get(i).setVisibility(GONE);
+                }
+                break;
+            }
+        }
+    }
+
     public int getVisibleCandidateCount() {
         if (candidateScroll == null || candidateContainer == null) return 0;
         int scrollWidth = candidateScroll.getWidth();

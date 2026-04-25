@@ -1,6 +1,7 @@
 package com.semantic.sime;
 
 import android.inputmethodservice.InputMethodService;
+import android.text.InputType;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
@@ -109,15 +110,7 @@ public class SimeService extends InputMethodService
                 KeyboardMode.CHINESE, kernel.getInitialChineseLayout(), "");
         inputView.attach(kernel, initialSnapshot);
         kernel.attach(this, inputView);
-        inputView.getCandidatesBar().setOnCandidatePickListener(idx -> {
-            Log.d(TAG, "candidate pick: " + idx);
-            kernel.onCandidatePick(idx);
-        });
-        inputView.getCandidatesBar().setOnSettingsListener(() -> {
-            Log.d(TAG, "settings gear tapped");
-            kernel.switchMode(KeyboardMode.SETTINGS);
-        });
-        inputView.getCandidatesBar().setOnHideListener(() -> requestHideSelf(0));
+        inputView.setOnHideRequest(() -> requestHideSelf(0));
         return inputView;
     }
 
@@ -126,13 +119,46 @@ public class SimeService extends InputMethodService
         super.onStartInput(attribute, restarting);
         // Pick up any layout change made in SettingsActivity since we last ran.
         applyPrefs();
+        // Detect password / OTP-style fields. While focused there:
+        //   - clipboard watcher pauses (don't capture pasted secrets)
+        //   - prediction is suppressed (avoid leaking previous-context
+        //     suggestions into a sensitive field)
+        boolean privateField = isPrivateField(attribute);
+        if (clipboardWatcher != null) clipboardWatcher.setPaused(privateField);
+        if (kernel != null) kernel.setPrivateField(privateField);
         if (kernel != null) kernel.onStartInput();
     }
 
     @Override
     public void onFinishInput() {
         super.onFinishInput();
+        if (clipboardWatcher != null) clipboardWatcher.setPaused(false);
+        if (kernel != null) kernel.setPrivateField(false);
         if (kernel != null) kernel.onFinishInput();
+    }
+
+    private static boolean isPrivateField(EditorInfo info) {
+        if (info == null) return false;
+        // Apps / autofill providers can opt out of personalized learning
+        // explicitly. Honor that flag wherever Android sets it.
+        if ((info.imeOptions & EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
+            return true;
+        }
+        int type = info.inputType;
+        int cls = type & InputType.TYPE_MASK_CLASS;
+        int variation = type & InputType.TYPE_MASK_VARIATION;
+        if (cls == InputType.TYPE_CLASS_TEXT) {
+            if (variation == InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    || variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                    || variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) {
+                return true;
+            }
+        }
+        if (cls == InputType.TYPE_CLASS_NUMBER
+                && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD) {
+            return true;
+        }
+        return false;
     }
 
     // ===== InputKernel.Listener =====

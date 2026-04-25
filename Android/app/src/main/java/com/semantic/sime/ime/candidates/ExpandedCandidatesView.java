@@ -34,24 +34,13 @@ import java.util.List;
  */
 public class ExpandedCandidatesView extends LinearLayout {
 
-    public interface OnCandidatePickListener {
-        void onCandidatePick(int index);
-    }
-
-    public interface OnPinyinAltPickListener {
-        void onPinyinAltPick(int index);
-    }
-
-    public interface OnBackspaceListener {
-        void onBackspace();
-    }
-
-    public interface OnFallbackLetterListener {
-        void onFallbackLetter(char letter);
-    }
-
-    public interface OnCollapseListener {
-        void onCollapse();
+    /** Single listener for all panel events with no-op defaults. */
+    public interface Listener {
+        default void onCandidatePick(int index) {}
+        default void onPinyinAltPick(int index) {}
+        default void onBackspace() {}
+        default void onFallbackLetter(char letter) {}
+        default void onCollapse() {}
     }
 
     private static final int LEFT_ITEM_HEIGHT_DP = 42;
@@ -70,11 +59,7 @@ public class ExpandedCandidatesView extends LinearLayout {
     private ScrollView mainScroll;
     private LinearLayout grid;
 
-    private OnCandidatePickListener pickListener;
-    private OnPinyinAltPickListener altPickListener;
-    private OnBackspaceListener backspaceListener;
-    private OnFallbackLetterListener fallbackLetterListener;
-    private OnCollapseListener collapseListener;
+    private Listener listener = new Listener() {};
 
     // View pools — grow on demand, never shrink.
     private final java.util.List<TextView> gridCellPool = new java.util.ArrayList<>();
@@ -127,9 +112,7 @@ public class ExpandedCandidatesView extends LinearLayout {
         rightCol.setOrientation(VERTICAL);
         addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
-        rightCol.addView(makeControlButton("返回", () -> {
-            if (collapseListener != null) collapseListener.onCollapse();
-        }));
+        rightCol.addView(makeControlButton("返回", () -> listener.onCollapse()));
         rightCol.addView(makeControlButton("∧", () -> {
             int dy = -mainScroll.getHeight() / 2;
             if (dy != 0) mainScroll.smoothScrollBy(0, dy);
@@ -138,9 +121,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             int dy = mainScroll.getHeight() / 2;
             if (dy != 0) mainScroll.smoothScrollBy(0, dy);
         }));
-        rightCol.addView(makeControlButton("⌫", () -> {
-            if (backspaceListener != null) backspaceListener.onBackspace();
-        }));
+        rightCol.addView(makeControlButton("⌫", () -> listener.onBackspace()));
     }
 
     private TextView makeControlButton(String label, Runnable onClick) {
@@ -161,24 +142,8 @@ public class ExpandedCandidatesView extends LinearLayout {
         return tv;
     }
 
-    public void setOnCandidatePickListener(OnCandidatePickListener l) {
-        this.pickListener = l;
-    }
-
-    public void setOnPinyinAltPickListener(OnPinyinAltPickListener l) {
-        this.altPickListener = l;
-    }
-
-    public void setOnBackspaceListener(OnBackspaceListener l) {
-        this.backspaceListener = l;
-    }
-
-    public void setOnFallbackLetterListener(OnFallbackLetterListener l) {
-        this.fallbackLetterListener = l;
-    }
-
-    public void setOnCollapseListener(OnCollapseListener l) {
-        this.collapseListener = l;
+    public void setListener(Listener l) {
+        this.listener = (l != null) ? l : new Listener() {};
     }
 
     /**
@@ -206,9 +171,8 @@ public class ExpandedCandidatesView extends LinearLayout {
         for (int i = 0; i < alts.size(); i++) {
             final int idx = i;
             String label = alts.get(i).letters;
-            android.view.View item = getOrCreateLeftItem(label, () -> {
-                if (altPickListener != null) altPickListener.onPinyinAltPick(idx);
-            });
+            android.view.View item = getOrCreateLeftItem(label,
+                    () -> listener.onPinyinAltPick(idx));
             item.setVisibility(VISIBLE);
             shown.add(label);
         }
@@ -216,9 +180,8 @@ public class ExpandedCandidatesView extends LinearLayout {
             final char ch = fallbackLetters.charAt(i);
             String label = String.valueOf(ch);
             if (shown.contains(label)) continue;
-            android.view.View item = getOrCreateLeftItem(label, () -> {
-                if (fallbackLetterListener != null) fallbackLetterListener.onFallbackLetter(ch);
-            });
+            android.view.View item = getOrCreateLeftItem(label,
+                    () -> listener.onFallbackLetter(ch));
             item.setVisibility(VISIBLE);
             shown.add(label);
         }
@@ -344,9 +307,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             lp.setMargins(dp(2), dp(2), dp(2), dp(2));
             tv.setLayoutParams(lp);
         }
-        InputFeedbacks.wireClick(tv, () -> {
-            if (pickListener != null) pickListener.onCandidatePick(idx);
-        });
+        InputFeedbacks.wireClick(tv, () -> listener.onCandidatePick(idx));
         cellsUsed++;
         return tv;
     }

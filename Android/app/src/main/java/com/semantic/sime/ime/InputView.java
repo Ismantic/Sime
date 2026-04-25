@@ -45,6 +45,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     private InputKernel.Snapshot lastSnapshot = null;
     /** When true, the keyboard slot is occupied by {@link #expandedView}. */
     private boolean expanded = false;
+    /** Service-supplied hide callback. The bar's ∨ idle button routes here. */
+    private Runnable onHideRequest = () -> {};
 
     public InputView(Context context) {
         super(context);
@@ -81,10 +83,28 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     public void attach(InputKernel kernel, InputKernel.Snapshot initialSnapshot) {
         this.kernel = kernel;
         this.lastSnapshot = initialSnapshot;
-        candidatesBar.setOnExpandToggleListener(this::toggleExpanded);
-        candidatesBar.setOnSettingsBackListener(this::onSettingsBack);
+        candidatesBar.setListener(new CandidatesBar.Listener() {
+            @Override public void onCandidatePick(int idx) { kernel.onCandidatePick(idx); }
+            @Override public void onSettingsClick() { kernel.switchMode(KeyboardMode.SETTINGS); }
+            @Override public void onHideClick() { onHideRequest.run(); }
+            @Override public void onExpandToggle() { toggleExpanded(); }
+            @Override public void onDismissPrediction() {
+                // ×: dismiss whichever transient strip is up — prediction
+                // (after a hanzi pick) or T9 "1 key" punctuation.
+                if (lastSnapshot != null && lastSnapshot.inPunctuationPicker) {
+                    kernel.dismissPunctuationPickerPublic();
+                } else {
+                    kernel.dismissPredictions();
+                }
+            }
+            @Override public void onSettingsBackClick() { onSettingsBack(); }
+        });
         // Install initial keyboard.
         swapKeyboardIfNeeded(initialSnapshot);
+    }
+
+    public void setOnHideRequest(Runnable r) {
+        this.onHideRequest = (r != null) ? r : () -> {};
     }
 
     /**
@@ -119,6 +139,11 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             setExpanded(false);
         }
 
+        // Treat the T9 "1 key" punctuation strip the same as prediction:
+        // right-edge button becomes "×" (dismiss).
+        boolean dismissable = (state != null && state.predicting)
+                || snap.inPunctuationPicker;
+        candidatesBar.setPredicting(dismissable);
         candidatesBar.render(snap);
 
         if (expanded) {
@@ -132,18 +157,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         }
 
         swapKeyboardIfNeeded(snap);
-        // Push T9 dual-state + left strip if applicable.
-        if (currentKeyboard instanceof T9KeyboardView) {
-            T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
-            boolean active = state != null && !state.isEmpty();
-            t9.setActive(active, snap.pinyinAlts,
-                    firstDigitLetters(state));
-        }
-        if (currentKeyboard instanceof QwertyKeyboardView) {
-            QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
-            qw.setMode(snap.mode);
-            qw.setActive(state != null && !state.isEmpty());
-        }
+        pushSnapshotIntoKeyboard(snap);
     }
 
     private void toggleExpanded() {
@@ -168,7 +182,32 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             // Force keyboard rebuild on the next swapKeyboardIfNeeded.
             shownMode = null;
             shownLayout = null;
-            if (lastSnapshot != null) swapKeyboardIfNeeded(lastSnapshot);
+            if (lastSnapshot != null) {
+                // Re-render the bar from the latest snapshot — guarantees
+                // candidate cells repopulate cleanly even if visibility
+                // got mangled by the expand/collapse dance.
+                candidatesBar.render(lastSnapshot);
+                swapKeyboardIfNeeded(lastSnapshot);
+                // The fresh keyboard (esp. T9's left strip) needs the
+                // current pinyin-alt / mode state pushed into it — those
+                // updates normally only happen inside onStateChanged, but
+                // no state change has fired between expand and collapse.
+                pushSnapshotIntoKeyboard(lastSnapshot);
+            }
+        }
+    }
+
+    private void pushSnapshotIntoKeyboard(InputKernel.Snapshot snap) {
+        InputState state = snap.state;
+        boolean stateActive = state != null && !state.isEmpty();
+        if (currentKeyboard instanceof T9KeyboardView) {
+            T9KeyboardView t9 = (T9KeyboardView) currentKeyboard;
+            t9.setActive(stateActive, snap.pinyinAlts, firstDigitLetters(state));
+        }
+        if (currentKeyboard instanceof QwertyKeyboardView) {
+            QwertyKeyboardView qw = (QwertyKeyboardView) currentKeyboard;
+            qw.setMode(snap.mode);
+            qw.setActive(stateActive || !snap.englishBuffer.isEmpty());
         }
     }
 
@@ -179,19 +218,13 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         }
         if (expandedView == null) {
             expandedView = new ExpandedCandidatesView(getContext());
-            expandedView.setOnCandidatePickListener(idx -> {
-                if (kernel != null) kernel.onCandidatePick(idx);
+            expandedView.setListener(new ExpandedCandidatesView.Listener() {
+                @Override public void onCandidatePick(int idx) { kernel.onCandidatePick(idx); }
+                @Override public void onPinyinAltPick(int idx) { kernel.onPinyinAltPick(idx); }
+                @Override public void onBackspace() { kernel.onKey(SimeKey.backspace()); }
+                @Override public void onFallbackLetter(char letter) { kernel.onFallbackLetterPick(letter); }
+                @Override public void onCollapse() { setExpanded(false); }
             });
-            expandedView.setOnPinyinAltPickListener(idx -> {
-                if (kernel != null) kernel.onPinyinAltPick(idx);
-            });
-            expandedView.setOnBackspaceListener(() -> {
-                if (kernel != null) kernel.onKey(SimeKey.backspace());
-            });
-            expandedView.setOnFallbackLetterListener(letter -> {
-                if (kernel != null) kernel.onFallbackLetterPick(letter);
-            });
-            expandedView.setOnCollapseListener(() -> setExpanded(false));
         }
         expandedView.render(
                 lastSnapshot != null ? lastSnapshot.candidates : null,

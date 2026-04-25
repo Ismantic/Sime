@@ -42,7 +42,6 @@ public class KeyView extends View {
     private KeyDef def;
     private String label;        // mutable copy of def.label
     private String hintLabel;    // mutable copy of def.hintLabel
-    private String topLabel;     // mutable copy of def.topLabel
     private boolean pressed;
     private boolean highlighted; // for "currently selected" settings entries
     /** True once a long-press has fired during the current touch sequence. */
@@ -87,7 +86,6 @@ public class KeyView extends View {
         this.def = def;
         this.label = def.label;
         this.hintLabel = def.hintLabel;
-        this.topLabel = def.topLabel;
         this.marginPx = dp(keyMarginDp);
         this.cornerRadiusPx = dp(theme.keyCornerRadiusDp);
         this.labelSizePx = sp(def.labelSizeSp > 0 ? def.labelSizeSp : 18f);
@@ -109,7 +107,9 @@ public class KeyView extends View {
         textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         textPaint.setTextAlign(Paint.Align.CENTER);
         hintPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        hintPaint.setTextAlign(Paint.Align.RIGHT);
+        // Top-left corner — matches the doubao-style superscript hint
+        // ("long-press emits this") above each letter key.
+        hintPaint.setTextAlign(Paint.Align.LEFT);
 
         setClickable(def.appearance != KeyAppearance.EMPTY);
         setFocusable(def.appearance != KeyAppearance.EMPTY);
@@ -122,8 +122,8 @@ public class KeyView extends View {
         invalidate();
     }
 
-    public void setTopLabel(String s) {
-        this.topLabel = s;
+    public void setHintLabel(String s) {
+        this.hintLabel = s != null ? s : "";
         invalidate();
     }
 
@@ -150,12 +150,7 @@ public class KeyView extends View {
         textPaint.setTextSize(labelSizePx);
         textPaint.setTypeface(Typeface.DEFAULT);
 
-        // Top label (small, centered above the main label). Used by
-        // the Qwerty comma key to show the long-press period (.) above
-        // the tap-emit comma. Pushes the main label slightly down so
-        // both stay visually balanced.
-        boolean hasTop = topLabel != null && !topLabel.isEmpty();
-        float labelCy = hasTop ? h * 0.6f : h / 2f;
+        float labelCy = h / 2f;
 
         if (label != null && !label.isEmpty()) {
             int nl = label.indexOf('\n');
@@ -173,20 +168,13 @@ public class KeyView extends View {
             }
         }
 
-        if (hasTop) {
-            Paint top = new Paint(textPaint);
-            top.setTextSize(labelSizePx * 0.55f);
-            top.setColor(theme.hintLabelColor);
-            drawCenteredLine(canvas, topLabel, w / 2f, h * 0.28f, top);
-        }
-
         // Hint label (top-right corner). Drawn whenever the def
         // declares one — function keys can have hints too (e.g. T9 @#
         // shows "1" for the digit it represents).
         if (hintLabel != null && !hintLabel.isEmpty()) {
             hintPaint.setColor(theme.hintLabelColor);
             hintPaint.setTextSize(hintSizePx);
-            float hx = w - marginPx - dp(6);
+            float hx = marginPx + dp(6);
             float hy = marginPx + dp(4) - hintPaint.getFontMetrics().ascent;
             canvas.drawText(hintLabel, hx, hy, hintPaint);
         }
@@ -201,6 +189,10 @@ public class KeyView extends View {
     private int currentBgColor() {
         switch (def.appearance) {
             case FUNCTION:
+                if (highlighted) {
+                    return pressed ? blend(theme.accentColor, theme.keyBackgroundPressed, 0.5f)
+                                  : blend(theme.accentColor, theme.functionKeyBackground, 0.7f);
+                }
                 return pressed ? theme.functionKeyBackgroundPressed
                               : theme.functionKeyBackground;
             case ACCENT:

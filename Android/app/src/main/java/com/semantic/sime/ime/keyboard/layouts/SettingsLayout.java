@@ -48,7 +48,6 @@ public final class SettingsLayout {
                             ? KeyDef.accent(k.label, null)
                             : KeyDef.normal(k.label, null))
                             .id(ID_CHILD_PREFIX + idx)
-                            .width(1f)
                             .labelSize(15f);
                     row.key(kb);
                 } else {

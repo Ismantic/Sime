@@ -7,6 +7,9 @@ import com.semantic.sime.ime.keyboard.framework.KeyView;
 import com.semantic.sime.ime.keyboard.framework.KeyboardContainer;
 import com.semantic.sime.ime.keyboard.layouts.QwertyLayout;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * QWERTY keyboard for both Chinese pinyin and English modes. The static
  * layout comes from {@link QwertyLayout}; this controller flips three
@@ -24,6 +27,25 @@ import com.semantic.sime.ime.keyboard.layouts.QwertyLayout;
  * </ul>
  */
 public class QwertyKeyboardView extends KeyboardView {
+
+    /**
+     * Half-width → full-width punctuation map for Chinese mode. Only
+     * symbols that have a conventional Chinese form are listed; the rest
+     * stay half-width (matches Sogou / 百度 / doubao behaviour).
+     */
+    private static final Map<String, String> CN_PUNCT = new HashMap<>();
+    static {
+        CN_PUNCT.put(",", "，");
+        CN_PUNCT.put(".", "。");
+        CN_PUNCT.put(":", "：");
+        CN_PUNCT.put(";", "；");
+        CN_PUNCT.put("(", "（");
+        CN_PUNCT.put(")", "）");
+        CN_PUNCT.put("\"", "\u201C");  // 用左双引号；右引号用得少先不智能配对
+        CN_PUNCT.put("?", "？");
+        CN_PUNCT.put("!", "！");
+        // 半角保留: - / ~ ' @ _ # & …
+    }
 
     private KeyboardContainer container;
     private KeyboardMode mode = KeyboardMode.CHINESE;
@@ -45,7 +67,6 @@ public class QwertyKeyboardView extends KeyboardView {
         addView(container);
 
         installShiftHandler();
-        installCommaHandler();
         refreshAll();
     }
 
@@ -62,6 +83,7 @@ public class QwertyKeyboardView extends KeyboardView {
     public void setActive(boolean active) {
         this.active = active;
         refreshEnterKey();
+        refreshShiftKey();
     }
 
     /**
@@ -73,58 +95,52 @@ public class QwertyKeyboardView extends KeyboardView {
      */
     @Override
     protected void emit(SimeKey key) {
-        if (mode == KeyboardMode.ENGLISH && shift
-                && key.type == KeyType.LETTER) {
+        // Uppercase applies in both modes when shift is on. Chinese mode
+        // accepts uppercase pinyin (decoder normalizes) and lets users
+        // type proper-noun-style words like "iPhone" mid-buffer.
+        if (shift && key.type == KeyType.LETTER) {
             char upper = Character.toUpperCase(key.ch);
             super.emit(SimeKey.letter(upper));
             // iOS-style: shift auto-releases after one letter so the
-            // next tap returns to lowercase. Hold shift = caps lock
-            // would need a long-press toggle, not implemented here.
+            // next tap returns to lowercase.
             shift = false;
             refreshLetters();
             return;
+        }
+        // Chinese mode: rewrite half-width punctuation to its full-width
+        // equivalent for the symbols Chinese typing uses (, . : ; ( ) " ? !).
+        // Other symbols (- / ~ ' @ _ # & …) stay half-width.
+        if (mode == KeyboardMode.CHINESE && key.type == KeyType.PUNCTUATION
+                && key.text != null) {
+            String full = CN_PUNCT.get(key.text);
+            if (full != null) {
+                super.emit(SimeKey.punctuation(full));
+                return;
+            }
         }
         super.emit(key);
     }
 
     /**
-     * The shift key has dual semantics. We override its per-key listener
-     * once: in English mode it toggles shift; in Chinese mode it emits
-     * a pinyin separator. The listener checks {@link #mode} at click
-     * time so we don't need to re-install on every mode change.
+     * Shift key:
+     * <ul>
+     *   <li>Click (any mode): toggle {@link #shift} → next letter is
+     *       uppercase.</li>
+     *   <li>Long-press in Chinese mode: emit a pinyin separator
+     *       ({@code '}). English mode long-press is a no-op.</li>
+     * </ul>
+     * Visual is always {@code ⇧}; highlight reflects the shift state.
      */
     private void installShiftHandler() {
         KeyView shiftKey = container.findKeyById(QwertyLayout.ID_SHIFT);
         if (shiftKey == null) return;
         shiftKey.setListener((def, action) -> {
-            if (action != KeyView.KeyAction.CLICK) return;
-            if (mode == KeyboardMode.CHINESE) {
-                emit(SimeKey.separator());
-            } else {
+            if (action == KeyView.KeyAction.CLICK) {
                 shift = !shift;
                 refreshLetters();
-            }
-        });
-    }
-
-    /**
-     * Comma key emits {@code ,} (English) or {@code ，} (Chinese) on
-     * tap, and {@code .} / {@code 。} on long-press. The KeyDef hard-
-     * codes ASCII so the listener checks the live mode and overrides
-     * the emit. The placeholder longPress in the def just turns the
-     * long-press timer on.
-     */
-    private void installCommaHandler() {
-        KeyView commaKey = container.findKeyById(QwertyLayout.ID_COMMA);
-        if (commaKey == null) return;
-        commaKey.setListener((def, action) -> {
-            boolean cn = (mode == KeyboardMode.CHINESE);
-            String comma  = cn ? "，" : ",";
-            String period = cn ? "。" : ".";
-            if (action == KeyView.KeyAction.CLICK) {
-                emit(SimeKey.punctuation(comma));
-            } else if (action == KeyView.KeyAction.LONG_PRESS) {
-                emit(SimeKey.punctuation(period));
+            } else if (action == KeyView.KeyAction.LONG_PRESS
+                    && mode == KeyboardMode.CHINESE) {
+                emit(SimeKey.separator());
             }
         });
     }
@@ -134,16 +150,17 @@ public class QwertyKeyboardView extends KeyboardView {
         refreshShiftKey();
         refreshLangKey();
         refreshEnterKey();
-        refreshCommaKey();
+        refreshPunctKeys();
     }
 
-    private void refreshCommaKey() {
-        KeyView kv = container.findKeyById(QwertyLayout.ID_COMMA);
-        if (kv != null) {
-            boolean cn = (mode == KeyboardMode.CHINESE);
-            kv.setLabel(cn ? "，" : ",");
-            kv.setTopLabel(cn ? "。" : ".");
-        }
+    /** Comma / period labels follow mode (display only — actual half-→
+     *  full-width conversion happens in {@link #emit}). */
+    private void refreshPunctKeys() {
+        boolean cn = (mode == KeyboardMode.CHINESE);
+        KeyView c = container.findKeyById(QwertyLayout.ID_COMMA);
+        if (c != null) c.setLabel(cn ? "，" : ",");
+        KeyView p = container.findKeyById(QwertyLayout.ID_PERIOD);
+        if (p != null) p.setLabel(cn ? "。" : ".");
     }
 
     private void refreshLetters() {
@@ -152,6 +169,9 @@ public class QwertyKeyboardView extends KeyboardView {
         applyCase(QwertyLayout.ROW1, upper);
         applyCase(QwertyLayout.ROW2, upper);
         applyCase(QwertyLayout.ROW3, upper);
+        // Letter case toggle in English mode also affects the shift
+        // key highlight; keep it in sync.
+        refreshShiftKey();
     }
 
     private void applyCase(String[] letters, boolean upper) {
@@ -163,9 +183,12 @@ public class QwertyKeyboardView extends KeyboardView {
 
     private void refreshShiftKey() {
         KeyView kv = container.findKeyById(QwertyLayout.ID_SHIFT);
-        if (kv != null) {
-            kv.setLabel(mode == KeyboardMode.CHINESE ? "分词" : "⇧");
-        }
+        if (kv == null) return;
+        kv.setLabel("⇧");
+        kv.setHighlighted(shift);
+        // CN mode: show "'" superscript so users discover that long-press
+        // emits the pinyin separator. EN mode has no such fallback.
+        kv.setHintLabel(mode == KeyboardMode.CHINESE ? "'" : null);
     }
 
     private void refreshLangKey() {
@@ -178,8 +201,7 @@ public class QwertyKeyboardView extends KeyboardView {
     private void refreshEnterKey() {
         KeyView kv = container.findKeyById(QwertyLayout.ID_ENTER);
         if (kv != null) {
-            boolean confirm = (mode == KeyboardMode.CHINESE) && active;
-            kv.setLabel(confirm ? "确定" : "换行");
+            kv.setLabel(active ? "确定" : "换行");
         }
     }
 }

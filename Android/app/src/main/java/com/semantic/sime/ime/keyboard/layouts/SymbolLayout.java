@@ -7,17 +7,14 @@ import com.semantic.sime.ime.keyboard.framework.KeyRow;
 import com.semantic.sime.ime.keyboard.framework.KeyboardLayout;
 
 /**
- * Symbol keyboard layouts. Two pieces:
+ * Symbol grid for one category tab. Returns a fresh layout sized to fit
+ * the symbols in that tab (rows = ceil(n / COLS)).
  *
- * <ul>
- *   <li>{@link #buildPage(int)} — the symbol grid for a given category
- *       tab. Returns a fresh layout sized to fit the symbols in that
- *       tab (rows = ceil(n / COLS)).
- *   <li>{@link #buildBottomRow(int)} — the navigation row at the bottom:
- *       {@code ← | 中 | EN | 数 | ⌫}. The currently-selected tab is
- *       marked via {@link #ID_TAB_PREFIX} so the controller can flip
- *       its highlighted state.
- * </ul>
+ * <p>The bottom navigation row (← + tab strip + ⌫) is hand-built in
+ * {@code SymbolKeyboardView} so the tab strip can live inside a
+ * {@link android.widget.HorizontalScrollView} — the 8 tabs overflow a
+ * normal phone width and need to scroll. {@link #ID_TAB_PREFIX} is the
+ * id prefix used by the view to look its tab keys up.
  */
 public final class SymbolLayout {
 
@@ -47,9 +44,7 @@ public final class SymbolLayout {
                 int idx = r * COLS + c;
                 if (idx < syms.length) {
                     final String s = syms[idx];
-                    row.key(KeyDef.normal(s, SimeKey.punctuation(s))
-                            .width(1f)
-                            .labelSize(18f));
+                    row.key(KeyDef.normal(s, SimeKey.punctuation(s)));
                 } else {
                     row.key(KeyDef.empty(1f));
                 }
@@ -57,26 +52,5 @@ public final class SymbolLayout {
             b.row(row);
         }
         return b.build();
-    }
-
-    public static KeyboardLayout buildBottomRow(int currentTab) {
-        KeyRow.Builder row = KeyRow.builder(1f);
-        row.key(KeyDef.accent("←", SimeKey.toBack()).width(1.2f).labelSize(16f));
-        for (int i = 0; i < Symbols.TAB_NAMES.length; i++) {
-            String name = Symbols.TAB_NAMES[i];
-            row.key(KeyDef.normal(name, null)
-                    .id(ID_TAB_PREFIX + i)
-                    .width(2f)
-                    .labelSize(14f));
-        }
-        row.key(KeyDef.function("⌫", SimeKey.backspace())
-                .width(1.2f)
-                .repeatable(true));
-        return KeyboardLayout.builder()
-                .horizontalPadding(4)
-                .verticalPadding(0)
-                .keyMargin(3)
-                .row(row)
-                .build();
     }
 }

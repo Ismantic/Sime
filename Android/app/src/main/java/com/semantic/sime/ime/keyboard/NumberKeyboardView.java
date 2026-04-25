@@ -50,7 +50,9 @@ public class NumberKeyboardView extends KeyboardView {
         // ===== Left block: scrollable strip (3f) + 符号(1f) =====
         LinearLayout leftBlock = new LinearLayout(getContext());
         leftBlock.setOrientation(VERTICAL);
-        addView(leftBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        // Width weights aligned with T9KeyboardView for visual parity:
+        // left 0.9 : center 3.2 : right 0.9 (was 1:3:1) — symmetric.
+        addView(leftBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.9f));
 
         ScrollView leftScroll = new ScrollView(getContext());
         leftScroll.setVerticalScrollBarEnabled(false);
@@ -76,7 +78,7 @@ public class NumberKeyboardView extends KeyboardView {
         // ===== Center block: mainGrid(top, 3f) + centerBottom(bottom, 1f) =====
         LinearLayout centerBlock = new LinearLayout(getContext());
         centerBlock.setOrientation(VERTICAL);
-        addView(centerBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 3f));
+        addView(centerBlock, new LayoutParams(0, LayoutParams.MATCH_PARENT, 3.2f));
 
         KeyboardContainer mainGrid = new KeyboardContainer(getContext(), theme);
         mainGrid.setOnKeyEmitListener(this::emit);
@@ -96,7 +98,7 @@ public class NumberKeyboardView extends KeyboardView {
         KeyboardContainer rightCol = new KeyboardContainer(getContext(), theme);
         rightCol.setOnKeyEmitListener(this::emit);
         rightCol.setLayout(NumberLayout.buildRightColumn());
-        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        addView(rightCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.9f));
     }
 
     private TextView makePuncCell(final String label) {

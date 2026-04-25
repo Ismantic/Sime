@@ -45,7 +45,7 @@ public final class T9Layout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("符号", SimeKey.toSymbol())
-                                .width(1f).labelSize(14f)))
+                                .labelSize(14f)))
                 .build();
     }
 
@@ -60,7 +60,7 @@ public final class T9Layout {
                 .keyMargin(3);
 
         b.row(KeyRow.builder(1f)
-                .key(KeyDef.function("@#", null).id(ID_TOP_LEFT).width(1f).labelSize(15f)
+                .key(KeyDef.function("@#", null).id(ID_TOP_LEFT).labelSize(15f)
                         .hint("1"))
                 .key(t9digit("2", "ABC"))
                 .key(t9digit("3", "DEF")));
@@ -111,20 +111,19 @@ public final class T9Layout {
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("⌫", SimeKey.backspace())
-                                .width(1f).repeatable(true)))
+                                .repeatable(true)))
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("重输", SimeKey.clear())
-                                .width(1f).labelSize(14f)))
+                                .labelSize(14f)))
                 .row(KeyRow.builder(2f)
                         .key(KeyDef.function("换行", SimeKey.enter())
-                                .id(ID_ENTER).width(1f).labelSize(14f)))
+                                .id(ID_ENTER).labelSize(14f)))
                 .build();
     }
 
     private static KeyDef.Builder t9digit(String digit, String letters) {
         char c = digit.charAt(0);
         return KeyDef.normal(letters, SimeKey.digit(c))
-                .width(1f)
                 .labelSize(16f)
                 .hint(digit);
     }

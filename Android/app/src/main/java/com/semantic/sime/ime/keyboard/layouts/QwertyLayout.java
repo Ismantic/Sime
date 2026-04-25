@@ -19,19 +19,26 @@ import com.semantic.sime.ime.keyboard.framework.KeyboardLayout;
  */
 public final class QwertyLayout {
 
-    public static final String ID_SHIFT = "qwerty.shift";
-    public static final String ID_LANG  = "qwerty.lang";
-    public static final String ID_ENTER = "qwerty.enter";
-    public static final String ID_COMMA = "qwerty.comma";
+    public static final String ID_SHIFT  = "qwerty.shift";
+    public static final String ID_LANG   = "qwerty.lang";
+    public static final String ID_ENTER  = "qwerty.enter";
+    public static final String ID_COMMA  = "qwerty.comma";
+    public static final String ID_PERIOD = "qwerty.period";
     public static final String LETTER_ID_PREFIX = "qwerty.letter.";
 
     public static final String[] ROW1 = {"q","w","e","r","t","y","u","i","o","p"};
     public static final String[] ROW2 = {"a","s","d","f","g","h","j","k","l"};
     public static final String[] ROW3 = {"z","x","c","v","b","n","m"};
 
+    // Long-press hints aligned with doubao input method:
+    //   row 1: digits
+    //   row 2: common punctuation (mostly half-width)
+    //   row 3: misc symbols
+    // English mode emits these as-is. Chinese mode swaps a subset to
+    // their full-width equivalents in QwertyKeyboardView.emit().
     public static final String[] ROW1_HINT = {"1","2","3","4","5","6","7","8","9","0"};
-    public static final String[] ROW2_HINT = {"@","#","$","%","&","*","-","+","="};
-    public static final String[] ROW3_HINT = {"'","\"",":",";","!","?","/"};
+    public static final String[] ROW2_HINT = {"-","/",":",";","(",")","~","'","\""};
+    public static final String[] ROW3_HINT = {"@","_","#","&","?","!","…"};
 
     private QwertyLayout() {}
 
@@ -59,30 +66,34 @@ public final class QwertyLayout {
 
         // Row 3: shift(1.5) + 7 letters(1) + backspace(1.5) = 10
         KeyRow.Builder r3 = KeyRow.builder(1f);
-        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.5f).labelSize(16f));
+        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.5f).labelSize(16f)
+                // Enable the long-press timer; QwertyKeyboardView's
+                // shift handler routes LONG_PRESS to a pinyin separator
+                // in Chinese mode (English mode ignores it).
+                .longPress(SimeKey.separator()));
         for (int i = 0; i < ROW3.length; i++) {
             r3.key(letter(ROW3[i], ROW3_HINT[i]));
         }
         r3.key(KeyDef.function("⌫", SimeKey.backspace()).width(1.5f).repeatable(true));
         b.row(r3);
 
-        // Row 4: 符号 | 123 | , | space | 中\n英 | 换行
-        // 符号 and 123 are equal-width function keys; , aligns with x;
-        // space spans c+v+b; 中\n英 is 1.25× n width; 换行 fills the
-        // remaining space on the right. Total: 10 weight units = row 3.
+        // Row 4 (doubao-aligned): widths chosen so the space bar (3.0)
+        // sits under c-v-b in row 3. Row 3 is shift(1.5)+7×letter+⌫(1.5),
+        // so c starts at 3.5 and b ends at 6.5 → space = 3.5..6.5.
+        // Each side then contributes 3.5 weight units.
         KeyRow.Builder r4 = KeyRow.builder(0.95f);
         r4.key(KeyDef.function("符号", SimeKey.toSymbol()).width(1.25f).labelSize(14f));
         r4.key(KeyDef.function("123", SimeKey.toNumber()).width(1.25f).labelSize(14f));
         r4.key(KeyDef.normal(",", SimeKey.punctuation(","))
-                .id(ID_COMMA).width(1f).labelSize(15f)
-                .topLabel(".")
-                .longPress(SimeKey.punctuation(".")));
+                .id(ID_COMMA).labelSize(15f));
         r4.key(KeyDef.normal("空格", SimeKey.space()).width(3f).labelSize(14f)
                 .longPress(SimeKey.toggleLang()));
+        r4.key(KeyDef.normal(".", SimeKey.punctuation("."))
+                .id(ID_PERIOD).labelSize(15f));
         r4.key(KeyDef.function("中\n英", SimeKey.toggleLang())
                 .id(ID_LANG).width(1.25f).labelSize(14f));
         r4.key(KeyDef.function("换行", SimeKey.enter())
-                .id(ID_ENTER).width(2.25f).labelSize(14f));
+                .id(ID_ENTER).width(1.25f).labelSize(14f));
         b.row(r4);
 
         return b.build();
@@ -92,8 +103,6 @@ public final class QwertyLayout {
         char c = letter.charAt(0);
         return KeyDef.normal(letter, SimeKey.letter(c))
                 .id(LETTER_ID_PREFIX + letter)
-                .width(1f)
-                .labelSize(18f)
                 .hint(hint)
                 // Long-press the letter to commit the hint glyph (digit
                 // / symbol) directly. Matches the visual cue.
