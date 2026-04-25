@@ -210,6 +210,16 @@ public class InputKernel {
     }
 
     /**
+     * Commit raw text without changing the keyboard mode. Used by the
+     * emoji picker (multi-pick stays in EMOJI mode) and other panels
+     * that emit literal characters.
+     */
+    public void commitTextRaw(String text) {
+        if (text == null || text.isEmpty()) return;
+        engineHandler.post(() -> fireCommitText(text));
+    }
+
+    /**
      * Commit text picked from a sub-panel (quick-phrase / clipboard /
      * emoji / etc.). Flushes any in-flight composition the same way a
      * language switch does, commits the picked text verbatim, and
@@ -688,7 +698,8 @@ public class InputKernel {
                 && mode != KeyboardMode.SYMBOL
                 && mode != KeyboardMode.SETTINGS
                 && mode != KeyboardMode.QUICK_PHRASE
-                && mode != KeyboardMode.CLIPBOARD) {
+                && mode != KeyboardMode.CLIPBOARD
+                && mode != KeyboardMode.EMOJI) {
             this.previousMode = mode;
         }
         this.mode = next;

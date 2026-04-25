@@ -12,6 +12,7 @@ import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.InputView;
 import com.semantic.sime.ime.KeyboardMode;
 import com.semantic.sime.ime.data.ClipboardWatcher;
+import com.semantic.sime.ime.data.EmojiStore;
 import com.semantic.sime.ime.data.TraditionalConverter;
 import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
@@ -32,6 +33,9 @@ public class SimeService extends InputMethodService
     private InputView inputView;
     private ClipboardWatcher clipboardWatcher;
     private TraditionalConverter tradConverter;
+    private EmojiStore emojiStore;
+
+    public EmojiStore getEmojiStore() { return emojiStore; }
 
     /**
      * When non-null, commits / deletes / preedit are routed here
@@ -59,17 +63,20 @@ public class SimeService extends InputMethodService
         // so the assets are likely on disk by the time we read.
         tradConverter = new TraditionalConverter();
         kernel.setTraditionalConverter(tradConverter);
+        emojiStore = new EmojiStore();
         new Thread(() -> {
-            File ftDict = new File(
-                    new File(getApplicationContext().getFilesDir(), "sime"),
-                    "sime.ft.dict.txt");
-            // Spin briefly until the asset extraction (in SimeEngine.doStart)
-            // has materialized the file. Bounded to ~3s.
-            for (int i = 0; i < 30 && !ftDict.exists(); i++) {
+            File simeDir = new File(getApplicationContext().getFilesDir(), "sime");
+            File ftDict = new File(simeDir, "sime.ft.dict.txt");
+            File emojiTxt = new File(simeDir, "emoji.txt");
+            // Spin briefly until the asset extraction has materialized
+            // the files. Bounded to ~3s.
+            for (int i = 0; i < 30; i++) {
+                if (ftDict.exists() && emojiTxt.exists()) break;
                 try { Thread.sleep(100); } catch (InterruptedException e) { break; }
             }
             tradConverter.load(ftDict);
-        }, "sime-trad-load").start();
+            emojiStore.load(emojiTxt);
+        }, "sime-asset-load").start();
         applyPrefs();
     }
 

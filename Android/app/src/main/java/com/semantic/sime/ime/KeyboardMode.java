@@ -16,5 +16,7 @@ public enum KeyboardMode {
     /** Quick-phrase picker (opened from the settings panel). */
     QUICK_PHRASE,
     /** Recent clipboard history picker (opened from the settings panel). */
-    CLIPBOARD
+    CLIPBOARD,
+    /** Emoji picker (opened from the settings panel). */
+    EMOJI
 }

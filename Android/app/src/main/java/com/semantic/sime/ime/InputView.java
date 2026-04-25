@@ -10,6 +10,7 @@ import com.semantic.sime.ime.candidates.ExpandedCandidatesView;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.keyboard.KeyboardView;
 import com.semantic.sime.ime.keyboard.AddPhraseView;
+import com.semantic.sime.ime.keyboard.EmojiPanelView;
 import com.semantic.sime.ime.keyboard.NumberKeyboardView;
 import com.semantic.sime.ime.keyboard.PickerPanelView;
 import com.semantic.sime.ime.keyboard.SimeKey;
@@ -95,7 +96,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     private void onSettingsBack() {
         if (currentKeyboard instanceof SettingsKeyboardView) {
             ((SettingsKeyboardView) currentKeyboard).goBack();
-        } else if (currentKeyboard instanceof PickerPanelView) {
+        } else if (currentKeyboard instanceof PickerPanelView
+                || currentKeyboard instanceof EmojiPanelView) {
             // Sub-panel back: return to whatever the user came from
             // (typically CHINESE) by routing through TO_BACK like the
             // settings exit does.
@@ -249,9 +251,14 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
                     kernel.switchMode(KeyboardMode.QUICK_PHRASE);
                 } else if (SettingsKeyboardView.PANEL_CLIPBOARD.equals(panelKey)) {
                     kernel.switchMode(KeyboardMode.CLIPBOARD);
+                } else if (SettingsKeyboardView.PANEL_EMOJI.equals(panelKey)) {
+                    kernel.switchMode(KeyboardMode.EMOJI);
                 }
-                // PANEL_EMOJI: not yet implemented.
             });
+        }
+        if (next instanceof EmojiPanelView) {
+            EmojiPanelView ep = (EmojiPanelView) next;
+            ep.setOnPickListener(emoji -> kernel.commitTextRaw(emoji));
         }
         if (next instanceof PickerPanelView) {
             PickerPanelView pp = (PickerPanelView) next;
@@ -293,7 +300,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         // its own × button so we leave the bar in idle mode there.
         candidatesBar.setSettingsMode(mode == KeyboardMode.SETTINGS
                 || mode == KeyboardMode.QUICK_PHRASE
-                || mode == KeyboardMode.CLIPBOARD);
+                || mode == KeyboardMode.CLIPBOARD
+                || mode == KeyboardMode.EMOJI);
         // Note: composer overlay visibility is driven by the `composing`
         // flag set by the picker panel listener, not by the kernel mode.
         // We don't touch it here so that toggling CHINESE↔ENGLISH while
@@ -337,6 +345,15 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
                 return new PickerPanelView(ctx, PickerPanelView.Tab.QUICK_PHRASE);
             case CLIPBOARD:
                 return new PickerPanelView(ctx, PickerPanelView.Tab.CLIPBOARD);
+            case EMOJI: {
+                com.semantic.sime.SimeService svc =
+                        (ctx instanceof com.semantic.sime.SimeService)
+                                ? (com.semantic.sime.SimeService) ctx : null;
+                com.semantic.sime.ime.data.EmojiStore store =
+                        (svc != null) ? svc.getEmojiStore()
+                                      : new com.semantic.sime.ime.data.EmojiStore();
+                return new EmojiPanelView(ctx, store);
+            }
         }
         return null;
     }

@@ -13,13 +13,19 @@ EN_WORDS = en_dict.raw
 PUNCT = punct.txt
 OUT = output-new
 
-all: $(OUT)/sime.cnt $(OUT)/sime.dict $(OUT)/sime.ft.dict.txt
+all: $(OUT)/sime.cnt $(OUT)/sime.dict $(OUT)/sime.ft.dict.txt $(OUT)/emoji.txt
 
 # Optional: simplified→traditional vocab (parallel to sime.token.dict.txt).
 # Used by the Android IME's 繁体 toggle.
 ft: $(OUT)/sime.ft.dict.txt
 $(OUT)/sime.ft.dict.txt: $(OUT)/sime.token.dict.txt gen_ft_dict.py
 	$(PYTHON) gen_ft_dict.py $(OUT)/sime.token.dict.txt $(OUT)/sime.ft.dict.txt
+
+# Emoji palette for the IME's 表情 panel. Parsed from a checked-in
+# copy of Unicode's emoji-test.txt (committed alongside this Makefile).
+emoji: $(OUT)/emoji.txt
+$(OUT)/emoji.txt: emoji-test.txt gen_emoji.py
+	$(PYTHON) gen_emoji.py emoji-test.txt $(OUT)/emoji.txt
 
 # Step 0: segment raw text
 cut: $(CORPUS)
