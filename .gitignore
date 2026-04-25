@@ -59,6 +59,14 @@ pinyin_token_dict.txt
 test_inputs.txt
 trie_conv.cc
 
+# sime-dump debug output (large local-only dumps)
+/sime-dump.*
+
+# Local pipeline experiments
+pipeline/count.bin
+pipeline/output.x/
+pipeline/lookup_ngram.py
+
 # Scripts (training/debug utilities)
 scripts/
 
