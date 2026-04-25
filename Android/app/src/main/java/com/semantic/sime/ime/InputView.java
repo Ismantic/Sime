@@ -9,7 +9,9 @@ import com.semantic.sime.ime.candidates.CandidatesBar;
 import com.semantic.sime.ime.candidates.ExpandedCandidatesView;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.keyboard.KeyboardView;
+import com.semantic.sime.ime.keyboard.AddPhraseView;
 import com.semantic.sime.ime.keyboard.NumberKeyboardView;
+import com.semantic.sime.ime.keyboard.PickerPanelView;
 import com.semantic.sime.ime.keyboard.SimeKey;
 import com.semantic.sime.ime.keyboard.QwertyKeyboardView;
 import com.semantic.sime.ime.keyboard.SettingsKeyboardView;
@@ -30,6 +32,12 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     private KeyboardView currentKeyboard;
     private ExpandedCandidatesView expandedView;
     private InputKernel kernel;
+
+    /** Composer overlay (add/edit a quick phrase). Survives kernel-mode
+     *  toggles between CHINESE and ENGLISH so the user can type either
+     *  inside the composer without dismissing it. */
+    private AddPhraseView composerOverlay;
+    private boolean composing = false;
 
     private KeyboardMode shownMode = null;
     private ChineseLayout shownLayout = null;
@@ -87,6 +95,11 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
     private void onSettingsBack() {
         if (currentKeyboard instanceof SettingsKeyboardView) {
             ((SettingsKeyboardView) currentKeyboard).goBack();
+        } else if (currentKeyboard instanceof PickerPanelView) {
+            // Sub-panel back: return to whatever the user came from
+            // (typically CHINESE) by routing through TO_BACK like the
+            // settings exit does.
+            kernel.onKey(SimeKey.toBack());
         }
     }
 
@@ -230,6 +243,39 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             sk.setOnLayoutChangedListener(picked -> kernel.setChineseLayout(picked));
             sk.setOnExitListener(() -> kernel.onKey(SimeKey.toBack()));
             sk.setOnPredictionChangedListener(enabled -> kernel.setPredictionEnabled(enabled));
+            sk.setOnOpenPanelListener(panelKey -> {
+                if (SettingsKeyboardView.PANEL_QUICK_PHRASE.equals(panelKey)) {
+                    kernel.switchMode(KeyboardMode.QUICK_PHRASE);
+                } else if (SettingsKeyboardView.PANEL_CLIPBOARD.equals(panelKey)) {
+                    kernel.switchMode(KeyboardMode.CLIPBOARD);
+                }
+                // PANEL_EMOJI: not yet implemented.
+            });
+        }
+        if (next instanceof PickerPanelView) {
+            PickerPanelView pp = (PickerPanelView) next;
+            pp.setListener(new PickerPanelView.Listener() {
+                @Override public void onPick(String text) {
+                    kernel.commitPanelText(text);
+                }
+                @Override public void onSwitchTab(PickerPanelView.Tab tab) {
+                    kernel.switchMode(tab == PickerPanelView.Tab.QUICK_PHRASE
+                            ? KeyboardMode.QUICK_PHRASE
+                            : KeyboardMode.CLIPBOARD);
+                }
+                @Override public void onAddPhrase() {
+                    AddPhraseView.setSeed("", -1);
+                    composing = true;
+                    kernel.switchMode(KeyboardMode.CHINESE);
+                    updateComposerOverlay(true);
+                }
+                @Override public void onEditPhrase(int idx, String currentText) {
+                    AddPhraseView.setSeed(currentText, idx);
+                    composing = true;
+                    kernel.switchMode(KeyboardMode.CHINESE);
+                    updateComposerOverlay(true);
+                }
+            });
         }
         if (currentKeyboard != null) {
             removeView(currentKeyboard);
@@ -241,10 +287,38 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         shownMode = mode;
         shownLayout = layout;
 
-        // Settings mode flips the candidates bar's leftmost icon
-        // (⚙ → ←) so the user has somewhere to tap to navigate back
-        // through the settings hierarchy.
-        candidatesBar.setSettingsMode(mode == KeyboardMode.SETTINGS);
+        // Settings / sub-panel modes flip the candidates bar's leftmost
+        // icon (⚙ → ←) so the user can navigate back. The composer has
+        // its own × button so we leave the bar in idle mode there.
+        candidatesBar.setSettingsMode(mode == KeyboardMode.SETTINGS
+                || mode == KeyboardMode.QUICK_PHRASE
+                || mode == KeyboardMode.CLIPBOARD);
+        // Note: composer overlay visibility is driven by the `composing`
+        // flag set by the picker panel listener, not by the kernel mode.
+        // We don't touch it here so that toggling CHINESE↔ENGLISH while
+        // composing keeps the overlay alive.
+    }
+
+    private void updateComposerOverlay(boolean show) {
+        if (show) {
+            if (composerOverlay != null) return;
+            composerOverlay = new AddPhraseView(getContext());
+            composerOverlay.setOnDismissListener(() -> {
+                composing = false;
+                updateComposerOverlay(false);
+                kernel.switchMode(KeyboardMode.QUICK_PHRASE);
+            });
+            // Insert ABOVE the candidates bar so the order top→bottom is:
+            //   composer (header + edit + hint) → preedit/candidates → keyboard.
+            // This way the preedit + candidates strip sits flush against
+            // the keyboard, matching the reference UI.
+            LayoutParams lp = new LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            addView(composerOverlay, indexOfChild(candidatesBar), lp);
+        } else if (composerOverlay != null) {
+            removeView(composerOverlay);
+            composerOverlay = null;
+        }
     }
 
     private KeyboardView buildKeyboard(KeyboardMode mode, ChineseLayout layout) {
@@ -258,6 +332,10 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
             case NUMBER:   return new NumberKeyboardView(ctx);
             case SYMBOL:   return new SymbolKeyboardView(ctx);
             case SETTINGS: return new SettingsKeyboardView(ctx);
+            case QUICK_PHRASE:
+                return new PickerPanelView(ctx, PickerPanelView.Tab.QUICK_PHRASE);
+            case CLIPBOARD:
+                return new PickerPanelView(ctx, PickerPanelView.Tab.CLIPBOARD);
         }
         return null;
     }

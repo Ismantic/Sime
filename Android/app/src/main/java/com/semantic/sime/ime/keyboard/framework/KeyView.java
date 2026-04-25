@@ -10,6 +10,7 @@ import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
 
+import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.theme.SimeTheme;
 
 /**
@@ -236,6 +237,7 @@ public class KeyView extends View {
                 pressed = true;
                 longPressFired = false;
                 invalidate();
+                InputFeedbacks.onKeyPress(this);
                 if (def.repeatable) {
                     // Repeatable keys (⌫): fire immediately for snappy
                     // first-tap feedback, then start repeating after a

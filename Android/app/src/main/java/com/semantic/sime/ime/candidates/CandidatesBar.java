@@ -20,6 +20,7 @@ import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.KeyboardMode;
 import com.semantic.sime.ime.PinyinUtil;
 import com.semantic.sime.ime.engine.DecodeResult;
+import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.theme.SimeTheme;
 
 import java.util.List;
@@ -81,7 +82,7 @@ public class CandidatesBar extends FrameLayout {
         idleView.setPadding(dp(12), 0, dp(12), 0);
 
         idleLeftButton = iconButton("⚙");
-        idleLeftButton.setOnClickListener(v -> {
+        InputFeedbacks.wireClick(idleLeftButton, () -> {
             if (settingsMode) {
                 if (settingsBackListener != null) settingsBackListener.onSettingsBackClick();
             } else {
@@ -97,7 +98,7 @@ public class CandidatesBar extends FrameLayout {
         idleView.addView(spacer);
 
         TextView hide = iconButton("∨");
-        hide.setOnClickListener(v -> {
+        InputFeedbacks.wireClick(hide, () -> {
             if (hideListener != null) hideListener.onHideClick();
         });
         idleView.addView(hide);
@@ -154,7 +155,7 @@ public class CandidatesBar extends FrameLayout {
         bottomRow.addView(candidateScroll);
 
         expandToggleButton = iconButton("∨");
-        expandToggleButton.setOnClickListener(v -> {
+        InputFeedbacks.wireClick(expandToggleButton, () -> {
             if (expandToggleListener != null) expandToggleListener.onExpandToggle();
         });
         bottomRow.addView(expandToggleButton);
@@ -375,7 +376,7 @@ public class CandidatesBar extends FrameLayout {
                     tv.setTextColor(theme.candidateText);
                     tv.setTypeface(null, Typeface.NORMAL);
                 }
-                tv.setOnClickListener(v -> {
+                InputFeedbacks.wireClick(tv, () -> {
                     if (pickListener != null) pickListener.onCandidatePick(idx);
                 });
                 tv.setVisibility(VISIBLE);

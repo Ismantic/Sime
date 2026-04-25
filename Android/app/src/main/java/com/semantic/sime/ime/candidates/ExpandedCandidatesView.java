@@ -12,6 +12,7 @@ import android.widget.TextView;
 
 import com.semantic.sime.ime.InputKernel;
 import com.semantic.sime.ime.engine.DecodeResult;
+import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.keyboard.StripHelper;
 import com.semantic.sime.ime.theme.SimeTheme;
 
@@ -151,7 +152,7 @@ public class ExpandedCandidatesView extends LinearLayout {
         tv.setBackground(makeFunctionCellBg());
         tv.setClickable(true);
         tv.setFocusable(true);
-        tv.setOnClickListener(v -> onClick.run());
+        InputFeedbacks.wireClick(tv, onClick);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
         int m = dp(2);
@@ -234,7 +235,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             if (item instanceof TextView) {
                 ((TextView) item).setText(label);
             }
-            item.setOnClickListener(v -> onClick.run());
+            InputFeedbacks.wireClick(item, onClick);
         } else {
             item = StripHelper.makeStripCell(
                     getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
@@ -343,7 +344,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             lp.setMargins(dp(2), dp(2), dp(2), dp(2));
             tv.setLayoutParams(lp);
         }
-        tv.setOnClickListener(v -> {
+        InputFeedbacks.wireClick(tv, () -> {
             if (pickListener != null) pickListener.onCandidatePick(idx);
         });
         cellsUsed++;

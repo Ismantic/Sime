@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.theme.SimeTheme;
 
 /**
@@ -54,7 +55,7 @@ public final class StripHelper {
         int m = dp(ctx, 3);
         lp.setMargins(m, m, m, m);
         tv.setLayoutParams(lp);
-        tv.setOnClickListener(v -> onClick.run());
+        InputFeedbacks.wireClick(tv, onClick);
         return tv;
     }
 

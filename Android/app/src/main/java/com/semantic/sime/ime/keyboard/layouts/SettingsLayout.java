@@ -26,10 +26,15 @@ public final class SettingsLayout {
     private SettingsLayout() {}
 
     public static KeyboardLayout build(SettingsNode current) {
+        // Roomier than the typing keyboard so each option reads as a
+        // square card with whitespace around it. The vertical padding
+        // shrinks the row height to roughly match the column width on
+        // a typical phone (~360dp wide) — small variance on wider /
+        // narrower screens is acceptable.
         KeyboardLayout.Builder b = KeyboardLayout.builder()
-                .horizontalPadding(8)
-                .verticalPadding(8)
-                .keyMargin(4);
+                .horizontalPadding(20)
+                .verticalPadding(20)
+                .keyMargin(8);
 
         List<SettingsNode> kids = current.children;
         for (int r = 0; r < ROWS; r++) {
@@ -44,7 +49,7 @@ public final class SettingsLayout {
                             : KeyDef.normal(k.label, null))
                             .id(ID_CHILD_PREFIX + idx)
                             .width(1f)
-                            .labelSize(16f);
+                            .labelSize(15f);
                     row.key(kb);
                 } else {
                     row.key(KeyDef.empty(1f));

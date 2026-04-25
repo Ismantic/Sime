@@ -545,7 +545,15 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
-    for (const auto& edge : net[0].es) {
+    // Skip leading apostrophe-only columns (those carry only a NotToken
+    // sentinel edge). Without this, an input that starts with `'` (e.g.
+    // a leftover after partial commit) leaves Layer 2 with zero candidates.
+    std::size_t l2_col = 0;
+    while (l2_col < total && net[l2_col].es.size() == 1 &&
+           net[l2_col].es[0].id == NotToken) {
+        ++l2_col;
+    }
+    for (const auto& edge : net[l2_col].es) {
         if (edge.id == NotToken) continue;
 
         std::u32string text_u32 = ToText(edge);
@@ -1051,7 +1059,13 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::vector<DecodeResult> l2_full;
     std::vector<DecodeResult> l2_abbrev;
 
-    for (const auto& edge : net[0].es) {
+    // Skip leading apostrophe-only columns (see DecodeNumSentence).
+    std::size_t l2_col = 0;
+    while (l2_col < total && net[l2_col].es.size() == 1 &&
+           net[l2_col].es[0].id == NotToken) {
+        ++l2_col;
+    }
+    for (const auto& edge : net[l2_col].es) {
         if (edge.id == NotToken) continue;
 
         std::u32string text_u32 = ToText(edge);

@@ -7,6 +7,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.keyboard.framework.KeyboardContainer;
 import com.semantic.sime.ime.keyboard.layouts.NumberLayout;
 
@@ -113,7 +114,7 @@ public class NumberKeyboardView extends KeyboardView {
         int m = dp(3);
         lp.setMargins(m, m, m, m);
         tv.setLayoutParams(lp);
-        tv.setOnClickListener(v -> emit(SimeKey.punctuation(label)));
+        InputFeedbacks.wireClick(tv, () -> emit(SimeKey.punctuation(label)));
         return tv;
     }
 }

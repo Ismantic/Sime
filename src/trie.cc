@@ -632,11 +632,15 @@ void DoubleArray::FindSepDescendants(std::size_t pos,
 
 const std::vector<std::size_t>& DoubleArray::GetSepDescendants(
     std::size_t pos) const {
-    auto it = sep_cache_.find(pos);
-    if (it != sep_cache_.end()) return it->second;
-    auto& entry = sep_cache_[pos];
-    FindSepDescendants(pos, entry, 6);
-    return entry;
+    if (sep_cache_computed_.size() <= pos) {
+        sep_cache_.resize(size_);
+        sep_cache_computed_.resize(size_, false);
+    }
+    if (!sep_cache_computed_[pos]) {
+        FindSepDescendants(pos, sep_cache_[pos], 6);
+        sep_cache_computed_[pos] = true;
+    }
+    return sep_cache_[pos];
 }
 
 void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
@@ -645,7 +649,8 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
         return s.depth == 1;
     };
 
-    std::vector<PinyinState> next;
+    static thread_local std::vector<PinyinState> next;
+    next.clear();
 
     for (const auto& s : states) {
         uint8_t new_depth = (s.depth < 255) ? static_cast<uint8_t>(s.depth + 1) : 255;
@@ -706,7 +711,7 @@ void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
     constexpr std::size_t MaxStates = 2048;
     if (next.size() > MaxStates) next.resize(MaxStates);
 
-    states = std::move(next);
+    states.swap(next);
 }
 
 void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
@@ -715,7 +720,10 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
         return s.depth == 1;
     };
 
-    std::vector<PinyinState> next;
+    // Reuse buffer across calls; ~2.8M calls/run → eliminates that many
+    // small heap allocations.
+    static thread_local std::vector<PinyinState> next;
+    next.clear();
 
     for (const auto& s : states) {
         // Pre-compute shared state: separator child and sep descendants
@@ -770,7 +778,7 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
     constexpr std::size_t MaxT9States = 512;
     if (next.size() > MaxT9States) next.resize(MaxT9States);
 
-    states = std::move(next);
+    states.swap(next);  // states gets new content; next keeps capacity for reuse
 }
 
 std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(

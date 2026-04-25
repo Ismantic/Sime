@@ -29,6 +29,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Editor for adding a quick phrase, launched from the IME's
+             quick-phrase panel via "+" button. -->
+        <activity
+            android:name=".QuickPhraseEditActivity"
+            android:label="添加常用语"
+            android:exported="false" />
+
     </application>
 
 </manifest>

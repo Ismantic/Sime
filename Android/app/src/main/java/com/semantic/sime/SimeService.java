@@ -11,6 +11,7 @@ import com.semantic.sime.ime.InputKernel;
 import com.semantic.sime.ime.InputState;
 import com.semantic.sime.ime.InputView;
 import com.semantic.sime.ime.KeyboardMode;
+import com.semantic.sime.ime.data.ClipboardWatcher;
 import com.semantic.sime.ime.engine.SimeEngineDecoder;
 import com.semantic.sime.ime.prefs.SimePrefs;
 
@@ -26,6 +27,19 @@ public class SimeService extends InputMethodService
     private SimeEngine engine;
     private InputKernel kernel;
     private InputView inputView;
+    private ClipboardWatcher clipboardWatcher;
+
+    /**
+     * When non-null, commits / deletes / preedit are routed here
+     * instead of to the host app's {@link InputConnection}. Used by
+     * the in-IME phrase composer (AddPhraseView) so the user can type
+     * a quick phrase using Sime's own keyboard.
+     */
+    private com.semantic.sime.ime.compose.ComposeSink composeSink;
+
+    public void setComposeSink(com.semantic.sime.ime.compose.ComposeSink sink) {
+        this.composeSink = sink;
+    }
 
     @Override
     public void onCreate() {
@@ -33,12 +47,15 @@ public class SimeService extends InputMethodService
         engine = new SimeEngine();
         engine.start(getApplicationContext());
         kernel = new InputKernel(new SimeEngineDecoder(engine));
+        clipboardWatcher = new ClipboardWatcher(this);
+        clipboardWatcher.start();
         applyPrefs();
     }
 
     @Override
     public void onDestroy() {
         Log.i(TAG, "onDestroy");
+        if (clipboardWatcher != null) clipboardWatcher.stop();
         if (kernel != null) kernel.detach();
         if (engine != null) engine.stop();
         super.onDestroy();
@@ -48,6 +65,10 @@ public class SimeService extends InputMethodService
         SimePrefs prefs = new SimePrefs(this);
         kernel.setChineseLayout(prefs.getChineseLayout());
         kernel.setPredictionEnabled(prefs.getPredictionEnabled());
+        com.semantic.sime.ime.feedback.InputFeedbacks.setSoundEnabled(
+                prefs.getSoundEnabled());
+        com.semantic.sime.ime.feedback.InputFeedbacks.setVibrationEnabled(
+                prefs.getVibrationEnabled());
     }
 
     @Override
@@ -89,18 +110,30 @@ public class SimeService extends InputMethodService
 
     @Override
     public void onCommitText(String text) {
+        if (composeSink != null) {
+            composeSink.onCommit(text);
+            return;
+        }
         InputConnection ic = getCurrentInputConnection();
         if (ic != null) ic.commitText(text, 1);
     }
 
     @Override
     public void onDeleteBefore(int count) {
+        if (composeSink != null) {
+            composeSink.onDelete(count);
+            return;
+        }
         InputConnection ic = getCurrentInputConnection();
         if (ic != null) ic.deleteSurroundingText(count, 0);
     }
 
     @Override
     public void onSendEnter() {
+        if (composeSink != null) {
+            // Enter inside the composer: ignore (user uses 完成 button).
+            return;
+        }
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
         ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
@@ -109,6 +142,10 @@ public class SimeService extends InputMethodService
 
     @Override
     public void onSetComposingText(String preedit) {
+        if (composeSink != null) {
+            composeSink.onPreedit(preedit == null ? "" : preedit);
+            return;
+        }
         InputConnection ic = getCurrentInputConnection();
         if (ic == null) return;
         if (preedit == null || preedit.isEmpty()) {

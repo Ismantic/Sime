@@ -12,5 +12,9 @@ public enum KeyboardMode {
     NUMBER,
     SYMBOL,
     /** Inline settings panel (opened via the ⚙ gear on the candidates bar). */
-    SETTINGS
+    SETTINGS,
+    /** Quick-phrase picker (opened from the settings panel). */
+    QUICK_PHRASE,
+    /** Recent clipboard history picker (opened from the settings panel). */
+    CLIPBOARD
 }

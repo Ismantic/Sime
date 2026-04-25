@@ -88,6 +88,17 @@ public class InputKernel {
 
     private KeyboardMode mode = KeyboardMode.CHINESE;
     private KeyboardMode previousMode = KeyboardMode.CHINESE;
+
+    /**
+     * Helper that used to also include ADD_PHRASE; kept here so the
+     * existing call sites stay terse. Compose-state is now tracked in
+     * {@link com.semantic.sime.ime.InputView#composing} independent of
+     * kernel mode (so language toggle from CHINESE↔ENGLISH during
+     * composing doesn't dismiss the overlay).
+     */
+    private boolean isChineseLike() {
+        return mode == KeyboardMode.CHINESE;
+    }
     private ChineseLayout chineseLayout = ChineseLayout.QWERTY;
     private boolean predictionEnabled = true;
 
@@ -183,6 +194,32 @@ public class InputKernel {
         });
     }
 
+    /**
+     * Commit text picked from a sub-panel (quick-phrase / clipboard /
+     * emoji / etc.). Flushes any in-flight composition the same way a
+     * language switch does, commits the picked text verbatim, and
+     * returns to the mode the user came from.
+     */
+    public void commitPanelText(String text) {
+        if (text == null || text.isEmpty()) return;
+        engineHandler.post(() -> {
+            // Flush any current Chinese composition to keep state clean.
+            if (isChineseLike() && !state.buffer.isEmpty()) {
+                String committed = state.committedText();
+                String tail = !candidates.isEmpty()
+                        ? candidates.get(0).text
+                        : state.remaining();
+                fireCommitText(committed + tail);
+                resetInput();
+            }
+            if (mode == KeyboardMode.ENGLISH && englishBuffer.length() > 0) {
+                commitEnglishBuffer();
+            }
+            fireCommitText(text);
+            switchModeInternal(previousMode);
+        });
+    }
+
     // ===== Key dispatch (posts to engine thread) =====
 
     public void onKey(SimeKey key) {
@@ -238,7 +275,7 @@ public class InputKernel {
     }
 
     private void showPunctuationPicker() {
-        if (mode != KeyboardMode.CHINESE) {
+        if (!isChineseLike()) {
             fireCommitText(T9_NUM_PUNCTUATION[0]);
             return;
         }
@@ -277,7 +314,7 @@ public class InputKernel {
             refreshEnglishCompletions();
             return;
         }
-        if (mode != KeyboardMode.CHINESE) {
+        if (!isChineseLike()) {
             fireCommitText(String.valueOf(c));
             return;
         }
@@ -294,7 +331,7 @@ public class InputKernel {
     }
 
     private void handleDigit(char c) {
-        if (mode != KeyboardMode.CHINESE || chineseLayout != ChineseLayout.T9) {
+        if (!isChineseLike() || chineseLayout != ChineseLayout.T9) {
             fireCommitText(String.valueOf(c));
             return;
         }
@@ -312,7 +349,7 @@ public class InputKernel {
             refreshEnglishCompletions();
             return;
         }
-        if (mode != KeyboardMode.CHINESE) {
+        if (!isChineseLike()) {
             fireCommitText("'");
             return;
         }
@@ -494,7 +531,7 @@ public class InputKernel {
         if (mode == KeyboardMode.ENGLISH && englishBuffer.length() > 0) {
             commitEnglishBuffer();
         }
-        if (mode == KeyboardMode.CHINESE && !state.buffer.isEmpty()
+        if (isChineseLike() && !state.buffer.isEmpty()
                 && !candidates.isEmpty()) {
             // Commit first candidate before the punctuation so the
             // in-flight composition isn't lost.
@@ -537,7 +574,7 @@ public class InputKernel {
     public void onPinyinCandidatePick(String digits, String letters, boolean fallback) {
         if (digits == null || letters == null) return;
         engineHandler.post(() -> {
-            if (mode != KeyboardMode.CHINESE) return;
+            if (!isChineseLike()) return;
             state.applyLetterPick(digits, letters, fallback);
             redecodeAndPublish();
         });
@@ -546,7 +583,7 @@ public class InputKernel {
     public void onPinyinAltPick(int index) {
         engineHandler.post(() -> {
             if (index < 0 || index >= pinyinAlts.size()) return;
-            if (mode != KeyboardMode.CHINESE) return;
+            if (!isChineseLike()) return;
             PinyinAlt alt = pinyinAlts.get(index);
             while (state.lettersEnd < state.buffer.length()
                     && state.buffer.charAt(state.lettersEnd) == '\'') {
@@ -563,7 +600,7 @@ public class InputKernel {
 
     public void onFallbackLetterPick(char letter) {
         engineHandler.post(() -> {
-            if (mode != KeyboardMode.CHINESE) return;
+            if (!isChineseLike()) return;
             while (state.lettersEnd < state.buffer.length()
                     && state.buffer.charAt(state.lettersEnd) == '\'') {
                 state.lettersEnd++;
@@ -628,10 +665,12 @@ public class InputKernel {
     private void switchModeInternal(KeyboardMode next) {
         if (next == mode) return;
         // Only remember "real" input modes as previousMode, so TO_BACK from
-        // NUMBER/SYMBOL/SETTINGS returns to CHINESE or ENGLISH.
+        // NUMBER/SYMBOL/SETTINGS/QUICK_PHRASE/CLIPBOARD returns to CHINESE or ENGLISH.
         if (mode != KeyboardMode.NUMBER
                 && mode != KeyboardMode.SYMBOL
-                && mode != KeyboardMode.SETTINGS) {
+                && mode != KeyboardMode.SETTINGS
+                && mode != KeyboardMode.QUICK_PHRASE
+                && mode != KeyboardMode.CLIPBOARD) {
             this.previousMode = mode;
         }
         this.mode = next;
@@ -652,7 +691,7 @@ public class InputKernel {
         engineHandler.post(() -> {
             if (layout == chineseLayout) return;
             this.chineseLayout = layout;
-            if (mode == KeyboardMode.CHINESE) redecodeAndPublish();
+            if (isChineseLike()) redecodeAndPublish();
         });
     }
 
@@ -661,7 +700,7 @@ public class InputKernel {
                 ? KeyboardMode.CHINESE
                 : KeyboardMode.ENGLISH;
         // Flush any in-flight composition when leaving CHINESE.
-        if (mode == KeyboardMode.CHINESE && !state.buffer.isEmpty()) {
+        if (isChineseLike() && !state.buffer.isEmpty()) {
             String committed = state.committedText();
             String tail;
             if (!candidates.isEmpty()) {
@@ -694,7 +733,7 @@ public class InputKernel {
 
     /** Synchronous decode on engine thread. */
     private void decode() {
-        if (mode != KeyboardMode.CHINESE || state.buffer.isEmpty()) {
+        if (!isChineseLike() || state.buffer.isEmpty()) {
             candidates = Collections.emptyList();
             pinyinAlts = Collections.emptyList();
             topUnits = "";
