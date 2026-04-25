@@ -1,5 +1,6 @@
 package com.semantic.sime.ime.keyboard;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.content.Context;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -105,9 +106,9 @@ public class NumberKeyboardView extends KeyboardView {
         TextView tv = new TextView(getContext());
         tv.setText(label);
         tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
-        tv.setTextColor(theme.keyText);
-        tv.setBackground(makeKeySelector(theme.keyBackground, theme.keyBackgroundPressed));
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.BODY);
+        tv.setTextColor(theme.keyTextFunction);
+        tv.setBackground(makeKeySelector(theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
         tv.setClickable(true);
         tv.setFocusable(true);
         tv.setSingleLine(true);

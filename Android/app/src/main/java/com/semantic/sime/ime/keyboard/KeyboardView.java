@@ -42,7 +42,7 @@ public abstract class KeyboardView extends LinearLayout {
         setOrientation(VERTICAL);
         theme = SimeTheme.fromContext(getContext());
         setBackgroundColor(theme.keyboardBackground);
-        setPadding(dp(4), dp(6), dp(4), dp(6));
+        setPadding(dp(1), dp(6), dp(1), dp(6));
     }
 
     public void setOnKeyListener(OnKeyListener l) {

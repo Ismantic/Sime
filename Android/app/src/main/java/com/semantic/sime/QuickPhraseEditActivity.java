@@ -1,5 +1,6 @@
 package com.semantic.sime;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.app.Activity;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -45,7 +46,7 @@ public class QuickPhraseEditActivity extends Activity {
 
         TextView label = new TextView(this);
         label.setText(editing ? "修改常用语内容：" : "输入常用语内容：");
-        label.setTextSize(16f);
+        label.setTextSize(Typography.CALLOUT);
         root.addView(label);
 
         editText = new EditText(this);

@@ -22,6 +22,7 @@ import com.semantic.sime.ime.PinyinUtil;
 import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.theme.SimeTheme;
+import com.semantic.sime.ime.theme.Typography;
 
 import java.util.List;
 
@@ -145,7 +146,7 @@ public class CandidatesBar extends FrameLayout {
 
         // ===== Top row: preedit pinyin (left-aligned, small) =====
         preeditView = new TextView(getContext());
-        preeditView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        preeditView.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.BODY);
         preeditView.setTextColor(theme.preeditText);
         preeditView.setSingleLine(true);
         preeditView.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -198,7 +199,7 @@ public class CandidatesBar extends FrameLayout {
     private TextView iconButton(String glyph) {
         TextView tv = new TextView(getContext());
         tv.setText(glyph);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
         tv.setTextColor(theme.barForeground);
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(dp(10), 0, dp(10), 0);
@@ -371,7 +372,7 @@ public class CandidatesBar extends FrameLayout {
         // so the container's child order remains interleaved.
         while (candidatePool.size() < n) {
             TextView tv = new TextView(getContext());
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
             tv.setGravity(Gravity.CENTER);
             tv.setPadding(dp(12), dp(3), dp(12), dp(3));
             tv.setClickable(true);

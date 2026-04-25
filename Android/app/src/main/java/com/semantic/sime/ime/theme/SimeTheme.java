@@ -59,7 +59,7 @@ public final class SimeTheme {
         hintLabelColor               = c[14];
         keyShadowColor               = c[15];
 
-        keyCornerRadiusDp = 10;
+        keyCornerRadiusDp = 6;
         keyShadowDyDp     = 1;
         keyShadowRadiusDp = 2;
     }
@@ -75,7 +75,7 @@ public final class SimeTheme {
             Color.parseColor("#C9CDD4"),  // functionKeyBackground
             Color.parseColor("#A8AEB6"),  // functionKeyBackgroundPressed
             Color.parseColor("#3D4651"),  // keyTextFunction
-            Color.parseColor("#1F2933"),  // candidateText
+            Color.parseColor("#000000"),  // candidateText
             Color.parseColor("#2E7D32"),  // candidateHighlight
             Color.parseColor("#5C6470"),  // preeditText
             Color.parseColor("#D9DCE0"),  // dividerColor

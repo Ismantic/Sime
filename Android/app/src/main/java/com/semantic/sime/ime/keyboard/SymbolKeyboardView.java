@@ -10,6 +10,7 @@ import com.semantic.sime.ime.keyboard.framework.KeyDef;
 import com.semantic.sime.ime.keyboard.framework.KeyView;
 import com.semantic.sime.ime.keyboard.framework.KeyboardContainer;
 import com.semantic.sime.ime.keyboard.layouts.SymbolLayout;
+import com.semantic.sime.ime.theme.Typography;
 
 /**
  * Symbol keyboard. The grid swaps when the user picks a different
@@ -55,10 +56,10 @@ public class SymbolKeyboardView extends KeyboardView {
     private LinearLayout buildBottomBar() {
         LinearLayout bar = new LinearLayout(getContext());
         bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(4), 0, dp(4), 0);
+        bar.setPadding(0, 0, 0, 0);
 
         bar.addView(
-                makeKey(KeyDef.accent("←", SimeKey.toBack()).labelSize(16f).build()),
+                makeKey(KeyDef.accent("←", SimeKey.toBack()).labelSize(Typography.CALLOUT).build()),
                 new LinearLayout.LayoutParams(dp(SIDE_KEY_WIDTH_DP), LinearLayout.LayoutParams.MATCH_PARENT));
 
         HorizontalScrollView scroll = new HorizontalScrollView(getContext());
@@ -70,9 +71,9 @@ public class SymbolKeyboardView extends KeyboardView {
             final int idx = i;
             KeyDef def = KeyDef.normal(Symbols.TAB_NAMES[i], null)
                     .id(SymbolLayout.ID_TAB_PREFIX + i)
-                    .labelSize(16f)
+                    .labelSize(Typography.CALLOUT)
                     .build();
-            KeyView kv = new KeyView(getContext(), theme, def, 3f);
+            KeyView kv = new KeyView(getContext(), theme, def, 3f, 5f);
             kv.setListener((d, action) -> {
                 if (action != KeyView.KeyAction.CLICK) return;
                 if (idx != currentTab) loadTab(idx);
@@ -95,7 +96,7 @@ public class SymbolKeyboardView extends KeyboardView {
     }
 
     private KeyView makeKey(KeyDef def) {
-        KeyView kv = new KeyView(getContext(), theme, def, 3f);
+        KeyView kv = new KeyView(getContext(), theme, def, 3f, 5f);
         kv.setListener((d, action) -> {
             if (action == KeyView.KeyAction.CLICK && d.clickAction != null) {
                 emit(d.clickAction);

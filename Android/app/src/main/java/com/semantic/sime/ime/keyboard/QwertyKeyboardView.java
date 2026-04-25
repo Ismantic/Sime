@@ -194,7 +194,7 @@ public class QwertyKeyboardView extends KeyboardView {
     private void refreshLangKey() {
         KeyView kv = container.findKeyById(QwertyLayout.ID_LANG);
         if (kv != null) {
-            kv.setLabel(mode == KeyboardMode.CHINESE ? "中\n英" : "EN");
+            kv.setLabel(mode == KeyboardMode.CHINESE ? "中" : "EN");
         }
     }
 

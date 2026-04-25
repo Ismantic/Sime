@@ -225,11 +225,7 @@ public class T9KeyboardView extends KeyboardView {
     }
 
     private TextView makeLeftItem(String label, boolean highlight, Runnable onClick) {
-        TextView tv = StripHelper.makeStripCell(
-                getContext(), theme, label, false, onClick, LEFT_ITEM_HEIGHT_DP);
-        if (highlight) {
-            tv.setTextColor(theme.accentColor);
-        }
-        return tv;
+        return StripHelper.makeStripCell(
+                getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
     }
 }

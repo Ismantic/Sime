@@ -4,6 +4,7 @@ import com.semantic.sime.ime.keyboard.SimeKey;
 import com.semantic.sime.ime.keyboard.framework.KeyDef;
 import com.semantic.sime.ime.keyboard.framework.KeyRow;
 import com.semantic.sime.ime.keyboard.framework.KeyboardLayout;
+import com.semantic.sime.ime.theme.Typography;
 
 /**
  * QWERTY layout shared by both Chinese (pinyin) and English modes. The
@@ -44,9 +45,10 @@ public final class QwertyLayout {
 
     public static KeyboardLayout build() {
         KeyboardLayout.Builder b = KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
-                .keyMargin(3);
+                .keyMargin(3)
+                .keyMarginVertical(5);
 
         // Row 1: 10 letters
         KeyRow.Builder r1 = KeyRow.builder(1f);
@@ -66,7 +68,7 @@ public final class QwertyLayout {
 
         // Row 3: shift(1.5) + 7 letters(1) + backspace(1.5) = 10
         KeyRow.Builder r3 = KeyRow.builder(1f);
-        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.5f).labelSize(16f)
+        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.5f).labelSize(Typography.CALLOUT)
                 // Enable the long-press timer; QwertyKeyboardView's
                 // shift handler routes LONG_PRESS to a pinyin separator
                 // in Chinese mode (English mode ignores it).
@@ -82,18 +84,18 @@ public final class QwertyLayout {
         // so c starts at 3.5 and b ends at 6.5 → space = 3.5..6.5.
         // Each side then contributes 3.5 weight units.
         KeyRow.Builder r4 = KeyRow.builder(0.95f);
-        r4.key(KeyDef.function("符号", SimeKey.toSymbol()).width(1.25f).labelSize(14f));
-        r4.key(KeyDef.function("123", SimeKey.toNumber()).width(1.25f).labelSize(14f));
+        r4.key(KeyDef.function("符号", SimeKey.toSymbol()).width(1.25f).labelSize(Typography.SMALL));
+        r4.key(KeyDef.function("123", SimeKey.toNumber()).width(1.25f).labelSize(Typography.SMALL));
         r4.key(KeyDef.normal(",", SimeKey.punctuation(","))
-                .id(ID_COMMA).labelSize(15f));
-        r4.key(KeyDef.normal("空格", SimeKey.space()).width(3f).labelSize(14f)
+                .id(ID_COMMA).labelSize(Typography.BODY));
+        r4.key(KeyDef.normal("", SimeKey.space()).width(3f).labelSize(Typography.SMALL)
                 .longPress(SimeKey.toggleLang()));
         r4.key(KeyDef.normal(".", SimeKey.punctuation("."))
-                .id(ID_PERIOD).labelSize(15f));
-        r4.key(KeyDef.function("中\n英", SimeKey.toggleLang())
-                .id(ID_LANG).width(1.25f).labelSize(14f));
+                .id(ID_PERIOD).labelSize(Typography.BODY));
+        r4.key(KeyDef.function("中", SimeKey.toggleLang())
+                .id(ID_LANG).width(1.25f).labelSize(Typography.SMALL));
         r4.key(KeyDef.function("换行", SimeKey.enter())
-                .id(ID_ENTER).width(1.25f).labelSize(14f));
+                .id(ID_ENTER).width(1.25f).labelSize(Typography.SMALL));
         b.row(r4);
 
         return b.build();

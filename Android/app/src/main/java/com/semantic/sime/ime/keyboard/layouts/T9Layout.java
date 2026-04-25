@@ -4,6 +4,7 @@ import com.semantic.sime.ime.keyboard.SimeKey;
 import com.semantic.sime.ime.keyboard.framework.KeyDef;
 import com.semantic.sime.ime.keyboard.framework.KeyRow;
 import com.semantic.sime.ime.keyboard.framework.KeyboardLayout;
+import com.semantic.sime.ime.theme.Typography;
 
 /**
  * T9 (九宫格) layouts. Same three-block structure as
@@ -40,12 +41,12 @@ public final class T9Layout {
      */
     public static KeyboardLayout buildFuhaoCell() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("符号", SimeKey.toSymbol())
-                                .labelSize(14f)))
+                                .labelSize(Typography.SMALL)))
                 .build();
     }
 
@@ -55,12 +56,12 @@ public final class T9Layout {
      */
     public static KeyboardLayout buildMainGrid() {
         KeyboardLayout.Builder b = KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3);
 
         b.row(KeyRow.builder(1f)
-                .key(KeyDef.function("@#", null).id(ID_TOP_LEFT).labelSize(15f)
+                .key(KeyDef.normal("@#", null).id(ID_TOP_LEFT).labelSize(Typography.BODY)
                         .hint("1"))
                 .key(t9digit("2", "ABC"))
                 .key(t9digit("3", "DEF")));
@@ -85,17 +86,17 @@ public final class T9Layout {
      */
     public static KeyboardLayout buildCenterBottomRow() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("123",  SimeKey.toNumber())
-                                .width(0.75f).labelSize(14f))
-                        .key(KeyDef.normal  ("空格", SimeKey.space())
-                                .width(1.5f).labelSize(14f)
+                                .width(0.75f).labelSize(Typography.SMALL))
+                        .key(KeyDef.normal  ("", SimeKey.space())
+                                .width(1.5f).labelSize(Typography.SMALL)
                                 .longPress(SimeKey.toggleLang()))
-                        .key(KeyDef.function("中\n英", SimeKey.toggleLang())
-                                .width(0.75f).labelSize(14f)))
+                        .key(KeyDef.function("中", SimeKey.toggleLang())
+                                .width(0.75f).labelSize(Typography.SMALL)))
                 .build();
     }
 
@@ -106,7 +107,7 @@ public final class T9Layout {
      */
     public static KeyboardLayout buildRightColumn() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
@@ -114,17 +115,17 @@ public final class T9Layout {
                                 .repeatable(true)))
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("重输", SimeKey.clear())
-                                .labelSize(14f)))
+                                .labelSize(Typography.SMALL)))
                 .row(KeyRow.builder(2f)
                         .key(KeyDef.function("换行", SimeKey.enter())
-                                .id(ID_ENTER).labelSize(14f)))
+                                .id(ID_ENTER).labelSize(Typography.SMALL)))
                 .build();
     }
 
     private static KeyDef.Builder t9digit(String digit, String letters) {
         char c = digit.charAt(0);
         return KeyDef.normal(letters, SimeKey.digit(c))
-                .labelSize(16f)
+                .labelSize(Typography.CALLOUT)
                 .hint(digit);
     }
 }

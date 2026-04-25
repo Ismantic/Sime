@@ -1,5 +1,6 @@
 package com.semantic.sime.ime.keyboard;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -95,7 +96,7 @@ public class AddPhraseView extends LinearLayout {
 
         TextView cancel = new TextView(getContext());
         cancel.setText("×");
-        cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f);
+        cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
         cancel.setGravity(Gravity.CENTER);
         cancel.setTextColor(theme.keyText);
         cancel.setBackground(makeCircleBg(
@@ -106,7 +107,7 @@ public class AddPhraseView extends LinearLayout {
 
         TextView title = new TextView(getContext());
         title.setText(editIndex >= 0 ? "编辑常用语" : "添加常用语");
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.SMALL);
         title.setTextColor(theme.keyText);
         title.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
@@ -116,7 +117,7 @@ public class AddPhraseView extends LinearLayout {
 
         TextView done = new TextView(getContext());
         done.setText("完成");
-        done.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        done.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CAPTION);
         done.setGravity(Gravity.CENTER);
         done.setTypeface(null, Typeface.BOLD);
         done.setTextColor(0xFFFFFFFF);
@@ -127,7 +128,7 @@ public class AddPhraseView extends LinearLayout {
 
         // ===== Buffer card =====
         bufferDisplay = new TextView(getContext());
-        bufferDisplay.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        bufferDisplay.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
         bufferDisplay.setTextColor(theme.keyText);
         bufferDisplay.setBackground(roundedRect(0xFFFFFFFF, dp(8)));
         bufferDisplay.setPadding(dp(14), dp(10), dp(14), dp(10));

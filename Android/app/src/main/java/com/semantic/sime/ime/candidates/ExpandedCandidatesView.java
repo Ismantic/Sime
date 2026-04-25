@@ -15,6 +15,7 @@ import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.keyboard.StripHelper;
 import com.semantic.sime.ime.theme.SimeTheme;
+import com.semantic.sime.ime.theme.Typography;
 
 import java.util.Collections;
 import java.util.List;
@@ -127,7 +128,7 @@ public class ExpandedCandidatesView extends LinearLayout {
     private TextView makeControlButton(String label, Runnable onClick) {
         TextView tv = new TextView(getContext());
         tv.setText(label);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
         tv.setGravity(Gravity.CENTER);
         tv.setTextColor(theme.keyTextFunction);
         tv.setBackground(makeFunctionCellBg());
@@ -290,7 +291,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             }
         } else {
             tv = new TextView(getContext());
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
             tv.setGravity(Gravity.CENTER);
             tv.setTextColor(theme.candidateText);
             tv.setPadding(dp(8), 0, dp(8), 0);

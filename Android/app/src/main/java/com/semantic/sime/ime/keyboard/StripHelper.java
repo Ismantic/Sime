@@ -1,5 +1,6 @@
 package com.semantic.sime.ime.keyboard;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -41,7 +42,7 @@ public final class StripHelper {
         TextView tv = new TextView(ctx);
         tv.setText(label);
         tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.SMALL);
         tv.setTextColor(functionBg ? theme.keyTextFunction : theme.keyText);
         tv.setBackground(functionBg
                 ? makeFunctionSelector(ctx, theme)

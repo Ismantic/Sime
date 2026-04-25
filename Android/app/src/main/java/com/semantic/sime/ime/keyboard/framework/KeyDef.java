@@ -29,6 +29,8 @@ public final class KeyDef {
     public final String id;
     /** Override label text size (sp). 0 means "use container default". */
     public final float labelSizeSp;
+    /** Optional vector drawable rendered above the label (settings cells). */
+    public final int iconResId;
 
     private KeyDef(Builder b) {
         this.label = b.label;
@@ -40,6 +42,7 @@ public final class KeyDef {
         this.repeatable = b.repeatable;
         this.id = b.id;
         this.labelSizeSp = b.labelSizeSp;
+        this.iconResId = b.iconResId;
     }
 
     public boolean isEmpty() {
@@ -72,6 +75,7 @@ public final class KeyDef {
         private boolean repeatable = false;
         private String id = null;
         private float labelSizeSp = 0f;
+        private int iconResId = 0;
 
         public Builder label(String s)        { this.label = s; return this; }
         public Builder hint(String s)         { this.hintLabel = s; return this; }
@@ -82,6 +86,7 @@ public final class KeyDef {
         public Builder repeatable(boolean r)  { this.repeatable = r; return this; }
         public Builder id(String s)           { this.id = s; return this; }
         public Builder labelSize(float sp)    { this.labelSizeSp = sp; return this; }
+        public Builder icon(int resId)        { this.iconResId = resId; return this; }
 
         public KeyDef build() { return new KeyDef(this); }
     }

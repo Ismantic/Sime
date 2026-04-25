@@ -4,14 +4,18 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.View;
+import androidx.core.content.ContextCompat;
 
 import com.semantic.sime.ime.feedback.InputFeedbacks;
 import com.semantic.sime.ime.theme.SimeTheme;
+import com.semantic.sime.ime.theme.Typography;
 
 /**
  * Single self-drawn key. Backed by a {@link KeyDef}; its label can be
@@ -48,6 +52,7 @@ public class KeyView extends View {
     private boolean longPressFired;
 
     private float marginPx;
+    private float marginVerticalPx;
     private float cornerRadiusPx;
     private float labelSizePx;
     private float hintSizePx;
@@ -80,23 +85,29 @@ public class KeyView extends View {
         }
     };
 
-    public KeyView(Context context, SimeTheme theme, KeyDef def, float keyMarginDp) {
+    /** Cached drawable for {@link KeyDef#iconResId} (settings cells). */
+    private Drawable icon;
+
+    public KeyView(Context context, SimeTheme theme, KeyDef def,
+                   float keyMarginDp, float keyMarginVerticalDp) {
         super(context);
         this.theme = theme;
         this.def = def;
         this.label = def.label;
         this.hintLabel = def.hintLabel;
         this.marginPx = dp(keyMarginDp);
+        this.marginVerticalPx = keyMarginVerticalDp > 0 ? dp(keyMarginVerticalDp) : this.marginPx;
         this.cornerRadiusPx = dp(theme.keyCornerRadiusDp);
-        this.labelSizePx = sp(def.labelSizeSp > 0 ? def.labelSizeSp : 18f);
-        this.hintSizePx = sp(10);
+        this.labelSizePx = sp(def.labelSizeSp > 0 ? def.labelSizeSp : Typography.TITLE);
+        this.hintSizePx = sp(Typography.HINT);
+        if (def.iconResId != 0) {
+            this.icon = ContextCompat.getDrawable(context, def.iconResId);
+        }
 
         bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        // Soft drop shadow under each key for visual depth. Requires
-        // disabling hardware-accelerated shadow optimisation? No —
-        // setShadowLayer works on hw layers since API 28; below 28 it
-        // requires SW layer. Force SW layer for shadow correctness on
-        // all API levels.
+        // Soft drop shadow under each key for a hint of elevation. Forces
+        // a SW layer because pre-API 28 hardware-accelerated layers won't
+        // render setShadowLayer correctly.
         bgPaint.setShadowLayer(
                 dp(theme.keyShadowRadiusDp),
                 0f,
@@ -139,7 +150,7 @@ public class KeyView extends View {
 
         float w = getWidth();
         float h = getHeight();
-        bgRect.set(marginPx, marginPx, w - marginPx, h - marginPx);
+        bgRect.set(marginPx, marginVerticalPx, w - marginPx, h - marginVerticalPx);
 
         int bgColor = currentBgColor();
         bgPaint.setColor(bgColor);
@@ -150,21 +161,39 @@ public class KeyView extends View {
         textPaint.setTextSize(labelSizePx);
         textPaint.setTypeface(Typeface.DEFAULT);
 
-        float labelCy = h / 2f;
-
-        if (label != null && !label.isEmpty()) {
-            int nl = label.indexOf('\n');
-            if (nl < 0) {
-                drawCenteredLine(canvas, label, w / 2f, labelCy, textPaint);
-            } else {
-                String top = label.substring(0, nl);
-                String bot = label.substring(nl + 1);
-                Paint.FontMetrics fm = textPaint.getFontMetrics();
-                float lineHeight = fm.descent - fm.ascent;
-                drawCenteredLine(canvas, top, w / 2f, labelCy - lineHeight * 0.05f, textPaint);
-                Paint sub = new Paint(textPaint);
-                sub.setTextSize(labelSizePx * 0.6f);
-                drawCenteredLine(canvas, bot, w / 2f, labelCy + lineHeight * 0.55f, sub);
+        // Icon-on-top variant (settings cells). Icon roughly 1/3 of the
+        // cell height, drawn 35% from the top; label sits at 75%.
+        if (icon != null) {
+            int iconColor = currentTextColor();
+            icon.mutate().setColorFilter(iconColor, PorterDuff.Mode.SRC_IN);
+            float iconSize = Math.min(w, h) * 0.32f;
+            float iconCx = w / 2f;
+            float iconCy = h * 0.40f;
+            icon.setBounds(
+                    (int)(iconCx - iconSize / 2f),
+                    (int)(iconCy - iconSize / 2f),
+                    (int)(iconCx + iconSize / 2f),
+                    (int)(iconCy + iconSize / 2f));
+            icon.draw(canvas);
+            if (label != null && !label.isEmpty()) {
+                drawCenteredLine(canvas, label, w / 2f, h * 0.78f, textPaint);
+            }
+        } else {
+            float labelCy = h / 2f;
+            if (label != null && !label.isEmpty()) {
+                int nl = label.indexOf('\n');
+                if (nl < 0) {
+                    drawCenteredLine(canvas, label, w / 2f, labelCy, textPaint);
+                } else {
+                    String top = label.substring(0, nl);
+                    String bot = label.substring(nl + 1);
+                    Paint.FontMetrics fm = textPaint.getFontMetrics();
+                    float lineHeight = fm.descent - fm.ascent;
+                    drawCenteredLine(canvas, top, w / 2f, labelCy - lineHeight * 0.05f, textPaint);
+                    Paint sub = new Paint(textPaint);
+                    sub.setTextSize(labelSizePx * 0.6f);
+                    drawCenteredLine(canvas, bot, w / 2f, labelCy + lineHeight * 0.55f, sub);
+                }
             }
         }
 

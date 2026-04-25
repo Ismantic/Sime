@@ -1,5 +1,6 @@
 package com.semantic.sime.ime.keyboard;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -91,7 +92,7 @@ public class EmojiPanelView extends KeyboardView {
             String label = labels.get(i);
             TextView tab = new TextView(getContext());
             tab.setText(label);
-            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.SMALL);
             tab.setGravity(Gravity.CENTER);
             tab.setPadding(dp(12), dp(4), dp(12), dp(4));
             boolean active = (i == activeIndex);
@@ -156,7 +157,7 @@ public class EmojiPanelView extends KeyboardView {
     private TextView buildCell(String emoji) {
         TextView tv = new TextView(getContext());
         tv.setText(emoji);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.DISPLAY);
         tv.setGravity(Gravity.CENTER);
         tv.setBackground(makeCellBg());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(

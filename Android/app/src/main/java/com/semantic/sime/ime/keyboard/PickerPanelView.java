@@ -1,5 +1,6 @@
 package com.semantic.sime.ime.keyboard;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -115,14 +116,14 @@ public class PickerPanelView extends KeyboardView {
                 theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
         if (activeTab == Tab.QUICK_PHRASE) {
             actionBtn.setText("+");
-            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f);
+            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.DISPLAY);
             actionBtn.setTextColor(theme.keyText);
             InputFeedbacks.wireClick(actionBtn, () -> {
                 if (listener != null) listener.onAddPhrase();
             });
         } else {
             actionBtn.setText("🗑");
-            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+            actionBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
             actionBtn.setTextColor(0xFFE53935);  // red 600
             InputFeedbacks.wireClick(actionBtn, () -> {
                 clipboardStore.clearAll();
@@ -154,7 +155,7 @@ public class PickerPanelView extends KeyboardView {
         boolean active = tab == activeTab;
         TextView tv = new TextView(getContext());
         tv.setText(label);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.SMALL);
         tv.setGravity(Gravity.CENTER);
         tv.setPadding(dp(16), dp(4), dp(16), dp(4));
         tv.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
@@ -182,7 +183,7 @@ public class PickerPanelView extends KeyboardView {
                     ? "暂无常用语，点击 + 添加"
                     : "剪切板暂无记录\n复制文本后会自动保留最近 "
                             + ClipboardStore.MAX_ITEMS + " 条");
-            empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+            empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CAPTION);
             empty.setTextColor(theme.hintLabelColor);
             empty.setGravity(Gravity.CENTER);
             empty.setPadding(dp(12), dp(20), dp(12), dp(20));
@@ -207,7 +208,7 @@ public class PickerPanelView extends KeyboardView {
         // Card body: tappable to commit.
         TextView body = new TextView(getContext());
         body.setText(text);
-        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f);
+        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.BODY);
         body.setTextColor(theme.keyText);
         body.setMaxLines(1);
         body.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -228,7 +229,7 @@ public class PickerPanelView extends KeyboardView {
         if (activeTab == Tab.QUICK_PHRASE) {
             TextView edit = new TextView(getContext());
             edit.setText("✎");
-            edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+            edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
             edit.setTextColor(theme.accentColor);
             edit.setGravity(Gravity.CENTER);
             edit.setBackground(makeCircleBg(
@@ -248,7 +249,7 @@ public class PickerPanelView extends KeyboardView {
         // Delete button.
         TextView del = new TextView(getContext());
         del.setText("🗑");
-        del.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+        del.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.CALLOUT);
         del.setTextColor(0xFFE53935);  // red 600 — matches the reference
         del.setGravity(Gravity.CENTER);
         del.setBackground(makeCircleBg(

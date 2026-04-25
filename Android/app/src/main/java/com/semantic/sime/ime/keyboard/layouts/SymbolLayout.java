@@ -34,9 +34,10 @@ public final class SymbolLayout {
         String[] syms = Symbols.TABS[tabIdx];
 
         KeyboardLayout.Builder b = KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
-                .keyMargin(3);
+                .keyMargin(3)
+                .keyMarginVertical(5);
 
         for (int r = 0; r < ROWS; r++) {
             KeyRow.Builder row = KeyRow.builder(1f);

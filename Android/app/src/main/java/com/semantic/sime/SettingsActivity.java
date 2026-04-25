@@ -1,5 +1,6 @@
 package com.semantic.sime;
 
+import com.semantic.sime.ime.theme.Typography;
 import android.app.Activity;
 import android.content.Intent;
 import android.database.ContentObserver;
@@ -73,7 +74,7 @@ public class SettingsActivity extends Activity {
         // === Title ===
         TextView title = new TextView(this);
         title.setText("是语输入法");
-        title.setTextSize(28f);
+        title.setTextSize(Typography.HEADLINE);
         title.setTextColor(0xFF202124);
         title.setTypeface(null, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
@@ -81,7 +82,7 @@ public class SettingsActivity extends Activity {
 
         TextView subtitle = new TextView(this);
         subtitle.setText("两步启用，开箱即用");
-        subtitle.setTextSize(14f);
+        subtitle.setTextSize(Typography.SMALL);
         subtitle.setTextColor(0xFF606770);
         subtitle.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(
@@ -119,14 +120,14 @@ public class SettingsActivity extends Activity {
         LinearLayout tryCard = makeCard();
         TextView tryTitle = new TextView(this);
         tryTitle.setText("3  试一试");
-        tryTitle.setTextSize(16f);
+        tryTitle.setTextSize(Typography.CALLOUT);
         tryTitle.setTypeface(null, Typeface.BOLD);
         tryTitle.setTextColor(0xFF202124);
         tryCard.addView(tryTitle);
 
         TextView tryDesc = new TextView(this);
         tryDesc.setText("点击下方文本框，确认是语已激活并能正常输入。");
-        tryDesc.setTextSize(13f);
+        tryDesc.setTextSize(Typography.CAPTION);
         tryDesc.setTextColor(0xFF606770);
         LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -136,7 +137,7 @@ public class SettingsActivity extends Activity {
 
         EditText tryEdit = new EditText(this);
         tryEdit.setHint("在这里输入文字…");
-        tryEdit.setTextSize(15f);
+        tryEdit.setTextSize(Typography.BODY);
         tryEdit.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         tryEdit.setMinLines(2);
@@ -165,7 +166,7 @@ public class SettingsActivity extends Activity {
         // === Footer ===
         TextView footer = new TextView(this);
         footer.setText("输入法在本机离线运行，不上传任何输入或剪贴板内容。");
-        footer.setTextSize(12f);
+        footer.setTextSize(Typography.CAPTION);
         footer.setTextColor(0xFF888888);
         footer.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(
@@ -260,14 +261,14 @@ public class SettingsActivity extends Activity {
 
         TextView head = new TextView(this);
         head.setText(num + "  " + title);
-        head.setTextSize(16f);
+        head.setTextSize(Typography.CALLOUT);
         head.setTypeface(null, Typeface.BOLD);
         head.setTextColor(0xFF202124);
         card.addView(head);
 
         TextView body = new TextView(this);
         body.setText(desc);
-        body.setTextSize(13f);
+        body.setTextSize(Typography.CAPTION);
         body.setTextColor(0xFF606770);
         LinearLayout.LayoutParams bodyLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -285,7 +286,7 @@ public class SettingsActivity extends Activity {
         rowLp.topMargin = dp(14);
         card.addView(row, rowLp);
 
-        statusView.setTextSize(13f);
+        statusView.setTextSize(Typography.CAPTION);
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         statusView.setLayoutParams(statusLp);
@@ -293,7 +294,7 @@ public class SettingsActivity extends Activity {
 
         TextView btn = new TextView(this);
         btn.setText(btnLabel);
-        btn.setTextSize(14f);
+        btn.setTextSize(Typography.SMALL);
         btn.setTextColor(Color.WHITE);
         btn.setTypeface(null, Typeface.BOLD);
         btn.setGravity(Gravity.CENTER);

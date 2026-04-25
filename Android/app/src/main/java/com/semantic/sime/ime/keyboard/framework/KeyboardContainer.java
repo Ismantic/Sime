@@ -90,7 +90,8 @@ public class KeyboardContainer extends ViewGroup {
         for (KeyRow row : layout.rows) {
             List<KeyView> rowViews = new ArrayList<>(row.keys.size());
             for (KeyDef def : row.keys) {
-                KeyView kv = new KeyView(getContext(), theme, def, layout.keyMarginDp);
+                KeyView kv = new KeyView(getContext(), theme, def,
+                        layout.keyMarginDp, layout.keyMarginVerticalDp);
                 kv.setListener(relay);
                 addView(kv);
                 rowViews.add(kv);

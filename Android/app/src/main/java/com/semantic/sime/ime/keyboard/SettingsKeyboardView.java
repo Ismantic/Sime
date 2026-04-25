@@ -167,6 +167,13 @@ public class SettingsKeyboardView extends KeyboardView {
             final SettingsNode child = current.children.get(i);
             KeyView kv = container.findKeyById(SettingsLayout.ID_CHILD_PREFIX + i);
             if (kv == null) continue;
+            // Selected state — soft tint + accent icon/label rather than
+            // a solid accent fill (replaces the old KeyAppearance.ACCENT
+            // path; selected cells should sit visually at parity with
+            // their unselected siblings).
+            if (child.isSelected != null && child.isSelected.getAsBoolean()) {
+                kv.setHighlighted(true);
+            }
             kv.setListener((def, action) -> {
                 if (action != KeyView.KeyAction.CLICK) return;
                 if (child.isLeaf()) {

@@ -4,6 +4,7 @@ import com.semantic.sime.ime.keyboard.SimeKey;
 import com.semantic.sime.ime.keyboard.framework.KeyDef;
 import com.semantic.sime.ime.keyboard.framework.KeyRow;
 import com.semantic.sime.ime.keyboard.framework.KeyboardLayout;
+import com.semantic.sime.ime.theme.Typography;
 
 /**
  * Number pad layout. Three vertical blocks side by side; 换行 is a
@@ -47,18 +48,18 @@ public final class NumberLayout {
 
     public static KeyboardLayout buildFuhaoCell() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("符号", SimeKey.toSymbol())
-                                .labelSize(14f)))
+                                .labelSize(Typography.SMALL)))
                 .build();
     }
 
     public static KeyboardLayout buildMainGrid() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
@@ -77,12 +78,12 @@ public final class NumberLayout {
      */
     public static KeyboardLayout buildCenterBottomRow() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("返回", SimeKey.toBack())
-                                .labelSize(14f))
+                                .labelSize(Typography.SMALL))
                         .key(digit("0"))
                         .key(punc(".")))
                 .build();
@@ -95,7 +96,7 @@ public final class NumberLayout {
      */
     public static KeyboardLayout buildRightColumn() {
         return KeyboardLayout.builder()
-                .horizontalPadding(4)
+                .horizontalPadding(0)
                 .verticalPadding(0)
                 .keyMargin(3)
                 .row(KeyRow.builder(1f)
@@ -103,10 +104,10 @@ public final class NumberLayout {
                                 .repeatable(true)))
                 .row(KeyRow.builder(1f)
                         .key(KeyDef.function("空格", SimeKey.space())
-                                .labelSize(14f)))
+                                .labelSize(Typography.SMALL)))
                 .row(KeyRow.builder(2f)
                         .key(KeyDef.function("换行", SimeKey.enter())
-                                .labelSize(14f)))
+                                .labelSize(Typography.SMALL)))
                 .build();
     }
 
@@ -115,6 +116,6 @@ public final class NumberLayout {
     }
 
     private static KeyDef.Builder punc(String s) {
-        return KeyDef.normal(s, SimeKey.punctuation(s)).labelSize(15f);
+        return KeyDef.normal(s, SimeKey.punctuation(s)).labelSize(Typography.BODY);
     }
 }
