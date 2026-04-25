@@ -154,7 +154,11 @@ private:
     std::size_t size_ = 0;
     std::unique_ptr<ArrayUnit[]> array_;
     std::vector<uint8_t> alphabet_;  // distinct labels in the trie
-    mutable std::unordered_map<std::size_t, std::vector<std::size_t>> sep_cache_;
+    // Lazy cache of FindSepDescendants(pos, …, 6). Hot path: ~21M hits per
+    // num-decode sentence batch. Direct vector index beats std::unordered_map
+    // hash+bucket walk.
+    mutable std::vector<std::vector<std::size_t>> sep_cache_;
+    mutable std::vector<bool> sep_cache_computed_;
 
     // --- Builder (used only during Build) ---
     struct TrieNode {
