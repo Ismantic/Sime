@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+APP="/Library/Input Methods/SimeIME.app"
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+"$LSREG" -f "$APP" || true
+
+# Refresh menu bar so the new input source shows up without a logout.
+killall TextInputMenuAgent SystemUIServer cfprefsd 2>/dev/null || true
+
+exit 0
