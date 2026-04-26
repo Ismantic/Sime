@@ -174,9 +174,11 @@ bool DictConverter::Write(const std::filesystem::path& output) {
     auto token_offset = static_cast<uint32_t>(buffer.size());
     WriteTokenTable(buffer);
 
-    // 4 DAT sections
+    // DAT sections
     uint32_t section_offsets[Dict::DatCount];
     for (int t = 0; t < Dict::DatCount; ++t) {
+        // Pad to 4-byte alignment so the DAT can be mmap'd zero-copy.
+        while (buffer.size() % 4 != 0) buffer.push_back(0);
         section_offsets[t] = static_cast<uint32_t>(buffer.size());
 
         const auto& map = maps_[t];

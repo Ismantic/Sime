@@ -16,6 +16,7 @@ namespace trie {
 struct ArrayUnit {
     uint8_t label = 0;
     bool eow = false;
+    uint16_t _pad = 0;  // explicit padding so on-disk layout matches in-memory
     union {
         uint32_t index;
         int32_t value;
@@ -27,6 +28,8 @@ struct ArrayUnit {
     bool HasValue() const { return label == '\0' && eow; }
     bool IsEmpty() const { return index == 0 && label == 0 && !eow && parent == 0; }
 };
+static_assert(sizeof(ArrayUnit) == 12, "ArrayUnit must be 12 bytes for mmap-compatible layout");
+static_assert(alignof(ArrayUnit) == 4, "ArrayUnit alignment must be 4");
 
 struct SearchResult {
     uint32_t value = 0;
@@ -121,6 +124,12 @@ public:
     // Serialization.
     void Serialize(std::vector<char>& buffer) const;
     bool Deserialize(const char* data, std::size_t size);
+    // Zero-copy attach to mmap'd memory. `data` must be 4-byte aligned and
+    // remain valid for the lifetime of this DoubleArray. On success returns
+    // true and writes the number of bytes consumed (header + array) to
+    // *consumed if non-null.
+    bool MmapAttach(const char* data, std::size_t size,
+                    std::size_t* consumed = nullptr);
 
     std::size_t Size() const { return size_; }
     bool Empty() const { return size_ == 0; }
@@ -152,7 +161,11 @@ private:
     const std::vector<std::size_t>& GetSepDescendants(std::size_t pos) const;
 
     std::size_t size_ = 0;
-    std::unique_ptr<ArrayUnit[]> array_;
+    // `array_` is the read-only view used by all lookup paths.
+    // Either backed by `owned_` (Build/Deserialize) or by external mmap memory
+    // (MmapAttach). `owned_` is null in the mmap case.
+    const ArrayUnit* array_ = nullptr;
+    std::unique_ptr<ArrayUnit[]> owned_;
     std::vector<uint8_t> alphabet_;  // distinct labels in the trie
     // Lazy cache of FindSepDescendants(pos, …, 6). Hot path: ~21M hits per
     // num-decode sentence batch. Direct vector index beats std::unordered_map

@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace sime {
@@ -32,6 +31,8 @@ public:
 
     Dict() = default;
     ~Dict();
+    Dict(const Dict&) = delete;
+    Dict& operator=(const Dict&) = delete;
 
     bool Load(const std::filesystem::path& path);
     void Clear();
@@ -41,7 +42,6 @@ public:
 
     const char32_t* TokenAt(uint32_t id) const;
     uint32_t TokenCount() const { return token_count_; }
-    const std::unordered_set<TokenID>& TokenSet() const { return token_set_; }
 
     // Static pinyin utilities (backed by dict.inc)
     static bool IsKnownPinyin(const std::string& text);
@@ -53,15 +53,17 @@ public:
 private:
     trie::DoubleArray dats_[DatCount];
 
-    // Side table: offset into blob_ for each entry (zero-copy access)
+    // Side table: offset into the mmap'd file for each entry (zero-copy).
     std::vector<uint32_t> side_offsets_[DatCount];
     mutable std::vector<Item> scratch_;  // reused by GetEntry
 
-    // Token text table
+    // Token text table — pointers into mmap'd memory.
     uint32_t token_count_ = 0;
-    std::vector<char> blob_;
     std::vector<const char32_t*> token_strs_;
-    std::unordered_set<TokenID> token_set_;
+
+    // mmap state — replaces the heap-loaded blob_ vector.
+    void* mmap_addr_ = nullptr;
+    std::size_t mmap_len_ = 0;
 };
 
 } // namespace sime

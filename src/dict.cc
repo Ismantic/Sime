@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <cstring>
-#include <fstream>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace sime {
 
@@ -30,29 +33,37 @@ void Dict::Clear() {
     }
     scratch_.clear();
     token_count_ = 0;
-    blob_.clear();
     token_strs_.clear();
-    token_set_.clear();
+    if (mmap_addr_ && mmap_addr_ != MAP_FAILED) {
+        munmap(mmap_addr_, mmap_len_);
+    }
+    mmap_addr_ = nullptr;
+    mmap_len_ = 0;
 }
 
 bool Dict::Load(const std::filesystem::path& path) {
     Clear();
 
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return false;
-    in.seekg(0, std::ios::end);
-    const auto size = static_cast<std::size_t>(in.tellg());
-    in.seekg(0, std::ios::beg);
-    if (size < 5 * sizeof(uint32_t)) return false;
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) return false;
 
-    blob_.resize(size);
-    if (!in.read(blob_.data(), static_cast<std::streamsize>(size))) {
-        Clear();
+    struct stat st;
+    if (fstat(fd, &st) != 0) { close(fd); return false; }
+    const auto size = static_cast<std::size_t>(st.st_size);
+    if (size < 5 * sizeof(uint32_t)) { close(fd); return false; }
+
+    mmap_addr_ = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (mmap_addr_ == MAP_FAILED) {
+        mmap_addr_ = nullptr;
         return false;
     }
+    mmap_len_ = size;
+
+    const char* base = static_cast<const char*>(mmap_addr_);
 
     // Parse header
-    const auto* header = reinterpret_cast<const uint32_t*>(blob_.data());
+    const auto* header = reinterpret_cast<const uint32_t*>(base);
     token_count_ = header[0];
     uint32_t token_offset = header[1];
     uint32_t section_offsets[DatCount];
@@ -61,34 +72,31 @@ bool Dict::Load(const std::filesystem::path& path) {
     uint32_t total_size = header[4];
     if (total_size != size) { Clear(); return false; }
 
-    // Parse token text table
+    // Parse token text table — pointers into mmap'd memory.
     token_strs_.reserve(token_count_);
-    auto p = reinterpret_cast<const char32_t*>(blob_.data() + token_offset);
+    auto p = reinterpret_cast<const char32_t*>(base + token_offset);
     for (uint32_t i = 0; i < token_count_; ++i) {
         token_strs_.push_back(p);
         while (*p++) {}
     }
 
-    // Parse 4 DAT sections
+    // Parse DAT sections
     for (int t = 0; t < DatCount; ++t) {
         std::size_t offset = section_offsets[t];
         if (offset >= size) continue;
 
-        // Deserialize DAT
-        if (!dats_[t].Deserialize(blob_.data() + offset, size - offset)) {
+        // Zero-copy attach DAT.
+        std::size_t dat_consumed = 0;
+        if (!dats_[t].MmapAttach(base + offset, size - offset, &dat_consumed)) {
             continue;
         }
-        // Skip past DAT data to side table
-        // DAT serialized size: 4 bytes (size) + size * 10 bytes (units)
-        uint32_t dat_size = 0;
-        std::memcpy(&dat_size, blob_.data() + offset, sizeof(dat_size));
-        offset += sizeof(dat_size) + dat_size * 10;
+        offset += dat_consumed;
 
         if (offset + sizeof(uint32_t) > size) continue;
 
-        // Parse side table: build offset index, no data copy
+        // Parse side table: build offset index, no data copy.
         uint32_t entry_count = 0;
-        std::memcpy(&entry_count, blob_.data() + offset, sizeof(entry_count));
+        std::memcpy(&entry_count, base + offset, sizeof(entry_count));
         offset += sizeof(entry_count);
 
         side_offsets_[t].resize(entry_count);
@@ -98,24 +106,17 @@ bool Dict::Load(const std::filesystem::path& path) {
 
             if (offset + sizeof(uint16_t) > size) break;
             uint16_t item_count = 0;
-            std::memcpy(&item_count, blob_.data() + offset, sizeof(item_count));
+            std::memcpy(&item_count, base + offset, sizeof(item_count));
             offset += sizeof(item_count);
 
             for (uint16_t j = 0; j < item_count; ++j) {
                 if (offset + sizeof(TokenID) + sizeof(uint16_t) > size) break;
-
-                TokenID id = 0;
-                std::memcpy(&id, blob_.data() + offset, sizeof(id));
-                offset += sizeof(id);
-
+                offset += sizeof(TokenID);
                 uint16_t pieces_len = 0;
-                std::memcpy(&pieces_len, blob_.data() + offset, sizeof(pieces_len));
+                std::memcpy(&pieces_len, base + offset, sizeof(pieces_len));
                 offset += sizeof(pieces_len);
-
                 if (offset + pieces_len > size) break;
                 offset += pieces_len + 1;  // +1 for null terminator
-
-                token_set_.insert(id);
             }
         }
     }
@@ -127,21 +128,22 @@ Dict::Entry Dict::GetEntry(DatType type, uint32_t index) const {
     if (index >= side_offsets_[type].size()) return {nullptr, 0};
     scratch_.clear();
 
+    const char* base = static_cast<const char*>(mmap_addr_);
     auto offset = static_cast<std::size_t>(side_offsets_[type][index]);
     uint16_t item_count = 0;
-    std::memcpy(&item_count, blob_.data() + offset, sizeof(item_count));
+    std::memcpy(&item_count, base + offset, sizeof(item_count));
     offset += sizeof(item_count);
 
     for (uint16_t j = 0; j < item_count; ++j) {
         TokenID id = 0;
-        std::memcpy(&id, blob_.data() + offset, sizeof(id));
+        std::memcpy(&id, base + offset, sizeof(id));
         offset += sizeof(id);
 
         uint16_t pieces_len = 0;
-        std::memcpy(&pieces_len, blob_.data() + offset, sizeof(pieces_len));
+        std::memcpy(&pieces_len, base + offset, sizeof(pieces_len));
         offset += sizeof(pieces_len);
 
-        const char* pieces = blob_.data() + offset;
+        const char* pieces = base + offset;
         offset += pieces_len + 1;  // +1 for null terminator
 
         scratch_.push_back({id, pieces});

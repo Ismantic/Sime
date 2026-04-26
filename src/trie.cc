@@ -26,8 +26,9 @@ void DoubleArray::Build(const std::vector<std::string>& keys,
     assert(keys.size() == values.size());
     Builder b;
     b.Run(keys, values);
-    array_ = b.GetResult(size_);
-    alphabet_ = ScanAlphabet(array_.get(), size_);
+    owned_ = b.GetResult(size_);
+    array_ = owned_.get();
+    alphabet_ = ScanAlphabet(array_, size_);
 }
 
 bool DoubleArray::Get(std::string_view key, uint32_t& out) const {
@@ -560,19 +561,11 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
 void DoubleArray::Serialize(std::vector<char>& buffer) const {
     auto sz = static_cast<uint32_t>(size_);
     std::size_t offset = buffer.size();
-    // Each ArrayUnit: label(1) + eow(1) + index/value(4) + parent(4) = 10 bytes
-    constexpr std::size_t kUnitBytes = 10;
-    buffer.resize(offset + sizeof(sz) + sz * kUnitBytes);
+    buffer.resize(offset + sizeof(sz) + sz * sizeof(ArrayUnit));
     std::memcpy(buffer.data() + offset, &sz, sizeof(sz));
     offset += sizeof(sz);
-    for (uint32_t i = 0; i < sz; ++i) {
-        const auto& u = array_[i];
-        buffer[offset++] = static_cast<char>(u.label);
-        buffer[offset++] = static_cast<char>(u.eow ? 1 : 0);
-        std::memcpy(buffer.data() + offset, &u.index, sizeof(u.index));
-        offset += sizeof(u.index);
-        std::memcpy(buffer.data() + offset, &u.parent, sizeof(u.parent));
-        offset += sizeof(u.parent);
+    if (sz > 0) {
+        std::memcpy(buffer.data() + offset, array_, sz * sizeof(ArrayUnit));
     }
 }
 
@@ -580,22 +573,34 @@ bool DoubleArray::Deserialize(const char* data, std::size_t size) {
     if (size < sizeof(uint32_t)) return false;
     uint32_t sz = 0;
     std::memcpy(&sz, data, sizeof(sz));
-    constexpr std::size_t kUnitBytes = 10;
-    if (size < sizeof(sz) + sz * kUnitBytes) return false;
+    if (size < sizeof(sz) + sz * sizeof(ArrayUnit)) return false;
 
     size_ = sz;
-    array_ = std::make_unique<ArrayUnit[]>(sz);
-    std::size_t offset = sizeof(sz);
-    for (uint32_t i = 0; i < sz; ++i) {
-        auto& u = array_[i];
-        u.label = static_cast<uint8_t>(data[offset++]);
-        u.eow = data[offset++] != 0;
-        std::memcpy(&u.index, data + offset, sizeof(u.index));
-        offset += sizeof(u.index);
-        std::memcpy(&u.parent, data + offset, sizeof(u.parent));
-        offset += sizeof(u.parent);
+    owned_ = std::make_unique<ArrayUnit[]>(sz);
+    if (sz > 0) {
+        std::memcpy(owned_.get(), data + sizeof(sz), sz * sizeof(ArrayUnit));
     }
-    alphabet_ = ScanAlphabet(array_.get(), size_);
+    array_ = owned_.get();
+    alphabet_ = ScanAlphabet(array_, size_);
+    return true;
+}
+
+bool DoubleArray::MmapAttach(const char* data, std::size_t size,
+                             std::size_t* consumed) {
+    if (size < sizeof(uint32_t)) return false;
+    uint32_t sz = 0;
+    std::memcpy(&sz, data, sizeof(sz));
+    std::size_t need = sizeof(sz) + sz * sizeof(ArrayUnit);
+    if (size < need) return false;
+    // Zero-copy: array_ points into mmap'd memory.
+    auto array_addr = reinterpret_cast<std::uintptr_t>(data + sizeof(sz));
+    if (array_addr % alignof(ArrayUnit) != 0) return false;
+
+    size_ = sz;
+    owned_.reset();
+    array_ = reinterpret_cast<const ArrayUnit*>(data + sizeof(sz));
+    alphabet_ = ScanAlphabet(array_, size_);
+    if (consumed) *consumed = need;
     return true;
 }
 
