@@ -940,6 +940,10 @@ public class InputKernel {
             String nextSyl = segs[startSyllables];
             if (nextSyl.isEmpty()) continue;
             if (nextSyl.length() > maxDigits) continue;  // tail-expanded
+            // If the segment appears literally in the decoded text, it
+            // was committed as-is (English / brand name like "iPhone")
+            // rather than as pinyin converted to hanzi — skip it.
+            if (r.text != null && r.text.contains(nextSyl)) continue;
             if (seen.containsKey(nextSyl)) continue;
             seen.put(nextSyl, new PinyinAlt(nextSyl, nextSyl, nextSyl.length()));
             if (seen.size() >= MAX_PINYIN_ALTS) break;

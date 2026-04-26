@@ -61,7 +61,7 @@ public class KeyView extends View {
 
     // Step 5: long-press / repeat timing constants. Values borrowed from
     // typical IMEs (yuyansdk uses similar numbers).
-    private static final long LONG_PRESS_DELAY_MS = 400L;
+    private static final long LONG_PRESS_DELAY_MS = 300L;
     private static final long REPEAT_START_DELAY_MS = 400L;
     private static final long REPEAT_INTERVAL_MS = 50L;
 

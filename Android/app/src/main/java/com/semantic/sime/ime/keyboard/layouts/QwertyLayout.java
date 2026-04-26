@@ -66,17 +66,21 @@ public final class QwertyLayout {
         r2.key(KeyDef.empty(0.5f));
         b.row(r2);
 
-        // Row 3: shift(1.5) + 7 letters(1) + backspace(1.5) = 10
+        // Row 3: shift(1.25) + 0.25 gap + 7 letters(1) + 0.25 gap + backspace(1.25) = 10
+        // Side keys' widths match row 4's 符号 / 换行 (both 1.25) so the
+        // outer edges line up vertically.
         KeyRow.Builder r3 = KeyRow.builder(1f);
-        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.5f).labelSize(Typography.CALLOUT)
+        r3.key(KeyDef.function("⇧", null).id(ID_SHIFT).width(1.25f).labelSize(Typography.CALLOUT)
                 // Enable the long-press timer; QwertyKeyboardView's
                 // shift handler routes LONG_PRESS to a pinyin separator
                 // in Chinese mode (English mode ignores it).
                 .longPress(SimeKey.separator()));
+        r3.key(KeyDef.empty(0.25f));
         for (int i = 0; i < ROW3.length; i++) {
             r3.key(letter(ROW3[i], ROW3_HINT[i]));
         }
-        r3.key(KeyDef.function("⌫", SimeKey.backspace()).width(1.5f).repeatable(true));
+        r3.key(KeyDef.empty(0.25f));
+        r3.key(KeyDef.function("⌫", SimeKey.backspace()).width(1.25f).repeatable(true));
         b.row(r3);
 
         // Row 4 (doubao-aligned): widths chosen so the space bar (3.0)

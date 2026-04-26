@@ -159,6 +159,11 @@ public class SettingsKeyboardView extends KeyboardView {
         SettingsNode current = stack.peek();
         if (current == null) return;
         container.setLayout(SettingsLayout.build(current));
+        // Lift the grid: layout sets symmetric verticalPadding(20); we
+        // rebalance to less top / more bottom so the cells start higher
+        // without growing taller.
+        int hp = container.getPaddingLeft();
+        container.setPadding(hp, dp(8), hp, dp(32));
         installChildHandlers(current);
     }
 

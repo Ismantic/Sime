@@ -2,10 +2,10 @@
   <img src="assets/icon.png" width="120" alt="Sime icon">
 </p>
 
-<h1 align="center">是语 Sime</h1>
+<h1 align="center">是语输入法 Sime</h1>
 
 <p align="center">
-  开源中文输入法
+  开源中文输入法引擎
 </p>
 
 <p align="center">
