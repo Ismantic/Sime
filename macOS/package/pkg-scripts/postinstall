@@ -2,12 +2,68 @@
 set -e
 
 APP="/Library/Input Methods/SimeIME.app"
+BUNDLE_ID="com.sime.inputmethod.SimeIME"
 LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
+# Strip xattrs that can confuse the system on a fresh install.
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+xattr -dr com.apple.provenance "$APP" 2>/dev/null || true
+
+# Re-register the bundle with LaunchServices.
 "$LSREG" -f "$APP" || true
 
-# Refresh menu bar so the new input source shows up without a logout.
-killall TextInputMenuAgent SystemUIServer cfprefsd 2>/dev/null || true
+# Kill any old SimeIME process so the new bundle is the one that gets launched.
+pkill -x SimeIME 2>/dev/null || true
+
+CONSOLE_USER=$(stat -f%Su /dev/console)
+CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null || echo "")
+
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -n "$CONSOLE_UID" ]; then
+  PLIST="/Users/$CONSOLE_USER/Library/Preferences/com.apple.HIToolbox.plist"
+
+  # Dedupe Sime entries in AppleEnabledInputSources — duplicates trigger a
+  # CFRelease(NULL) crash inside TextInputUIMacHelper on macOS 26.
+  if [ -f "$PLIST" ]; then
+    /usr/bin/python3 - "$PLIST" "$BUNDLE_ID" <<'PYEOF' || true
+import plistlib, sys
+path, bid = sys.argv[1], sys.argv[2]
+with open(path, 'rb') as f:
+    data = plistlib.load(f)
+src_list = data.get('AppleEnabledInputSources') or []
+seen = set()
+deduped = []
+for src in src_list:
+    if src.get('Bundle ID') == bid:
+        key = (src.get('Bundle ID'), src.get('Input Mode'))
+        if key in seen:
+            continue
+        seen.add(key)
+    deduped.append(src)
+if len(deduped) != len(src_list):
+    data['AppleEnabledInputSources'] = deduped
+    with open(path, 'wb') as f:
+        plistlib.dump(data, f)
+PYEOF
+    chown "$CONSOLE_USER" "$PLIST" 2>/dev/null || true
+  fi
+
+  # Bounce the IM launch agent so the new bundle is picked up cleanly.
+  launchctl asuser "$CONSOLE_UID" \
+    launchctl kickstart -k "gui/$CONSOLE_UID/com.apple.imklaunchagent" \
+    >/dev/null 2>&1 || true
+fi
+
+# Refresh menu bar / preferences daemon.
+killall cfprefsd TextInputMenuAgent TextInputSwitcher SystemUIServer 2>/dev/null || true
+
+# Friendly note: first install on a clean machine still benefits from a logout,
+# because TIS database state isn't fully refreshed until the user session restarts.
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -n "$CONSOLE_UID" ]; then
+  launchctl asuser "$CONSOLE_UID" osascript <<'OSAEOF' >/dev/null 2>&1 &
+display dialog "「是语」已安装到 /Library/Input Methods/。
+
+首次安装建议注销并重新登录一次，让系统完全识别新输入法；之后到「系统设置 → 键盘 → 文本输入」即可添加「是语」。" with title "是语 SimeIME" buttons {"好"} default button "好"
+OSAEOF
+fi
 
 exit 0

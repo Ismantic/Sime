@@ -636,7 +636,7 @@ final class SimeInputController: IMKInputController {
       let inputPos = cursorRect()
       SimePanel.shared.controller = self
       SimePanel.shared.update(
-        preedit: preeditStr.isEmpty ? nil : preeditStr,
+        preedit: nil,
         candidates: state.pageCandidates.map(\.text),
         highlighted: state.highlightedIndex - state.pageStart,
         position: inputPos
