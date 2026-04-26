@@ -34,10 +34,10 @@
 
 ### Android
 
-下载 `app-release.apk` 后传到手机，用文件管理器安装；或：
+下载 `Sime-*.apk` 后传到手机，用文件管理器安装；或：
 
 ```bash
-adb install app-release.apk
+adb install Sime-*.apk
 ```
 
 安装后到「设置 → 通用 → 输入法」中启用是语并切换为默认。
