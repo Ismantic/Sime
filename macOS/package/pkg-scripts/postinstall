@@ -56,14 +56,4 @@ fi
 # Refresh menu bar / preferences daemon.
 killall cfprefsd TextInputMenuAgent TextInputSwitcher SystemUIServer 2>/dev/null || true
 
-# Friendly note: first install on a clean machine still benefits from a logout,
-# because TIS database state isn't fully refreshed until the user session restarts.
-if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -n "$CONSOLE_UID" ]; then
-  launchctl asuser "$CONSOLE_UID" osascript <<'OSAEOF' >/dev/null 2>&1 &
-display dialog "「是语」已安装到 /Library/Input Methods/。
-
-首次安装建议注销并重新登录一次，让系统完全识别新输入法；之后到「系统设置 → 键盘 → 文本输入」即可添加「是语」。" with title "是语 SimeIME" buttons {"好"} default button "好"
-OSAEOF
-fi
-
 exit 0

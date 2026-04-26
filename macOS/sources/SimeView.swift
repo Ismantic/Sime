@@ -74,7 +74,7 @@ final class SimeView: NSView {
 
       let size = full.size()
       let cellRect = NSRect(x: x - 4,
-                            y: bounds.height - y - size.height - 4,
+                            y: bounds.height - y - (size.height + 8),
                             width: size.width + 8,
                             height: size.height + 8)
 
