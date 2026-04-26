@@ -17,16 +17,16 @@ import com.semantic.sime.ime.theme.Typography;
  * category tab in the bottom navigation row; tab keys are wired with
  * a custom listener so the controller can rebuild the grid in place.
  *
- * <p>The bottom row pins ← and ⌫ on the sides and puts the tab strip
- * inside a {@link HorizontalScrollView} — the 8 categories overflow a
- * normal phone width, so the user scrolls horizontally to reach more
- * tabs without each tab shrinking to an unreadable size.
+ * <p>The bottom row pins ← on the left and puts the tab strip inside a
+ * {@link HorizontalScrollView} — categories overflow a normal phone
+ * width, so the user scrolls horizontally to reach more tabs. ⌫ lives
+ * inside the symbol grid (row 3 right) per doubao layout.
  */
 public class SymbolKeyboardView extends KeyboardView {
 
     /** Width per tab key inside the scrollable strip. */
     private static final int TAB_WIDTH_DP = 52;
-    /** Width of the pinned ← and ⌫ side keys. */
+    /** Width of the pinned ← side key. */
     private static final int SIDE_KEY_WIDTH_DP = 48;
 
     private KeyboardContainer grid;
@@ -39,14 +39,17 @@ public class SymbolKeyboardView extends KeyboardView {
     }
 
     private void build() {
+        // Outer weights chosen so the grid's 3 rows match Qwerty row
+        // 1-3 height (weight 1 each) and the bottom bar matches Qwerty
+        // row 4 (weight 0.95).
         grid = new KeyboardContainer(getContext(), theme);
-        LayoutParams gLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 4f);
+        LayoutParams gLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 3f);
         grid.setLayoutParams(gLp);
         grid.setOnKeyEmitListener(this::emit);
         addView(grid);
 
         LinearLayout bottomBar = buildBottomBar();
-        LayoutParams brLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
+        LayoutParams brLp = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.95f);
         bottomBar.setLayoutParams(brLp);
         addView(bottomBar);
 
@@ -87,10 +90,6 @@ public class SymbolKeyboardView extends KeyboardView {
                 HorizontalScrollView.LayoutParams.MATCH_PARENT));
         bar.addView(scroll, new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f));
-
-        bar.addView(
-                makeKey(KeyDef.function("⌫", SimeKey.backspace()).repeatable(true).build()),
-                new LinearLayout.LayoutParams(dp(SIDE_KEY_WIDTH_DP), LinearLayout.LayoutParams.MATCH_PARENT));
 
         return bar;
     }
