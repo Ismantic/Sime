@@ -95,6 +95,12 @@ private:
     // higher in beam search and Layer 2, while common English words
     // (iphone, hello) still surface when there's no strong Chinese rival.
     static constexpr float_t EnglishPenalty = 2.5;
+    // Short-input English penalty: short inputs (≤4 letters/digits) where
+    // an English exact word coincidentally spell-matches the input
+    // (e.g. "nm" / "us" / "be") need a stronger nudge so CN 简拼
+    // candidates can win — the LM's <eos>|english=0 transition gives
+    // English an unfair tail-cost edge in beam scoring otherwise.
+    static constexpr float_t EnglishPenaltyShort = 5.0;
 
     // Lattice building
     void InitNet(std::string_view input,

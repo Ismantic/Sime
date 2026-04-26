@@ -96,6 +96,16 @@ void Sime::ComputeEdgePenalties(std::vector<Node>& net,
                                 std::string_view input,
                                 float_t penalty_per_mismatch,
                                 std::size_t t9_boundary) {
+    // Short-input English penalty bump: when input is short (≤4 letters/
+    // digits) and an English exact word happens to spell-match it (e.g.
+    // "nm", "us", "be"), the LM's <eos>|english=0 transition makes the
+    // English path beat any CN 简拼 alternative by a small margin.
+    // Bumping the penalty for short inputs nudges CN ahead without
+    // affecting long sentences (where English exact full-coverage doesn't
+    // exist anyway).
+    const float_t english_penalty = input.size() <= 4
+        ? EnglishPenaltyShort
+        : EnglishPenalty;
     for (auto& col : net) {
         for (auto& edge : col.es) {
             if (!edge.pieces || edge.id == NotToken) continue;
@@ -112,7 +122,7 @@ void Sime::ComputeEdgePenalties(std::vector<Node>& net,
             }
             edge.penalty =
                 static_cast<float_t>(mismatch) * penalty_per_mismatch
-                + (edge.english ? EnglishPenalty : 0.0f);
+                + (edge.english ? english_penalty : 0.0f);
         }
     }
 }
@@ -608,7 +618,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     return results;
 }
 
-std::vector<DecodeResult> Sime::DecodeNumStr(
+std::vector<DecodeResult> Sime::DecodeNumStr(  // (DecodeNumSentence: 保持原 l2_full > l2_abbrev 分组顺序)
     std::string_view nums,
     std::string_view start,
     std::size_t num) const {
@@ -750,10 +760,12 @@ void Sime::InitNet(std::string_view input,
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
             Dict::LetterEn, true);
 
-        // Tail expansion: skip if a non-expansion edge already reaches total.
+        // Tail expansion: skip only when a Chinese non-expansion edge
+        // already reaches total. English exact (e.g. "key") is not a
+        // complete-pinyin match so should not suppress expansion.
         bool has_nonexp_to_total = false;
         for (const auto& e : net[s].es) {
-            if (e.end == total && !e.expansion) {
+            if (e.end == total && !e.expansion && !e.english) {
                 has_nonexp_to_total = true; break;
             }
         }
@@ -796,17 +808,28 @@ void Sime::InitNet(std::string_view input,
         return 0;
     };
 
-    // Global fuzzy gate: if input has exact full-coverage at (0, total),
-    // drop all fuzzy edges globally (see DecodeNumSentence for rationale).
+    // Global fuzzy gate: only Chinese full-coverage exact (= 完整拼音)
+    // triggers the global drop. English exact (e.g. "key") does NOT count
+    // as "complete pinyin", so it should not suppress fuzzy CN candidates
+    // like 以 at (2, 3) which form a 可+以 → 可以 sentence path.
     bool has_full_cover_exact = false;
     for (const auto& e : net[0].es) {
         if (e.id != NotToken && e.end == total
-            && !e.fuzzy && !e.expansion) {
+            && !e.fuzzy && !e.expansion && !e.english) {
             has_full_cover_exact = true;
             break;
         }
     }
 
+    // Per-bucket source filter (relaxed):
+    //   - If a CN exact (tier 0) exists in the bucket → drop everything else
+    //     in the bucket (the user clearly typed full pinyin).
+    //   - Otherwise → keep English (tier 1) and CN fuzzy (tier 2) side by
+    //     side; only drop tail-expansion (tier 3) when any non-expansion
+    //     edge already reaches the same end.
+    //   - English exact alone (without CN exact) does NOT count as 完整拼音
+    //     and so does not suppress CN fuzzy candidates like the 可以 fuzzy
+    //     edge for input "key".
     std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
@@ -819,7 +842,9 @@ void Sime::InitNet(std::string_view input,
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
                 if (has_full_cover_exact && e.fuzzy) return true;
-                return tier_of(e) > best[e.end];
+                uint8_t t = tier_of(e);
+                if (best[e.end] == 0) return t > 0;     // CN exact dominates
+                return t == 3 && best[e.end] < 3;        // drop expansion when alternatives exist
             }), edges.end());
         for (const auto& e : edges) best[e.end] = 0xFF;
     }
@@ -1095,7 +1120,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, edge.end},
-             mismatch == 0 && !edge.english});
+             mismatch == 0});  // exact = 全匹配（任何语言）
     }
 
     for (auto& entry : best_l2) {
