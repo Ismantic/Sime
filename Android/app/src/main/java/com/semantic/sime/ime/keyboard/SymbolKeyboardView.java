@@ -62,7 +62,7 @@ public class SymbolKeyboardView extends KeyboardView {
         bar.setPadding(0, 0, 0, 0);
 
         bar.addView(
-                makeKey(KeyDef.accent("←", SimeKey.toBack()).labelSize(Typography.CALLOUT).build()),
+                makeKey(KeyDef.function("←", SimeKey.toBack()).labelSize(Typography.CALLOUT).build()),
                 new LinearLayout.LayoutParams(dp(SIDE_KEY_WIDTH_DP), LinearLayout.LayoutParams.MATCH_PARENT));
 
         HorizontalScrollView scroll = new HorizontalScrollView(getContext());
