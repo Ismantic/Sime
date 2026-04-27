@@ -750,7 +750,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     if (lower.empty()) return results;
 
     std::vector<Node> net;
-    InitNet(lower, net, /*expansion=*/true);
+    InitNet(lower, net, /*expansion=*/false);
     ComputeEdgePenalties(net, lower, PinyinMatchPenalty, lower.size() + 1);
 
     const std::size_t max_top = num == 0 ? 1 : num;
@@ -1196,9 +1196,12 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         Scorer::Pos epos{};
         Scorer::Pos enext{};
+        const float_t ep = edge.english
+            ? (lower.size() <= 4 ? EnglishPenaltyShort : EnglishPenalty)
+            : 0.0f;
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
                         - dist_penalty
-                        - (edge.english ? EnglishPenalty : 0.0f);
+                        - ep;
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
@@ -1208,7 +1211,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, edge.end},
-             mismatch == 0});  // exact = 全匹配（任何语言）
+             mismatch == 0 && !edge.english});  // exact = 中文全匹配
     }
 
     for (auto& entry : best_l2) {
