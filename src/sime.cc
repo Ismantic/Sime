@@ -12,41 +12,6 @@ namespace sime {
 
 namespace {
 
-// Count syllables in `pieces` whose letters are not fully present in
-// `input_slice`. When `input_is_digits` is true, compare pieces letters
-// against their T9 digit form instead. Used for L2 exact/abbrev grouping
-// (mismatch == 0 means full match).
-std::size_t CountSyllableMismatch(const char* pieces,
-                                  std::string_view input_slice,
-                                  bool input_is_digits) {
-    if (!pieces) return 0;
-    std::size_t mismatch = 0;
-    std::size_t ipos = 0;
-    const char* p = pieces;
-    while (*p) {
-        const char* syl_end = p;
-        while (*syl_end && *syl_end != '\'') ++syl_end;
-        std::size_t syl_len = static_cast<std::size_t>(syl_end - p);
-
-        while (ipos < input_slice.size() && input_slice[ipos] == '\'') ++ipos;
-
-        std::size_t matched = 0;
-        while (matched < syl_len && ipos < input_slice.size() &&
-               input_slice[ipos] != '\'') {
-            char expected = input_is_digits
-                ? Dict::LetterToNum(p[matched])
-                : p[matched];
-            if (input_slice[ipos] != expected) break;
-            ++matched;
-            ++ipos;
-        }
-        if (matched < syl_len) ++mismatch;
-
-        p = (*syl_end == '\'') ? syl_end + 1 : syl_end;
-    }
-    return mismatch;
-}
-
 struct Layer2Entry {
     DecodeResult result;
     bool exact = false;
@@ -499,19 +464,6 @@ std::vector<TokenID> Sime::ExtractTokens(
     return ids;
 }
 
-std::size_t Sime::CountPathMismatch(const std::vector<Link>& path,
-                                    std::string_view input,
-                                    std::size_t t9_boundary) {
-    std::size_t mismatch = 0;
-    for (const auto& link : path) {
-        if (link.id == NotToken || !link.pieces) continue;
-        bool is_t9 = link.start >= t9_boundary;
-        auto slice = input.substr(link.start, link.end - link.start);
-        mismatch += CountSyllableMismatch(link.pieces, slice, is_t9);
-    }
-    return mismatch;
-}
-
 std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
@@ -607,10 +559,8 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
         float_t dist_penalty =
             static_cast<float_t>(distance) * penalty_per_unit;
 
-        bool is_t9 = (edge.start >= p);
         auto slice = std::string_view(combined_input).substr(
             edge.start, edge.end - edge.start);
-        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, is_t9);
 
         // Use edge.penalty (English + expansion, set by
         // ComputeEdgePenalties) so L2 score sits on the same coordinate
@@ -625,12 +575,13 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
         std::size_t cnt = edge.end;
+        // l2_full = direct CN exact only (= !expansion && !english).
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, cnt},
-             mismatch == 0 && !edge.english});
+             !edge.expansion && !edge.english});
     }
 
     for (auto& entry : best_l2) {
@@ -1106,7 +1057,6 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
         auto slice = std::string_view(lower).substr(
             edge.start, edge.end - edge.start);
-        std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, false);
 
         // Use edge.penalty (English + expansion) so L2 score is on the
         // same coordinate system as L1: -(LM unigram + edge.penalty)
@@ -1120,12 +1070,13 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
+        // l2_full = direct CN exact only (= !expansion && !english).
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, edge.end},
-             mismatch == 0 && !edge.english});  // exact = 中文全匹配
+             !edge.expansion && !edge.english});
     }
 
     for (auto& entry : best_l2) {

@@ -129,12 +129,6 @@ private:
                                         std::string_view input);
     std::vector<TokenID> ExtractTokens(const std::vector<Link>& path) const;
     static std::string TextFromU32(std::u32string& u32);
-    // Sum CountSyllableMismatch over every scoring link in `path`.
-    // `t9_boundary` splits letter columns [0, boundary) from T9-digit
-    // columns [boundary, ...); 0 means the whole path is letter input.
-    static std::size_t CountPathMismatch(const std::vector<Link>& path,
-                                         std::string_view input,
-                                         std::size_t t9_boundary);
 
     // Num-key lattice
     void InitNumNet(std::string_view start,
