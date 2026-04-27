@@ -373,10 +373,11 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
 //     (stop_at_sep=true) — used when the user is typing mid-syllable and
 //     wants candidates that complete it.
 //
-//   PrefixSearchT9 / FindWordsWithPrefixT9
-//     Same shape, but each input digit is expanded to its candidate letters
-//     (2→abc, 3→def, …) and every expansion is advanced in parallel. The
-//     letter-keyed DAT serves nine-key input without a separate table.
+//   PrefixSearchT9
+//     Same shape as PrefixSearchPinyin, but each input digit is expanded to
+//     its candidate letters (2→abc, 3→def, …) and every expansion is
+//     advanced in parallel. The letter-keyed DAT serves nine-key input
+//     without a separate table.
 //
 // -----------------------------------------------------------------------
 
@@ -432,54 +433,6 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
         std::erase_if(states, [](const PinyinState& s) { return s.fuzzy; });
         record_matches(i + 1);
     }
-    return results;
-}
-
-std::vector<SearchResult> DoubleArray::FindWordsWithPrefixT9(
-    std::string_view digits, CharExpander expand,
-    std::size_t max_num) const {
-    std::vector<SearchResult> results;
-    if (Empty()) return results;
-
-    // Advance through digit prefix
-    std::vector<PinyinState> states = {{0, 0, false}};
-    for (std::size_t i = 0; i < digits.size() && !states.empty(); ++i) {
-        auto ch = static_cast<uint8_t>(digits[i]);
-        if (ch == '\'') {
-            AdvancePinyin(states, ch);
-        } else {
-            const char* letters = expand(ch);
-            if (letters && letters[0]) {
-                AdvanceT9(states, letters);
-            } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
-                AdvancePinyin(states, ch);
-            } else {
-                states.clear(); break;
-            }
-        }
-    }
-
-    std::unordered_set<uint64_t> seen;
-    const std::size_t pool = max_num * 8 + 8;
-    auto collect_group = [&](bool fuzzy) {
-        for (const auto& s : states) {
-            if (results.size() >= max_num) break;
-            if (s.fuzzy != fuzzy) continue;
-            std::vector<SearchResult> local;
-            std::string word;
-            CollectWords(s.pos, word, local, pool, /*stop_at_sep=*/true);
-            for (const auto& r : local) {
-                uint64_t key = (static_cast<uint64_t>(r.value) << 32)
-                             | static_cast<uint64_t>(r.length);
-                if (!seen.insert(key).second) continue;
-                results.push_back(r);
-                if (results.size() >= max_num) break;
-            }
-        }
-    };
-
-    collect_group(false);
-    collect_group(true);
     return results;
 }
 

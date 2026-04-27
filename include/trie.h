@@ -75,9 +75,6 @@ public:
     std::vector<SearchResult> PrefixSearchT9(
         std::string_view digits, CharExpander expand,
         std::size_t max_num = 96) const;
-    std::vector<SearchResult> FindWordsWithPrefixT9(
-        std::string_view digits, CharExpander expand,
-        std::size_t max_num = 96) const;
 
     // Incremental frontier APIs used by decoder cache layers.
     struct PinyinState {
