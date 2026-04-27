@@ -198,6 +198,30 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
+    // Segment digits via T9 syllable lookup — the T9 analog of letter
+    // segmentation. digit_bounds[i] holds positions in `nums` (not in
+    // the global lattice column index) where a syllable potentially ends.
+    // For full-pinyin T9 input ("744" = shi) bounds are sparse; for
+    // abbreviation input ("66") every digit is a boundary. Same semantic
+    // as InitNet's seg_bounds — defines where expansion may fire.
+    std::vector<std::size_t> digit_bounds;
+    if (d > 0) {
+        std::size_t pos = 0;
+        digit_bounds.push_back(0);
+        while (pos < d) {
+            if (nums[pos] == '\'') { pos++; digit_bounds.push_back(pos); continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(d - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownT9Syllable(nums.substr(pos, len))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            digit_bounds.push_back(pos);
+        }
+    }
+
     for (std::size_t s = 0; s < total; ++s) {
         // === Prefix letter columns ===
         if (s < p) {
@@ -285,22 +309,21 @@ void Sime::InitNumNet(std::string_view start,
         // English DAT: both cases
         t9_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
 
-        // Per-digit incremental expansion. Walk AdvanceT9States forward
-        // step-by-step from s; at each step k, if the DAT does NOT have
-        // an exact (non-fuzzy) eow at length k, emit expansion edges
-        // (s, s+k) for completions that extend beyond k digits. This is
-        // the T9 analog of InitNet's segment-boundary FWWPP — the user's
-        // digits are treated as possibly incomplete pinyin and we
-        // generate completions at each non-complete-token intermediate
-        // length. The eow gate is the T9 analog of !IsKnownPinyin.
+        // Boundary-driven expansion. Walk AdvanceT9States forward
+        // incrementally from s; at each digit_bounds boundary within 8
+        // chars, if the segment is NOT a known T9 syllable (the analog
+        // of !IsKnownPinyin), emit expansion edges (s, s+k) for
+        // completions that extend beyond the boundary. This is the T9
+        // mirror of InitNet's segment-boundary FWWPP.
         if (expansion) {
             auto py_states = dict_.Dat(Dict::LetterPinyin).StartPinyinStates();
             auto en_states = dict_.Dat(Dict::LetterEn).StartPinyinStates();
-            constexpr std::size_t MaxK = 3;
-            for (std::size_t k = 1; k <= MaxK; ++k) {
+            std::size_t bi = 0;
+            while (bi < digit_bounds.size() && digit_bounds[bi] <= dpos) ++bi;
+            for (std::size_t k = 1; k <= 8; ++k) {
                 std::size_t pos = dpos + k - 1;
                 if (pos >= d) break;
-                if (nums[pos] == '\'') break;  // separator stops walk
+                if (nums[pos] == '\'') break;
                 auto ch = static_cast<uint8_t>(nums[pos]);
                 if (!py_states.empty()) {
                     dict_.Dat(Dict::LetterPinyin).AdvanceT9States(
@@ -312,20 +335,16 @@ void Sime::InitNumNet(std::string_view start,
                 }
                 if (py_states.empty() && en_states.empty()) break;
 
+                std::size_t target_dpos = dpos + k;
+                if (bi >= digit_bounds.size()
+                    || digit_bounds[bi] != target_dpos) continue;
+                ++bi;
+
+                if (Dict::IsKnownT9Syllable(nums.substr(dpos, k))) continue;
+
                 auto emit_completions = [&](Dict::DatType type,
                                             const std::vector<trie::DoubleArray::PinyinState>& sts,
                                             std::size_t max_num, bool en) {
-                    // Gate: skip expansion when an exact (non-fuzzy) eow
-                    // exists at this k — the user already typed a complete
-                    // token here, no need to expand it.
-                    auto exact_hits = dict_.Dat(type).CollectPrefixMatchesPinyin(
-                        sts, 0, 1, false);
-                    bool has_exact = false;
-                    for (const auto& r : exact_hits) {
-                        if (!r.fuzzy) { has_exact = true; break; }
-                    }
-                    if (has_exact) return;
-
                     auto comps = dict_.Dat(type).CollectCompletionsPinyin(
                         sts, k, max_num, /*stop_at_sep=*/true);
                     for (const auto& r : comps) {
@@ -338,8 +357,8 @@ void Sime::InitNumNet(std::string_view start,
                         }
                     }
                 };
-                emit_completions(Dict::LetterPinyin, py_states, 32, false);
-                emit_completions(Dict::LetterEn, en_states, 32, true);
+                emit_completions(Dict::LetterPinyin, py_states, 64, false);
+                emit_completions(Dict::LetterEn, en_states, 64, true);
             }
         }
     }

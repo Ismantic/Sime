@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <unordered_set>
 
 namespace sime {
 
@@ -168,6 +169,20 @@ bool Dict::IsKnownPinyin(const std::string& text) {
         else right = mid;
     }
     return false;
+}
+
+bool Dict::IsKnownT9Syllable(std::string_view digits) {
+    if (digits.empty()) return false;
+    static const std::unordered_set<std::string> set = []() {
+        std::unordered_set<std::string> s;
+        constexpr uint32_t FinalMask = 0xFFF;
+        for (std::size_t i = 0; i < PinyinDictSize; ++i) {
+            if ((PinyinDict[i].value & FinalMask) == 0) continue;
+            s.insert(LettersToNums(PinyinDict[i].text));
+        }
+        return s;
+    }();
+    return set.contains(std::string(digits));
 }
 
 char Dict::LetterToNum(char c) {

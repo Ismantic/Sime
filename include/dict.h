@@ -45,6 +45,8 @@ public:
 
     // Static pinyin utilities (backed by dict.inc)
     static bool IsKnownPinyin(const std::string& text);
+    // T9 analog: digits is the T9 form of *some* known pinyin syllable.
+    static bool IsKnownT9Syllable(std::string_view digits);
     static char LetterToNum(char c);
     static std::string LettersToNums(std::string_view letters);
     static const char* NumToLetters(uint8_t digit);
