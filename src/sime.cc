@@ -365,29 +365,20 @@ void Sime::InitNumNet(std::string_view start,
 
     // Tier-gated source filter: per (start, end) bucket, keep only the
     // highest-priority tier present. Priority:
-    //   0: Pinyin Exact  (!expansion, !english, !fuzzy)
-    //   1: English Exact (!expansion, english, !fuzzy)
-    //   2: any Fuzzy     (!expansion, fuzzy)
-    //   3: tail-expansion (expansion)
-    // ExactMatch always beats fuzzy; within exact, Pinyin > English.
+    //   0: CN exact   (!expansion, !english)
+    //   1: everything else — CN expansion, English exact, English expansion
+    // CN exact dominates its bucket; otherwise tier-1 edges all survive
+    // and beam search picks the winner by score.
     auto tier_of = [](const Link& e) -> uint8_t {
-        if (e.id == NotToken) return 0;       // sentinel edges always keep
-        if (e.expansion) return 3;
-        if (e.fuzzy)     return 2;
-        if (e.english)   return 1;
-        return 0;
+        if (e.id == NotToken) return 0;
+        return (!e.expansion && !e.english) ? 0 : 1;
     };
 
-    // Global fuzzy gate: if the whole input has an exact full-coverage edge
-    // at (0, total), the user's input is complete and unambiguous — the
-    // Trie's "last-syllable DFS" fuzzy speculations at intermediate buckets
-    // (e.g. 不值得/不知道啊 for 28944326) are just noise. Drop all fuzzy
-    // globally. Tail-expansion and per-bucket english are already handled
-    // by the per-bucket tier filter below (they lose to Tier-0 at (0,total)).
-    // Mirrors InitNet: only Chinese exact full-coverage triggers the
-    // global drop. English exact (e.g. T9 of "key" = 539) does NOT
-    // count as 完整拼音 — it should not suppress fuzzy CN candidates
-    // that complete the user's actual pinyin intent.
+    // Global fuzzy gate: if the whole input has a CN exact full-coverage
+    // edge at (0, total), the user's input is complete and unambiguous —
+    // any remaining fuzzy speculations at intermediate buckets are noise.
+    // English exact full-coverage doesn't count (T9 of 'key' = 539 should
+    // still let CN expansion 可以 survive).
     bool has_full_cover_exact = false;
     for (const auto& e : net[0].es) {
         if (e.id != NotToken && e.end == total
@@ -397,36 +388,24 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
-    // Two-track per-bucket gate (mirrors InitNet): pinyin and english
-    // edges keep their own tier-tracks per (start, end). Required to
-    // preserve cases like "539" → 可以 where bucket (0, 3) has
-    // English exact "key" (tier 1, en) alongside CN expansion 可以
-    // (tier 3, py) — single-track would drop the CN side.
-    std::vector<uint8_t> best_py(total + 2, 0xFF);
-    std::vector<uint8_t> best_en(total + 2, 0xFF);
+    // Single-track per-bucket gate: drop everything above the best tier
+    // seen per (start, end). With 2 tiers that means: CN exact in bucket
+    // → keep only CN exact; otherwise keep all tier-1.
+    std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            if (e.english) {
-                if (t < best_en[e.end]) best_en[e.end] = t;
-            } else {
-                if (t < best_py[e.end]) best_py[e.end] = t;
-            }
+            if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
-                if (has_full_cover_exact && e.fuzzy) return true;  // global gate
-                uint8_t t = tier_of(e);
-                uint8_t b = e.english ? best_en[e.end] : best_py[e.end];
-                return t > b;
+                if (has_full_cover_exact && e.fuzzy) return true;
+                return tier_of(e) > best[e.end];
             }), edges.end());
-        for (const auto& e : edges) {
-            best_py[e.end] = 0xFF;
-            best_en[e.end] = 0xFF;
-        }
+        for (const auto& e : edges) best[e.end] = 0xFF;
     }
 
     std::string combined(start);
@@ -905,23 +884,16 @@ void Sime::InitNet(std::string_view input,
         }
     }
 
-    // Tier-gated source filter (matches InitNumNet):
-    //   0: Pinyin Exact  (!expansion, !english, !fuzzy)
-    //   1: English Exact (!expansion, english, !fuzzy)
-    //   2: any Fuzzy     (!expansion, fuzzy)
-    //   3: tail-expansion (expansion)
+    // Tier-gated source filter:
+    //   0: CN exact   (!expansion, !english)
+    //   1: everything else — CN expansion, English exact, English expansion
     auto tier_of = [](const Link& e) -> uint8_t {
         if (e.id == NotToken) return 0;
-        if (e.expansion) return 3;
-        if (e.fuzzy)     return 2;
-        if (e.english)   return 1;
-        return 0;
+        return (!e.expansion && !e.english) ? 0 : 1;
     };
 
-    // Global fuzzy gate: only Chinese full-coverage exact (= 完整拼音)
-    // triggers the global drop. English exact (e.g. "key") does NOT count
-    // as "complete pinyin", so it should not suppress fuzzy CN candidates
-    // like 以 at (2, 3) which form a 可+以 → 可以 sentence path.
+    // Global fuzzy gate: only CN exact full-coverage triggers global drop.
+    // English exact full-coverage (e.g. T9 'key' = 539) doesn't count.
     bool has_full_cover_exact = false;
     for (const auto& e : net[0].es) {
         if (e.id != NotToken && e.end == total
@@ -931,36 +903,23 @@ void Sime::InitNet(std::string_view input,
         }
     }
 
-    // Per-bucket source filter: pinyin and english edges compete on
-    // separate tracks per (start, end). Each track keeps only its
-    // highest-priority tier; the two tracks don't suppress each other,
-    // so English exact (e.g. "key") doesn't drop CN expansion edges in
-    // the same bucket — the beam picks the winner by score.
-    std::vector<uint8_t> best_py(total + 2, 0xFF);
-    std::vector<uint8_t> best_en(total + 2, 0xFF);
+    // Single-track per-bucket gate: CN exact dominates its bucket;
+    // otherwise tier-1 edges (CN expansion + any English) all survive.
+    std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            if (e.english) {
-                if (t < best_en[e.end]) best_en[e.end] = t;
-            } else {
-                if (t < best_py[e.end]) best_py[e.end] = t;
-            }
+            if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
                 if (has_full_cover_exact && e.fuzzy) return true;
-                uint8_t t = tier_of(e);
-                uint8_t b = e.english ? best_en[e.end] : best_py[e.end];
-                return t > b;
+                return tier_of(e) > best[e.end];
             }), edges.end());
-        for (const auto& e : edges) {
-            best_py[e.end] = 0xFF;
-            best_en[e.end] = 0xFF;
-        }
+        for (const auto& e : edges) best[e.end] = 0xFF;
     }
 
     for (std::size_t i = 0; i < total; ++i) {
