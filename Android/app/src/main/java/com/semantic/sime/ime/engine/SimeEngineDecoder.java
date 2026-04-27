@@ -40,6 +40,12 @@ public final class SimeEngineDecoder implements Decoder {
     }
 
     @Override
+    public String[] t9PinyinSyllables(String digits, int limit) {
+        if (!engine.isReady()) return new String[0];
+        return engine.t9PinyinSyllables(digits, limit);
+    }
+
+    @Override
     public int contextSize() {
         return engine.contextSize();
     }

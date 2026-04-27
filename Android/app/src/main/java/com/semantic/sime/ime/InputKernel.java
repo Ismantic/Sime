@@ -95,9 +95,45 @@ public class InputKernel {
 
     private final Decoder decoder;
     private final InputState state = new InputState();
-    private final HandlerThread engineThread;
-    private final Handler engineHandler;
-    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runner engineRunner;
+    private final Runner mainRunner;
+
+    private interface Runner {
+        void post(Runnable r);
+        void quitSafely();
+    }
+
+    private static final class HandlerRunner implements Runner {
+        private final Handler handler;
+        private final HandlerThread thread;
+
+        HandlerRunner(Handler handler, HandlerThread thread) {
+            this.handler = handler;
+            this.thread = thread;
+        }
+
+        @Override
+        public void post(Runnable r) {
+            handler.post(r);
+        }
+
+        @Override
+        public void quitSafely() {
+            if (thread != null) thread.quitSafely();
+        }
+    }
+
+    private static final class DirectRunner implements Runner {
+        @Override
+        public void post(Runnable r) {
+            r.run();
+        }
+
+        @Override
+        public void quitSafely() {
+            // no-op
+        }
+    }
 
     private KeyboardMode mode = KeyboardMode.CHINESE;
     private KeyboardMode previousMode = KeyboardMode.CHINESE;
@@ -167,10 +203,29 @@ public class InputKernel {
 
     public InputKernel(Decoder decoder) {
         this.decoder = decoder;
-        state.maxContextIds = decoder.contextSize();
-        engineThread = new HandlerThread("sime-engine");
+        HandlerThread engineThread = new HandlerThread("sime-engine");
         engineThread.start();
-        engineHandler = new Handler(engineThread.getLooper());
+        this.engineRunner = new HandlerRunner(
+                new Handler(engineThread.getLooper()), engineThread);
+        this.mainRunner = new HandlerRunner(
+                new Handler(Looper.getMainLooper()), null);
+        state.maxContextIds = decoder.contextSize();
+    }
+
+    InputKernel(Decoder decoder, boolean synchronous) {
+        this.decoder = decoder;
+        if (synchronous) {
+            this.engineRunner = new DirectRunner();
+            this.mainRunner = new DirectRunner();
+        } else {
+            HandlerThread engineThread = new HandlerThread("sime-engine");
+            engineThread.start();
+            this.engineRunner = new HandlerRunner(
+                    new Handler(engineThread.getLooper()), engineThread);
+            this.mainRunner = new HandlerRunner(
+                    new Handler(Looper.getMainLooper()), null);
+        }
+        state.maxContextIds = decoder.contextSize();
     }
 
     // ===== Lifecycle =====
@@ -183,15 +238,15 @@ public class InputKernel {
     public void detach() {
         this.listener = null;
         this.observer = null;
-        engineThread.quitSafely();
+        engineRunner.quitSafely();
     }
 
     public void onStartInput() {
-        engineHandler.post(this::resetAll);
+        engineRunner.post(this::resetAll);
     }
 
     public void onFinishInput() {
-        engineHandler.post(this::resetAll);
+        engineRunner.post(this::resetAll);
     }
 
     // ===== State accessors =====
@@ -200,11 +255,11 @@ public class InputKernel {
     public ChineseLayout getInitialChineseLayout() { return chineseLayout; }
 
     public void setChineseLayout(ChineseLayout l) {
-        engineHandler.post(() -> { this.chineseLayout = l; });
+        engineRunner.post(() -> { this.chineseLayout = l; });
     }
 
     public void setPredictionEnabled(boolean enabled) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             this.predictionEnabled = enabled;
             if (!enabled && state.predicting) {
                 exitPrediction();
@@ -214,7 +269,7 @@ public class InputKernel {
     }
 
     public void setTraditionalEnabled(boolean enabled) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             this.traditionalEnabled = enabled;
             // Re-publish with trad-mapped candidate text (or simp if off).
             publish();
@@ -224,7 +279,7 @@ public class InputKernel {
     /** Public hook for the candidates bar's "×" button: drop the
      *  current prediction strip without committing anything. */
     public void dismissPredictions() {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (state.predicting) {
                 exitPrediction();
                 publish();
@@ -234,7 +289,7 @@ public class InputKernel {
 
     /** Same idea for the T9 "1 key" punctuation strip. */
     public void dismissPunctuationPickerPublic() {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (inPunctuationPicker) {
                 dismissPunctuationPicker(/*publish=*/true);
             }
@@ -242,7 +297,7 @@ public class InputKernel {
     }
 
     public void setPrivateField(boolean privateField) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (this.privateField == privateField) return;
             this.privateField = privateField;
             // Bail out of any active prediction when entering a sensitive
@@ -267,7 +322,7 @@ public class InputKernel {
      */
     public void commitTextRaw(String text) {
         if (text == null || text.isEmpty()) return;
-        engineHandler.post(() -> fireCommitText(text));
+        engineRunner.post(() -> fireCommitText(text));
     }
 
     /**
@@ -278,7 +333,7 @@ public class InputKernel {
      */
     public void commitPanelText(String text) {
         if (text == null || text.isEmpty()) return;
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             // Flush any current Chinese composition to keep state clean.
             if (isChineseLike() && !state.buffer.isEmpty()) {
                 String committed = state.committedText();
@@ -300,12 +355,12 @@ public class InputKernel {
 
     public void onKey(SimeKey key) {
         if (key == null) return;
-        engineHandler.post(() -> onKeyInternal(key));
+        engineRunner.post(() -> onKeyInternal(key));
     }
 
     /** Unified candidate pick — routes by mode on the engine thread. */
     public void onCandidatePick(int index) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (mode == KeyboardMode.ENGLISH) {
                 onEnglishCompletionPickInternal(index);
             } else {
@@ -338,16 +393,16 @@ public class InputKernel {
     // ===== Listener fire methods (post to main thread) =====
 
     private void fireCommitText(String text) {
-        mainHandler.post(() -> { if (listener != null) listener.onCommitText(text); });
+        mainRunner.post(() -> { if (listener != null) listener.onCommitText(text); });
     }
     private void fireDeleteBefore(int count) {
-        mainHandler.post(() -> { if (listener != null) listener.onDeleteBefore(count); });
+        mainRunner.post(() -> { if (listener != null) listener.onDeleteBefore(count); });
     }
     private void fireSendEnter() {
-        mainHandler.post(() -> { if (listener != null) listener.onSendEnter(); });
+        mainRunner.post(() -> { if (listener != null) listener.onSendEnter(); });
     }
     private void fireSetComposingText(String text) {
-        mainHandler.post(() -> { if (listener != null) listener.onSetComposingText(text); });
+        mainRunner.post(() -> { if (listener != null) listener.onSetComposingText(text); });
     }
 
     private void showPunctuationPicker() {
@@ -649,7 +704,7 @@ public class InputKernel {
      */
     public void onPinyinCandidatePick(String digits, String letters, boolean fallback) {
         if (digits == null || letters == null) return;
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (!isChineseLike()) return;
             state.applyLetterPick(digits, letters, fallback);
             redecodeAndPublish();
@@ -657,7 +712,7 @@ public class InputKernel {
     }
 
     public void onPinyinAltPick(int index) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (index < 0 || index >= pinyinAlts.size()) return;
             if (!isChineseLike()) return;
             PinyinAlt alt = pinyinAlts.get(index);
@@ -675,7 +730,7 @@ public class InputKernel {
     }
 
     public void onFallbackLetterPick(char letter) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (!isChineseLike()) return;
             while (state.lettersEnd < state.buffer.length()
                     && state.buffer.charAt(state.lettersEnd) == '\'') {
@@ -738,7 +793,7 @@ public class InputKernel {
     // ===== Mode switching =====
 
     public void switchMode(KeyboardMode next) {
-        engineHandler.post(() -> switchModeInternal(next));
+        engineRunner.post(() -> switchModeInternal(next));
     }
 
     private void switchModeInternal(KeyboardMode next) {
@@ -772,7 +827,7 @@ public class InputKernel {
     }
 
     public void switchChineseLayout(ChineseLayout layout) {
-        engineHandler.post(() -> {
+        engineRunner.post(() -> {
             if (layout == chineseLayout) return;
             this.chineseLayout = layout;
             if (isChineseLike()) redecodeAndPublish();
@@ -877,7 +932,8 @@ public class InputKernel {
 
         if (chineseLayout == ChineseLayout.T9 && !digits.isEmpty()) {
             pinyinAlts = computePinyinAltsFromRaw(
-                    raw, countSyllables(start), digits.length(), digits);
+                    raw, countSyllables(start), digits.length(), digits,
+                    decoder.t9PinyinSyllables(digits, MAX_PINYIN_ALTS));
         } else {
             pinyinAlts = Collections.emptyList();
         }
@@ -911,7 +967,9 @@ public class InputKernel {
 
     /**
      * Extract pinyin alternatives for the next syllable position from a
-     * {@code raw} array returned by {@code DecodeNumSentence}.
+     * {@code raw} array returned by {@code DecodeNumSentence}, then fill
+     * recall gaps with native pinyin syllables derived directly from the
+     * digit tail.
      *
      * <p>The decoder built its lattice with {@code start} syllables fixed
      * in columns {@code [0, p)}, so every result's {@code units} string
@@ -934,7 +992,7 @@ public class InputKernel {
 
     private static List<PinyinAlt> computePinyinAltsFromRaw(
             DecodeResult[] raw, int startSyllables, int maxDigits,
-            String digits) {
+            String digits, String[] nativeSyllables) {
         java.util.LinkedHashMap<String, PinyinAlt> seen =
                 new java.util.LinkedHashMap<>();
         for (DecodeResult r : raw) {
@@ -951,6 +1009,16 @@ public class InputKernel {
             if (seen.containsKey(nextSyl)) continue;
             seen.put(nextSyl, new PinyinAlt(nextSyl, nextSyl, nextSyl.length()));
             if (seen.size() >= MAX_PINYIN_ALTS) break;
+        }
+        if (nativeSyllables != null) {
+            for (String syl : nativeSyllables) {
+                if (seen.size() >= MAX_PINYIN_ALTS) break;
+                if (syl == null || syl.isEmpty()) continue;
+                if (syl.length() > maxDigits) continue;
+                if (!seen.containsKey(syl)) {
+                    seen.put(syl, new PinyinAlt(syl, syl, syl.length()));
+                }
+            }
         }
         // Always add the current digit's individual letters as fallback.
         char firstDigit = 0;
@@ -1086,7 +1154,7 @@ public class InputKernel {
                 chineseLayout,
                 englishBuffer.toString(),
                 inPunctuationPicker);
-        mainHandler.post(() -> {
+        mainRunner.post(() -> {
             if (observer != null) observer.onStateChanged(snap);
         });
     }

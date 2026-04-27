@@ -56,6 +56,7 @@ public class SimeEngine {
     private static native int nativeDecodeNumSentence(String prefixLetters, String digits, int extra);
     private static native int nativeNextTokens(int[] contextIds, int limit, boolean enOnly);
     private static native int nativeGetTokens(String prefix, int limit, boolean enOnly);
+    private static native String[] nativeT9PinyinSyllables(String digits, int limit);
 
     // Typed accessors for stored results.
     private static native String nativeResultText(int index);
@@ -128,6 +129,17 @@ public class SimeEngine {
             return new DecodeResult[0];
         int count = nativeGetTokens(prefix, limit, enOnly);
         return readResults(count);
+    }
+
+    /**
+     * Return legal pinyin syllables whose T9 spelling consumes a prefix of
+     * {@code digits}. Used to fill the T9 left strip independently of hanzi
+     * candidate recall.
+     */
+    public String[] t9PinyinSyllables(String digits, int limit) {
+        if (!ready || digits == null || digits.isEmpty() || limit <= 0)
+            return new String[0];
+        return nativeT9PinyinSyllables(digits, limit);
     }
 
     // ===== Internals =====

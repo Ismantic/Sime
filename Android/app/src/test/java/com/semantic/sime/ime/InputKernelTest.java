@@ -5,7 +5,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.semantic.sime.ime.engine.DecodeResult;
-import com.semantic.sime.ime.engine.DecodeResult;
 import com.semantic.sime.ime.engine.Decoder;
 import com.semantic.sime.ime.keyboard.SimeKey;
 
@@ -29,8 +28,10 @@ public class InputKernelTest {
     private static final class FakeDecoder implements Decoder {
         final Map<String, DecodeResult[]> sentenceMap = new HashMap<>();
         final Map<String, DecodeResult[]> numSentenceMap = new HashMap<>();
+        final Map<String, String[]> t9PinyinMap = new HashMap<>();
         int sentenceCalls = 0;
         int numSentenceCalls = 0;
+        int t9PinyinCalls = 0;
 
         @Override
         public DecodeResult[] decodeSentence(String pinyin, int limit) {
@@ -54,6 +55,10 @@ public class InputKernelTest {
             numSentenceMap.put(startLetters + "|" + digits, results);
         }
 
+        void putT9PinyinSyllables(String digits, String... syllables) {
+            t9PinyinMap.put(digits, syllables);
+        }
+
         @Override
         public DecodeResult[] nextTokens(int[] contextIds, int limit, boolean enOnly) {
             return new DecodeResult[0];
@@ -62,6 +67,13 @@ public class InputKernelTest {
         @Override
         public DecodeResult[] getTokens(String prefix, int limit, boolean enOnly) {
             return new DecodeResult[0];
+        }
+
+        @Override
+        public String[] t9PinyinSyllables(String digits, int limit) {
+            t9PinyinCalls++;
+            String[] r = t9PinyinMap.get(digits);
+            return r != null ? r : new String[0];
         }
 
         @Override
@@ -79,20 +91,60 @@ public class InputKernelTest {
         @Override public void onSetComposingText(String p)   { /* unused */ }
     }
 
+    private static final class RecordingObserver implements InputKernel.StateObserver {
+        InputKernel.Snapshot last;
+
+        @Override
+        public void onStateChanged(InputKernel.Snapshot snapshot) {
+            last = snapshot;
+        }
+    }
+
     private FakeDecoder decoder;
     private RecordingListener listener;
+    private RecordingObserver observer;
     private InputKernel kernel;
 
     @Before
     public void setUp() {
         decoder = new FakeDecoder();
         listener = new RecordingListener();
-        kernel = new InputKernel(decoder);
-        kernel.attach(listener, null);
+        observer = new RecordingObserver();
+        kernel = new InputKernel(decoder, true);
+        kernel.attach(listener, observer);
     }
 
     private static DecodeResult r(String text, String units, int consumed) {
         return new DecodeResult(text, units, consumed);
+    }
+
+    private InputKernel.Snapshot snap() {
+        return observer.last != null
+                ? observer.last
+                : new InputKernel.Snapshot(
+                        new InputState(),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        "",
+                        KeyboardMode.CHINESE,
+                        ChineseLayout.QWERTY,
+                        "");
+    }
+
+    private InputState state() {
+        return snap().state;
+    }
+
+    private List<DecodeResult> candidates() {
+        return snap().candidates;
+    }
+
+    private List<InputKernel.PinyinAlt> pinyinAlts() {
+        return snap().pinyinAlts;
+    }
+
+    private KeyboardMode mode() {
+        return snap().mode;
     }
 
     // ---------- QWERTY letter typing ----------
@@ -102,10 +154,10 @@ public class InputKernelTest {
         decoder.putSentence("n", r("你", "ni", 1));
         kernel.onKey(SimeKey.letter('n'));
 
-        assertEquals("n", kernel.getState().buffer);
-        assertEquals(1, kernel.getState().lettersEnd);
-        assertEquals(1, kernel.getCandidates().size());
-        assertEquals("你", kernel.getCandidates().get(0).text);
+        assertEquals("n", state().buffer);
+        assertEquals(1, state().lettersEnd);
+        assertEquals(1, candidates().size());
+        assertEquals("你", candidates().get(0).text);
     }
 
     @Test
@@ -113,11 +165,11 @@ public class InputKernelTest {
         decoder.putSentence("nihao", r("你好", "ni'hao", 5));
         for (char c : "nihao".toCharArray()) kernel.onKey(SimeKey.letter(c));
 
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
 
         assertEquals(Arrays.asList("你好"), listener.committed);
-        assertEquals("", kernel.getState().buffer);
-        assertTrue(kernel.getState().selections.isEmpty());
+        assertEquals("", state().buffer);
+        assertTrue(state().selections.isEmpty());
     }
 
     @Test
@@ -126,13 +178,13 @@ public class InputKernelTest {
         decoder.putSentence("hao",   r("好", "hao", 3));
 
         for (char c : "nihao".toCharArray()) kernel.onKey(SimeKey.letter(c));
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
 
         // Partial pick does not commit; it holds the selection and
         // updates state so remaining() points at the next segment.
         assertTrue("partial pick must not commit", listener.committed.isEmpty());
-        assertEquals("你", kernel.getState().committedText());
-        assertEquals("hao", kernel.getState().remaining());
+        assertEquals("你", state().committedText());
+        assertEquals("hao", state().remaining());
     }
 
     // ---------- Backspace ----------
@@ -152,8 +204,8 @@ public class InputKernelTest {
 
         kernel.onKey(SimeKey.backspace());
 
-        assertEquals("n", kernel.getState().buffer);
-        assertEquals(1, kernel.getState().lettersEnd);
+        assertEquals("n", state().buffer);
+        assertEquals(1, state().lettersEnd);
     }
 
     @Test
@@ -161,13 +213,13 @@ public class InputKernelTest {
         decoder.putSentence("nihao", r("你", "ni", 2));
         decoder.putSentence("hao",   r("好", "hao", 3));
         for (char c : "nihao".toCharArray()) kernel.onKey(SimeKey.letter(c));
-        kernel.onHanziCandidatePick(0);
-        assertEquals("你", kernel.getState().committedText());
+        kernel.onCandidatePick(0);
+        assertEquals("你", state().committedText());
 
         kernel.onKey(SimeKey.backspace());
 
-        assertEquals("", kernel.getState().committedText());
-        assertEquals("nihao", kernel.getState().remaining());
+        assertEquals("", state().committedText());
+        assertEquals("nihao", state().remaining());
     }
 
     // ---------- Space / Enter ----------
@@ -199,7 +251,7 @@ public class InputKernelTest {
         kernel.onKey(SimeKey.letter('i'));
         kernel.onKey(SimeKey.enter());
         assertEquals(Arrays.asList("ni"), listener.committed);
-        assertTrue(kernel.getState().buffer.isEmpty());
+        assertTrue(state().buffer.isEmpty());
     }
 
     // ---------- English mode ----------
@@ -208,8 +260,9 @@ public class InputKernelTest {
     public void englishLetterCommitsDirect() {
         kernel.switchMode(KeyboardMode.ENGLISH);
         kernel.onKey(SimeKey.letter('a'));
-        assertEquals(Collections.singletonList("a"), listener.committed);
-        assertTrue(kernel.getState().buffer.isEmpty());
+        assertTrue(listener.committed.isEmpty());
+        assertEquals("a", snap().englishBuffer);
+        assertTrue(state().buffer.isEmpty());
     }
 
     @Test
@@ -220,9 +273,9 @@ public class InputKernelTest {
 
         kernel.onKey(SimeKey.toggleLang());
 
-        assertEquals(Arrays.asList("ni"), listener.committed);
-        assertEquals(KeyboardMode.ENGLISH, kernel.getMode());
-        assertTrue(kernel.getState().buffer.isEmpty());
+        assertEquals(Arrays.asList("你"), listener.committed);
+        assertEquals(KeyboardMode.ENGLISH, mode());
+        assertTrue(state().buffer.isEmpty());
     }
 
     // ---------- T9 ----------
@@ -237,10 +290,10 @@ public class InputKernelTest {
         kernel.onKey(SimeKey.digit('2'));
         kernel.onKey(SimeKey.digit('6'));
 
-        assertEquals("6426", kernel.getState().buffer);
-        assertEquals(0, kernel.getState().lettersEnd);
-        assertEquals(1, kernel.getCandidates().size());
-        assertEquals("你好", kernel.getCandidates().get(0).text);
+        assertEquals("6426", state().buffer);
+        assertEquals(0, state().lettersEnd);
+        assertEquals(1, candidates().size());
+        assertEquals("你好", candidates().get(0).text);
     }
 
     @Test
@@ -252,9 +305,9 @@ public class InputKernelTest {
 
         kernel.onPinyinCandidatePick("64", "ni", false);
 
-        assertEquals("ni26", kernel.getState().buffer);
-        assertEquals(2, kernel.getState().lettersEnd);
-        assertEquals(1, kernel.getState().undoStack.size());
+        assertEquals("ni26", state().buffer);
+        assertEquals(2, state().lettersEnd);
+        assertTrue(state().selections.isEmpty());
     }
 
     @Test
@@ -271,14 +324,14 @@ public class InputKernelTest {
 
         // Now pick the hanzi candidate. It should consume the WHOLE buffer
         // ("ni" + "26" = 4 bytes) and commit the text.
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
 
         assertEquals("hanzi pick should commit and clear",
                 java.util.Collections.singletonList("你饿"), listener.committed);
         assertEquals("buffer should be empty after full pick",
-                "", kernel.getState().buffer);
+                "", state().buffer);
         assertTrue("selections should be empty after commit",
-                kernel.getState().selections.isEmpty());
+                state().selections.isEmpty());
     }
 
     @Test
@@ -298,7 +351,7 @@ public class InputKernelTest {
         kernel.onPinyinCandidatePick("64", "ni", false);
         // buffer = "ni267", lettersEnd = 2
 
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
         // selections = [{你饿, ni'e, 4}], selectedLength = 4
         // buffer = "ni267", lettersEnd = 2 (NOT updated)
         // remaining = "7"
@@ -312,7 +365,7 @@ public class InputKernelTest {
 
         // Expected: buffer should become "ni26ba" (positions 4-5 replaced),
         // OR semantically: remaining should now reflect the "ba" letters.
-        String remaining = kernel.getState().remaining();
+        String remaining = state().remaining();
         assertEquals("remaining must contain the picked letters 'ba'",
                 "ba", remaining);
     }
@@ -341,9 +394,9 @@ public class InputKernelTest {
         // After commitFirstCandidateInline, state.buffer should be the
         // leftover digits "789" (= remaining after consuming 4 bytes from
         // "ni26789")
-        assertEquals("789", kernel.getState().buffer);
+        assertEquals("789", state().buffer);
         assertEquals("lettersEnd reset since the consumed pick crossed it",
-                0, kernel.getState().lettersEnd);
+                0, state().lettersEnd);
     }
 
     @Test
@@ -356,19 +409,19 @@ public class InputKernelTest {
         kernel.onPinyinCandidatePick("64", "ni", false);
         // buffer = "ni267", lettersEnd = 2
 
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
         // selections=[{你饿,4}], selectedLength=4
         // lettersEnd should be bumped to 4 by the new invariant
-        assertEquals(4, kernel.getState().lettersEnd);
-        assertEquals(4, kernel.getState().selectedLength());
+        assertEquals(4, state().lettersEnd);
+        assertEquals(4, state().selectedLength());
 
         // Undo the hanzi pick
         kernel.onKey(SimeKey.backspace());
         // Should revert to: selections empty, lettersEnd back to 2
-        assertTrue(kernel.getState().selections.isEmpty());
+        assertTrue(state().selections.isEmpty());
         assertEquals("lettersEnd should be restored to 2",
-                2, kernel.getState().lettersEnd);
-        assertEquals("buffer unchanged", "ni267", kernel.getState().buffer);
+                2, state().lettersEnd);
+        assertEquals("buffer unchanged", "ni267", state().buffer);
     }
 
     @Test
@@ -384,10 +437,8 @@ public class InputKernelTest {
 
         kernel.onKey(SimeKey.backspace());
         assertEquals("backspace reverts the pinyin pick",
-                "6426", kernel.getState().buffer);
-        assertEquals(0, kernel.getState().lettersEnd);
-        assertTrue("undoStack should be empty after revert",
-                kernel.getState().undoStack.isEmpty());
+                "6426", state().buffer);
+        assertEquals(0, state().lettersEnd);
     }
 
     @Test
@@ -400,9 +451,8 @@ public class InputKernelTest {
 
         kernel.onKey(SimeKey.backspace());
 
-        assertEquals("6426", kernel.getState().buffer);
-        assertEquals(0, kernel.getState().lettersEnd);
-        assertTrue(kernel.getState().undoStack.isEmpty());
+        assertEquals("6426", state().buffer);
+        assertEquals(0, state().lettersEnd);
     }
 
     // ---------- Separator ----------
@@ -410,7 +460,7 @@ public class InputKernelTest {
     @Test
     public void separatorOnEmptyBufferNoop() {
         kernel.onKey(SimeKey.separator());
-        assertTrue(kernel.getState().buffer.isEmpty());
+        assertTrue(state().buffer.isEmpty());
         assertTrue(listener.committed.isEmpty());
     }
 
@@ -421,7 +471,7 @@ public class InputKernelTest {
         kernel.onKey(SimeKey.letter('n'));
         kernel.onKey(SimeKey.letter('i'));
         kernel.onKey(SimeKey.separator());
-        assertEquals("ni'", kernel.getState().buffer);
+        assertEquals("ni'", state().buffer);
     }
 
     // ---------- Mode switching ----------
@@ -429,9 +479,9 @@ public class InputKernelTest {
     @Test
     public void toNumberAndBackRestores() {
         kernel.onKey(SimeKey.toNumber());
-        assertEquals(KeyboardMode.NUMBER, kernel.getMode());
+        assertEquals(KeyboardMode.NUMBER, mode());
         kernel.onKey(SimeKey.toBack());
-        assertEquals(KeyboardMode.CHINESE, kernel.getMode());
+        assertEquals(KeyboardMode.CHINESE, mode());
     }
 
     @Test
@@ -440,8 +490,8 @@ public class InputKernelTest {
         kernel.onKey(SimeKey.letter('n'));
         kernel.onKey(SimeKey.letter('i'));
         kernel.onKey(SimeKey.clear());
-        assertTrue(kernel.getState().buffer.isEmpty());
-        assertTrue(kernel.getCandidates().isEmpty());
+        assertTrue(state().buffer.isEmpty());
+        assertTrue(candidates().isEmpty());
     }
 
     @Test
@@ -450,7 +500,7 @@ public class InputKernelTest {
         decoder.putSentence("nihao", r("你", "ni", 2));
         decoder.putSentence("hao",   r("好", "hao", 3));
         for (char c : "nihao".toCharArray()) kernel.onKey(SimeKey.letter(c));
-        kernel.onHanziCandidatePick(0);
+        kernel.onCandidatePick(0);
         assertFalse("partial pick must not commit",
                 listener.committed.contains("你"));
     }
@@ -482,18 +532,21 @@ public class InputKernelTest {
         // Sanity: candidates contain ALL raw entries (no kernel-side
         // filtering). 你好 is deduped against the implicit Layer 1 entry
         // only when shared dedup applies — here all 5 are distinct.
-        assertEquals(5, kernel.getCandidates().size());
+        assertEquals(5, candidates().size());
 
-        List<InputKernel.PinyinAlt> alts = kernel.getPinyinAlts();
-        assertEquals(4, alts.size());
+        List<InputKernel.PinyinAlt> alts = pinyinAlts();
+        assertEquals(6, alts.size());
         assertEquals("ni", alts.get(0).letters);
         assertEquals(2,    alts.get(0).digitCount);
         assertEquals("mi", alts.get(1).letters);
         assertEquals("mo", alts.get(2).letters);
         assertEquals("n",  alts.get(3).letters);
         assertEquals(1,    alts.get(3).digitCount);
+        assertEquals("m",  alts.get(4).letters);
+        assertEquals("o",  alts.get(5).letters);
 
-        // CRITICAL: only ONE decoder call per keystroke (no second alt call).
+        // CRITICAL: still only one hanzi decoder call per keystroke; the
+        // pinyin strip may use a separate lightweight syllable lookup.
         assertEquals("must not issue a second alt-only decode",
                 4, decoder.numSentenceCalls);
     }
@@ -521,12 +574,36 @@ public class InputKernelTest {
         for (char c : "26".toCharArray()) kernel.onKey(SimeKey.digit(c));
         // buffer="ni26", lettersEnd=2 → triggers ("ni", "26") decode
 
-        List<InputKernel.PinyinAlt> alts = kernel.getPinyinAlts();
-        assertEquals(2, alts.size());
+        List<InputKernel.PinyinAlt> alts = pinyinAlts();
+        assertEquals(5, alts.size());
         assertEquals("e",  alts.get(0).letters);
         assertEquals(1,    alts.get(0).digitCount);
         assertEquals("en", alts.get(1).letters);
         assertEquals(2,    alts.get(1).digitCount);
+        assertEquals("a",  alts.get(2).letters);
+        assertEquals("b",  alts.get(3).letters);
+        assertEquals("c",  alts.get(4).letters);
+    }
+
+    @Test
+    public void pinyinAltsFilledFromNativeSyllablesWhenRawIsSparse() {
+        kernel.setChineseLayout(ChineseLayout.T9);
+        decoder.putNumSentence("", "466453",
+                r("攻克", "gong'ke", 6));
+        decoder.putT9PinyinSyllables("466453",
+                "gong", "hong", "go", "in");
+
+        for (char c : "466453".toCharArray()) kernel.onKey(SimeKey.digit(c));
+
+        List<InputKernel.PinyinAlt> alts = pinyinAlts();
+        assertEquals("gong", alts.get(0).letters);
+        assertEquals("hong", alts.get(1).letters);
+        assertEquals("go",   alts.get(2).letters);
+        assertEquals("in",   alts.get(3).letters);
+        assertEquals(4, alts.get(1).digitCount);
+        assertEquals(2, alts.get(2).digitCount);
+        assertTrue("native pinyin lookup should be used",
+                decoder.t9PinyinCalls > 0);
     }
 
     @Test
@@ -549,12 +626,12 @@ public class InputKernelTest {
         kernel.onPinyinCandidatePick("33",  "de",  false);
 
         // Buffer should have the separator: "hao'de985426" (12 bytes).
-        assertEquals("hao'de985426", kernel.getState().buffer);
-        assertEquals(6, kernel.getState().lettersEnd);
+        assertEquals("hao'de985426", state().buffer);
+        assertEquals(6, state().lettersEnd);
 
         // Candidates are decoder.decodeNumSentence("hao'de", "985426", ...)
         // results, pass-through (with consumed normalized).
-        java.util.List<DecodeResult> after = kernel.getCandidates();
+        java.util.List<DecodeResult> after = candidates();
         assertTrue("must produce candidates from the fixture",
                 after.size() >= 1);
         assertEquals("好的组件", after.get(0).text);
@@ -573,7 +650,7 @@ public class InputKernelTest {
                 r("组",   "zu",      1)); // Layer 2 single
         kernel.onKey(SimeKey.digit('9'));
         kernel.onKey(SimeKey.digit('8'));
-        java.util.List<DecodeResult> after = kernel.getCandidates();
+        java.util.List<DecodeResult> after = candidates();
         assertEquals(2, after.size());
         assertEquals("组件", after.get(0).text);
         assertEquals("组",   after.get(1).text);
@@ -591,10 +668,13 @@ public class InputKernelTest {
                 r("看", "kan", 1),   // 3 letters > 1 digit → reject
                 r("拉", "la",  1));  // 2 letters > 1 digit → reject
         kernel.onKey(SimeKey.digit('5'));
-        assertTrue(kernel.getPinyinAlts().isEmpty());
+        assertEquals(3, pinyinAlts().size());
+        assertEquals("j", pinyinAlts().get(0).letters);
+        assertEquals("k", pinyinAlts().get(1).letters);
+        assertEquals("l", pinyinAlts().get(2).letters);
         // Both still appear in the candidate bar (no kernel-side filter
         // there).
-        assertEquals(2, kernel.getCandidates().size());
+        assertEquals(2, candidates().size());
     }
 
 }

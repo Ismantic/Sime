@@ -46,6 +46,12 @@ public interface Decoder {
      */
     DecodeResult[] getTokens(String prefix, int limit, boolean enOnly);
 
+    /**
+     * Return legal pinyin syllables whose T9 spelling consumes a prefix of
+     * {@code digits}. Results are used only for the T9 pinyin-alt strip.
+     */
+    String[] t9PinyinSyllables(String digits, int limit);
+
     /** Max context tokens the LM uses for prediction (n-gram order minus 1). */
     int contextSize();
 }

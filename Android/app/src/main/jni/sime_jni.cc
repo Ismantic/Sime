@@ -6,6 +6,7 @@
 // CSV-encoded token IDs.
 
 #include "sime.h"
+#include "dict.h"
 #include "ustr.h"
 
 #include <jni.h>
@@ -120,6 +121,28 @@ Java_com_semantic_sime_SimeEngine_nativeGetTokens(
         static_cast<std::size_t>(limit),
         static_cast<bool>(enOnly));
     return static_cast<jint>(g_results.size());
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_semantic_sime_SimeEngine_nativeT9PinyinSyllables(
+    JNIEnv* env, jclass /*clazz*/,
+    jstring digits, jint limit) {
+
+    auto d = jstringToString(env, digits);
+    std::size_t max = limit > 0 ? static_cast<std::size_t>(limit) : 0;
+    auto alts = sime::Dict::T9PinyinSyllables(d, max);
+
+    jclass string_class = env->FindClass("java/lang/String");
+    jstring empty = env->NewStringUTF("");
+    jobjectArray arr = env->NewObjectArray(
+        static_cast<jsize>(alts.size()), string_class, empty);
+    env->DeleteLocalRef(empty);
+    for (std::size_t i = 0; i < alts.size(); ++i) {
+        jstring s = env->NewStringUTF(alts[i].c_str());
+        env->SetObjectArrayElement(arr, static_cast<jsize>(i), s);
+        env->DeleteLocalRef(s);
+    }
+    return arr;
 }
 
 // ===== Result accessors =====
