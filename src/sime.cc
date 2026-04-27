@@ -384,10 +384,14 @@ void Sime::InitNumNet(std::string_view start,
     // (e.g. 不值得/不知道啊 for 28944326) are just noise. Drop all fuzzy
     // globally. Tail-expansion and per-bucket english are already handled
     // by the per-bucket tier filter below (they lose to Tier-0 at (0,total)).
+    // Mirrors InitNet: only Chinese exact full-coverage triggers the
+    // global drop. English exact (e.g. T9 of "key" = 539) does NOT
+    // count as 完整拼音 — it should not suppress fuzzy CN candidates
+    // that complete the user's actual pinyin intent.
     bool has_full_cover_exact = false;
     for (const auto& e : net[0].es) {
         if (e.id != NotToken && e.end == total
-            && !e.fuzzy && !e.expansion) {
+            && !e.fuzzy && !e.expansion && !e.english) {
             has_full_cover_exact = true;
             break;
         }
