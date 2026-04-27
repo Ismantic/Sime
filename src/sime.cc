@@ -987,9 +987,8 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::abs(scorer_.UnknownPenalty()) / DistancePenalty;
 
     // === Layer 1: Full sentence N-best ===
-    // Scan the whole beam, re-score with distance penalty,
-    // sort by the combined score, then take top (1 + extra).
-    // (frag_penalty is already in beam scores via edge.penalty)
+    // Scan the whole beam, sort by score, take top (1 + extra).
+    // (penalties are already in beam scores via edge.penalty)
     {
         const auto tail = net.back().states.GetStates();
         const std::size_t scan =
@@ -1004,17 +1003,9 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             if (text.empty() || !l1_seen.insert(text).second) continue;
             std::string py = ExtractUnits(path, lower);
 
-            std::size_t piece_len = 0;
-            for (char c : py) {
-                if (c != '\'') ++piece_len;
-            }
-            std::size_t distance = (piece_len > total) ? (piece_len - total) : 0;
-            float_t dist_penalty =
-                static_cast<float_t>(distance) * penalty_per_unit;
-
             l1.push_back({std::move(text), std::move(py),
                           ExtractTokens(path),
-                          -tail[rank].score - dist_penalty,
+                          -tail[rank].score,
                           input.size()});
         }
         std::sort(l1.begin(), l1.end(),
