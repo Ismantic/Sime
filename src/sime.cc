@@ -130,8 +130,8 @@ void Sime::InitNumNet(std::string_view start,
 
     auto emit = [&](std::size_t s, std::size_t new_col,
                     TokenID tid, const char* pieces,
-                    bool en = false, bool fuzzy = false) {
-        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
+                    bool en = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
     auto emit_dat = [&](std::size_t s, Dict::DatType type,
@@ -145,8 +145,7 @@ void Sime::InitNumNet(std::string_view start,
             if (new_col > max_end) continue;
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
-                emit(s, new_col, entry.items[i].id, entry.items[i].pieces,
-                     en, r.fuzzy);
+                emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
             }
         }
     };
@@ -162,8 +161,7 @@ void Sime::InitNumNet(std::string_view start,
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
                 net[s].es.push_back({s, target_col, entry.items[i].id,
-                                     entry.items[i].pieces, 0, true, en,
-                                     r.fuzzy});
+                                     entry.items[i].pieces, 0, true, en});
             }
         }
     };
@@ -264,7 +262,7 @@ void Sime::InitNumNet(std::string_view start,
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             emit(s, new_col, entry.items[i].id,
-                                 entry.items[i].pieces, en, r.fuzzy);
+                                 entry.items[i].pieces, en);
                         }
                     }
                 };
@@ -293,8 +291,7 @@ void Sime::InitNumNet(std::string_view start,
                 if (new_col > total) continue;
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
-                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces,
-                         en, r.fuzzy);
+                    emit(s, new_col, entry.items[i].id, entry.items[i].pieces, en);
                 }
             }
         };
@@ -347,7 +344,7 @@ void Sime::InitNumNet(std::string_view start,
                         for (uint32_t i = 0; i < entry.count; ++i) {
                             net[s].es.push_back({s, s + k, entry.items[i].id,
                                                  entry.items[i].pieces, 0, true,
-                                                 en, r.fuzzy});
+                                                 en});
                         }
                     }
                 };
@@ -368,20 +365,6 @@ void Sime::InitNumNet(std::string_view start,
         return (!e.expansion && !e.english) ? 0 : 1;
     };
 
-    // Global fuzzy gate: if the whole input has a CN exact full-coverage
-    // edge at (0, total), the user's input is complete and unambiguous —
-    // any remaining fuzzy speculations at intermediate buckets are noise.
-    // English exact full-coverage doesn't count (T9 of 'key' = 539 should
-    // still let CN expansion 可以 survive).
-    bool has_full_cover_exact = false;
-    for (const auto& e : net[0].es) {
-        if (e.id != NotToken && e.end == total
-            && !e.fuzzy && !e.expansion && !e.english) {
-            has_full_cover_exact = true;
-            break;
-        }
-    }
-
     // Single-track per-bucket gate: drop everything above the best tier
     // seen per (start, end). With 2 tiers that means: CN exact in bucket
     // → keep only CN exact; otherwise keep all tier-1.
@@ -396,7 +379,6 @@ void Sime::InitNumNet(std::string_view start,
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
-                if (has_full_cover_exact && e.fuzzy) return true;
                 return tier_of(e) > best[e.end];
             }), edges.end());
         for (const auto& e : edges) best[e.end] = 0xFF;
@@ -781,8 +763,8 @@ void Sime::InitNet(std::string_view input,
 
     auto emit = [&](std::size_t s, std::size_t new_col,
                     TokenID tid, const char* pieces,
-                    bool en = false, bool fuzzy = false) {
-        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
+                    bool en = false) {
+        net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
     // Inclusive boundary set: position p is a boundary iff some [j, p)
@@ -824,7 +806,7 @@ void Sime::InitNet(std::string_view input,
                 auto entry = dict_.GetEntry(type, r.value);
                 for (uint32_t i = 0; i < entry.count; ++i) {
                     emit(s, s + r.length, entry.items[i].id,
-                         entry.items[i].pieces, en, r.fuzzy);
+                         entry.items[i].pieces, en);
                 }
             }
         };
@@ -856,7 +838,7 @@ void Sime::InitNet(std::string_view input,
                     for (uint32_t i = 0; i < entry.count; ++i) {
                         net[s].es.push_back({s, target, entry.items[i].id,
                                              entry.items[i].pieces, 0, true,
-                                             false, r.fuzzy});
+                                             false});
                     }
                 }
             }
@@ -869,7 +851,7 @@ void Sime::InitNet(std::string_view input,
                     for (uint32_t i = 0; i < entry.count; ++i) {
                         net[s].es.push_back({s, total, entry.items[i].id,
                                              entry.items[i].pieces, 0, true,
-                                             true, r.fuzzy});
+                                             true});
                     }
                 }
             }
@@ -884,17 +866,6 @@ void Sime::InitNet(std::string_view input,
         return (!e.expansion && !e.english) ? 0 : 1;
     };
 
-    // Global fuzzy gate: only CN exact full-coverage triggers global drop.
-    // English exact full-coverage (e.g. T9 'key' = 539) doesn't count.
-    bool has_full_cover_exact = false;
-    for (const auto& e : net[0].es) {
-        if (e.id != NotToken && e.end == total
-            && !e.fuzzy && !e.expansion && !e.english) {
-            has_full_cover_exact = true;
-            break;
-        }
-    }
-
     // Single-track per-bucket gate: CN exact dominates its bucket;
     // otherwise tier-1 edges (CN expansion + any English) all survive.
     std::vector<uint8_t> best(total + 2, 0xFF);
@@ -908,7 +879,6 @@ void Sime::InitNet(std::string_view input,
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
-                if (has_full_cover_exact && e.fuzzy) return true;
                 return tier_of(e) > best[e.end];
             }), edges.end());
         for (const auto& e : edges) best[e.end] = 0xFF;

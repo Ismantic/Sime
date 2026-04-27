@@ -189,12 +189,11 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
     exact_results.reserve(max_num);
     fuzzy_results.reserve(max_num);
     std::unordered_set<uint64_t> seen;
-    auto add_result = [&](std::vector<SearchResult>& out, uint32_t val,
-                          bool fuzzy) {
+    auto add_result = [&](std::vector<SearchResult>& out, uint32_t val) {
         uint64_t key = (static_cast<uint64_t>(val) << 32)
                      | static_cast<uint64_t>(input_len);
         if (!seen.insert(key).second) return;
-        out.push_back({val, input_len, fuzzy});
+        out.push_back({val, input_len});
     };
 
     for (const auto& s : states) {
@@ -202,11 +201,7 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
         std::size_t vp = s.pos ^ array_[s.pos].index;
         if (vp >= size_ || !array_[vp].HasValue()) continue;
         uint32_t val = static_cast<uint32_t>(array_[vp].value);
-        if (s.fuzzy) {
-            add_result(fuzzy_results, val, true);
-        } else {
-            add_result(exact_results, val, false);
-        }
+        add_result(s.fuzzy ? fuzzy_results : exact_results, val);
     }
 
     if (include_last_syllable) {
@@ -221,10 +216,8 @@ std::vector<SearchResult> DoubleArray::CollectPrefixMatchesPinyin(
                 if (array_[pos].eow) {
                     std::size_t vp = pos ^ array_[pos].index;
                     if (vp < size_ && array_[vp].HasValue()) {
-                        add_result(
-                            fuzzy_results,
-                            static_cast<uint32_t>(array_[vp].value),
-                            true);
+                        add_result(fuzzy_results,
+                            static_cast<uint32_t>(array_[vp].value));
                     }
                 }
                 uint32_t base = array_[pos].index;
@@ -406,7 +399,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             uint64_t key = (static_cast<uint64_t>(val) << 32)
                          | static_cast<uint64_t>(input_len);
             if (!seen.insert(key).second) continue;
-            results.push_back({val, input_len, false});
+            results.push_back({val, input_len});
             if (results.size() >= max_num) return;
         }
     };
@@ -687,7 +680,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
             uint64_t key = (static_cast<uint64_t>(val) << 32)
                          | static_cast<uint64_t>(input_len);
             if (!seen.insert(key).second) continue;
-            results.push_back({val, input_len, false});
+            results.push_back({val, input_len});
             if (results.size() >= max_num) return;
         }
     };

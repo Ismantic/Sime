@@ -34,7 +34,6 @@ static_assert(alignof(ArrayUnit) == 4, "ArrayUnit alignment must be 4");
 struct SearchResult {
     uint32_t value = 0;
     std::size_t length = 0;
-    bool fuzzy = false;  // matched via abbreviation/initial-skip path
 };
 
 class DoubleArray {
