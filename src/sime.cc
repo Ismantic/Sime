@@ -319,34 +319,38 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
-    // Tier-gated source filter: per (start, end) bucket, keep only the
-    // highest-priority tier present. Priority:
-    //   0: CN exact   (!expansion, !english)
-    //   1: everything else — CN expansion, English exact, English expansion
-    // CN exact dominates its bucket; otherwise tier-1 edges all survive
-    // and beam search picks the winner by score.
+    // Two-track per-bucket tier filter: CN edges (!english) and English
+    // edges (english) are filtered on independent tracks, so an exact
+    // edge on one track doesn't suppress edges on the other.
+    //   tier 0: !expansion (exact)
+    //   tier 1: expansion (abbrev / completion)
+    // Keeps both CN exact and English exact alive when they share a
+    // bucket (e.g. 466453 → 攻克 + google), and keeps CN expansion
+    // alongside English exact (e.g. 539 → 可以 + key).
     auto tier_of = [](const Link& e) -> uint8_t {
         if (e.id == NotToken) return 0;
-        return (!e.expansion && !e.english) ? 0 : 1;
+        return e.expansion ? 1 : 0;
     };
-
-    // Single-track per-bucket gate: drop everything above the best tier
-    // seen per (start, end). With 2 tiers that means: CN exact in bucket
-    // → keep only CN exact; otherwise keep all tier-1.
-    std::vector<uint8_t> best(total + 2, 0xFF);
+    std::vector<uint8_t> best_py(total + 2, 0xFF);
+    std::vector<uint8_t> best_en(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
+            auto& best = e.english ? best_en : best_py;
             if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
+                const auto& best = e.english ? best_en : best_py;
                 return tier_of(e) > best[e.end];
             }), edges.end());
-        for (const auto& e : edges) best[e.end] = 0xFF;
+        for (const auto& e : edges) {
+            best_py[e.end] = 0xFF;
+            best_en[e.end] = 0xFF;
+        }
     }
 
     net[total].es.push_back({total, total + 1, NotToken});
@@ -575,13 +579,15 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
         std::size_t cnt = edge.end;
-        // l2_full = direct CN exact only (= !expansion && !english).
+        // l2_full = direct exact matches (CN or English), sorted by
+        // score within the full group. Mirrors DecodeSentence so English
+        // exact (e.g. google for 466453) ranks alongside CN exact.
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, cnt},
-             !edge.expansion && !edge.english});
+             !edge.expansion});
     }
 
     for (auto& entry : best_l2) {
@@ -809,30 +815,35 @@ void Sime::InitNet(std::string_view input,
         }
     }
 
-    // Tier-gated source filter:
-    //   0: exact matches (!expansion), both CN and English
-    //   1: expansion matches
+    // Two-track per-bucket tier filter: CN edges (!english) and English
+    // edges (english) are filtered on independent tracks, so an exact
+    // edge on one track doesn't suppress edges on the other.
+    //   tier 0: !expansion (exact)
+    //   tier 1: expansion (abbrev / completion)
     auto tier_of = [](const Link& e) -> uint8_t {
         if (e.id == NotToken) return 0;
-        return !e.expansion ? 0 : 1;
+        return e.expansion ? 1 : 0;
     };
-
-    // Single-track per-bucket gate: exact matches dominate expansion in
-    // the same bucket; otherwise expansion edges survive for scoring.
-    std::vector<uint8_t> best(total + 2, 0xFF);
+    std::vector<uint8_t> best_py(total + 2, 0xFF);
+    std::vector<uint8_t> best_en(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
+            auto& best = e.english ? best_en : best_py;
             if (t < best[e.end]) best[e.end] = t;
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
+                const auto& best = e.english ? best_en : best_py;
                 return tier_of(e) > best[e.end];
             }), edges.end());
-        for (const auto& e : edges) best[e.end] = 0xFF;
+        for (const auto& e : edges) {
+            best_py[e.end] = 0xFF;
+            best_en[e.end] = 0xFF;
+        }
     }
 
     net[total].es.push_back({total, total + 1, NotToken});
@@ -881,10 +892,8 @@ void Sime::PruneNode(std::vector<Link>& edges,
 
         // Single-key sort: estimate first-pass beam cost as
         //   unigram_score + edge.penalty
-        // edge.penalty already encodes mismatch * PinyinMatchPenalty plus
-        // the English penalty (set by ComputeEdgePenalties), so all the
-        // priority signals — !expansion, !english, low mismatch — fall
-        // out naturally from this single number.
+        // edge.penalty already encodes the English / expansion penalties
+        // set by ComputeEdgePenalties.
         std::vector<std::pair<float_t, std::size_t>> scored;
         scored.reserve(indices.size());
         for (auto idx : indices) {

@@ -19,8 +19,8 @@ android {
         applicationId = "com.semantic.sime"
         minSdk = 24
         targetSdk = 35
-        versionCode = 65
-        versionName = "0.15.1"
+        versionCode = 66
+        versionName = "0.15.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

@@ -71,16 +71,16 @@ pipeline/lookup_ngram.py
 scripts/
 
 # Android
-Android/app/src/main/assets/*.bin
-Android/app/build/
-Android/app/.cxx/
-Android/build/
-Android/.gradle/
-Android/local.properties
-Android/gradle/wrapper/gradle-wrapper.jar
-Android/keystore.properties
-Android/**/*.jks
-Android/**/*.keystore
+#Android/app/src/main/assets/*.bin
+#Android/app/build/
+#Android/app/.cxx/
+#Android/build/
+#Android/.gradle/
+#Android/local.properties
+#Android/gradle/wrapper/gradle-wrapper.jar
+#Android/keystore.properties
+#Android/**/*.jks
+#Android/**/*.keystore
 
 # Runtime assets bundled for platform builds (kept locally, not tracked)
 # Copy from pipeline/output/ before building:
