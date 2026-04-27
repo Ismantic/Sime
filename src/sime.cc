@@ -412,11 +412,6 @@ void Sime::InitNumNet(std::string_view start,
         for (const auto& e : edges) best[e.end] = 0xFF;
     }
 
-    std::string combined(start);
-    combined += nums;
-    for (std::size_t i = 0; i < total; ++i) {
-        PruneNode(net[i].es, combined, p);
-    }
     net[total].es.push_back({total, total + 1, NotToken});
 }
 
@@ -567,6 +562,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
     InitNumNet(start, nums, net, can_tail_expand);
     ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
+    for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
@@ -704,6 +700,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(  // (DecodeNumSentence: 保持原 
     std::vector<Node> net;
     InitNumNet(start, nums, net, /*expansion=*/false);
     ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, start.size());
+    for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
@@ -761,6 +758,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/false);
     ComputeEdgePenalties(net, lower, PinyinMatchPenalty, lower.size() + 1);
+    for (auto& col : net) PruneNode(col.es);
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -926,20 +924,14 @@ void Sime::InitNet(std::string_view input,
         for (const auto& e : edges) best[e.end] = 0xFF;
     }
 
-    for (std::size_t i = 0; i < total; ++i) {
-        PruneNode(net[i].es, input, total + 1);
-    }
     net[total].es.push_back({total, total + 1, NotToken});
 }
 
 void Sime::PruneNode(std::vector<Link>& edges,
-                     std::string_view input,
-                     std::size_t t9_boundary,
                      std::unordered_map<TokenID, float_t>* score_cache) const {
     if (edges.size() <= NodeSize) return;
 
-    // span = e.end - e.start; bounded by max word length (≤ ~12). Use a flat
-    // vector indexed by span; leaves unused slots empty but avoids hashing.
+    // Group by span = end - start (bounded by max word length ≤ ~12).
     std::size_t max_span = 0;
     for (const auto& e : edges) {
         std::size_t span = e.end - e.start;
@@ -966,66 +958,34 @@ void Sime::PruneNode(std::vector<Link>& edges,
         return scorer_.ScoreMove(ppos, id, pnext);
     };
 
-    // Precompute mismatch count per edge (only when pruning is needed).
-    // Tier 0/1 edges (non-fuzzy, non-expansion) are known-mismatch==0;
-    // skip the expensive CountSyllableMismatch call for them.
-    std::vector<std::size_t> edge_mismatch(edges.size(), 0);
-    for (std::size_t i = 0; i < edges.size(); ++i) {
-        const auto& e = edges[i];
-        if (!e.pieces || e.id == NotToken) continue;
-        if (!e.fuzzy && !e.expansion) continue;  // mismatch = 0 by definition
-        auto slice = input.substr(e.start, e.end - e.start);
-        bool is_t9 = (e.start >= t9_boundary);
-        edge_mismatch[i] = CountSyllableMismatch(e.pieces, slice, is_t9);
-    }
-
     std::vector<Link> pruned;
     pruned.reserve(edges.size());
 
     for (auto& indices : groups) {
         if (indices.empty()) continue;
         if (indices.size() <= NodeSize) {
-            for (auto idx : indices) {
-                pruned.push_back(edges[idx]);
-            }
+            for (auto idx : indices) pruned.push_back(edges[idx]);
             continue;
         }
 
-        struct ScoredEdge {
-            float_t score;
-            std::size_t mismatch;
-            bool expansion;
-            bool english;
-            std::size_t idx;
-        };
-        std::vector<ScoredEdge> scored;
+        // Single-key sort: estimate first-pass beam cost as
+        //   unigram_score + edge.penalty
+        // edge.penalty already encodes mismatch * PinyinMatchPenalty plus
+        // the English penalty (set by ComputeEdgePenalties), so all the
+        // priority signals — !expansion, !english, low mismatch — fall
+        // out naturally from this single number.
+        std::vector<std::pair<float_t, std::size_t>> scored;
         scored.reserve(indices.size());
         for (auto idx : indices) {
-            scored.push_back({get_score(edges[idx].id),
-                              edge_mismatch[idx],
-                              edges[idx].expansion,
-                              edges[idx].english, idx});
+            float_t cost = get_score(edges[idx].id) + edges[idx].penalty;
+            scored.emplace_back(cost, idx);
         }
-
-        // Priority: !expansion > !english > low mismatch > low score.
-        // !english is checked before mismatch so CN expansion (typically
-        // mismatch >= n_syllables-1) ranks above English expansion (which
-        // has no '\'' separators in pieces and so mismatch counts as a
-        // single "syllable" with at most 1 mismatch). Otherwise English
-        // expansion would push CN expansion off the per-span cap.
-        std::partial_sort(
-            scored.begin(),
-            scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
-            scored.end(),
-            [](const ScoredEdge& a, const ScoredEdge& b) {
-                if (a.expansion != b.expansion) return !a.expansion;
-                if (a.english != b.english) return !a.english;
-                if (a.mismatch != b.mismatch) return a.mismatch < b.mismatch;
-                return a.score < b.score;
-            });
+        std::partial_sort(scored.begin(),
+                          scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
+                          scored.end());
 
         for (std::size_t i = 0; i < NodeSize; ++i) {
-            pruned.push_back(edges[scored[i].idx]);
+            pruned.push_back(edges[scored[i].second]);
         }
     }
 
@@ -1100,6 +1060,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/true);
     ComputeEdgePenalties(net, lower, PinyinMatchPenalty, total + 1);
+    for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
     State init(0.0, 0, scorer_.StartPos(), nullptr, 0);

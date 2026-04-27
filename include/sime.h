@@ -111,8 +111,6 @@ private:
                                      float_t penalty_per_mismatch,
                                      std::size_t t9_boundary);
     void PruneNode(std::vector<Link>& edges,
-                   std::string_view input,
-                   std::size_t t9_boundary,
                    std::unordered_map<TokenID, float_t>* score_cache = nullptr) const;
 
     // Beam search
