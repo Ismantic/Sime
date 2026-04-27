@@ -178,6 +178,26 @@ void Sime::InitNumNet(std::string_view start,
         }
     };
 
+    // Segment letter prefix into pinyin syllables (greedy longest match).
+    // Mirrors InitNet — FWWPP fires only at non-known-pinyin boundaries.
+    std::vector<std::size_t> letter_bounds;
+    if (p > 0) {
+        std::size_t pos = 0;
+        letter_bounds.push_back(0);
+        while (pos < p) {
+            if (start[pos] == '\'') { pos++; letter_bounds.push_back(pos); continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(p - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownPinyin(std::string(start.substr(pos, len)))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            letter_bounds.push_back(pos);
+        }
+    }
+
     for (std::size_t s = 0; s < total; ++s) {
         // === Prefix letter columns ===
         if (s < p) {
@@ -190,19 +210,20 @@ void Sime::InitNumNet(std::string_view start,
             emit_dat(s, Dict::LetterPinyin, suffix, p, true, false);
             emit_dat(s, Dict::LetterEn, suffix, p, false, true);
 
-            // Tail expansion for prefix letters. Skip if a non-expansion edge
-            // already reaches p — expansion edges go to the same target and
-            // lose to any non-expansion via tier-gating anyway.
-            bool has_nonexp_to_p = false;
-            for (const auto& e : net[s].es) {
-                if (e.end == p && !e.expansion) {
-                    has_nonexp_to_p = true; break;
+            // Chinese expansion at every segment boundary > s within 8
+            // chars (mirrors InitNet). English expansion: full suffix → p.
+            if (expansion) {
+                for (std::size_t bi = 0; bi < letter_bounds.size(); ++bi) {
+                    if (letter_bounds[bi] <= s) continue;
+                    std::size_t target = letter_bounds[bi];
+                    if (target - s > 8) break;
+                    auto prefix = start.substr(s, target - s);
+                    if (Dict::IsKnownPinyin(std::string(prefix))) continue;
+                    expand_dat(s, Dict::LetterPinyin, prefix, target, 512, true, false);
                 }
-            }
-            if (expansion && !has_nonexp_to_p &&
-                !Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
-                expand_dat(s, Dict::LetterPinyin, suffix, p, 512, true, false);
-                expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
+                if (!Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
+                    expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
+                }
             }
 
             // Cross-boundary: search with letters + digits combined.
@@ -264,38 +285,61 @@ void Sime::InitNumNet(std::string_view start,
         // English DAT: both cases
         t9_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
 
-        // Tail expansion for digits. Skip if a non-expansion edge already
-        // reaches `total` — expansion targets the same column and loses to
-        // any non-expansion via tier-gating.
-        bool has_nonexp_to_total = false;
-        for (const auto& e : net[s].es) {
-            if (e.end == total && !e.expansion) {
-                has_nonexp_to_total = true; break;
-            }
-        }
-        if (expansion && !has_nonexp_to_total) {
-            std::size_t tail_len = 0;
-            while (dpos + tail_len < d && nums[dpos + tail_len] != '\'')
-                ++tail_len;
-            if (dpos + tail_len == d && tail_len > 0) {
-                std::string tail(nums.substr(dpos, tail_len));
-                auto t9_expand = [&](Dict::DatType type,
-                                     trie::DoubleArray::CharExpander expander,
-                                     std::size_t max_num, bool en) {
-                    auto results = dict_.Dat(type).FindWordsWithPrefixT9(
-                        tail, expander, max_num);
-                    for (const auto& r : results) {
-                        if (r.length <= tail.size()) continue;
+        // Per-digit incremental expansion. Walk AdvanceT9States forward
+        // step-by-step from s; at each step k, if the DAT does NOT have
+        // an exact (non-fuzzy) eow at length k, emit expansion edges
+        // (s, s+k) for completions that extend beyond k digits. This is
+        // the T9 analog of InitNet's segment-boundary FWWPP — the user's
+        // digits are treated as possibly incomplete pinyin and we
+        // generate completions at each non-complete-token intermediate
+        // length. The eow gate is the T9 analog of !IsKnownPinyin.
+        if (expansion) {
+            auto py_states = dict_.Dat(Dict::LetterPinyin).StartPinyinStates();
+            auto en_states = dict_.Dat(Dict::LetterEn).StartPinyinStates();
+            constexpr std::size_t MaxK = 3;
+            for (std::size_t k = 1; k <= MaxK; ++k) {
+                std::size_t pos = dpos + k - 1;
+                if (pos >= d) break;
+                if (nums[pos] == '\'') break;  // separator stops walk
+                auto ch = static_cast<uint8_t>(nums[pos]);
+                if (!py_states.empty()) {
+                    dict_.Dat(Dict::LetterPinyin).AdvanceT9States(
+                        py_states, ch, Dict::NumToLettersLower);
+                }
+                if (!en_states.empty()) {
+                    dict_.Dat(Dict::LetterEn).AdvanceT9States(
+                        en_states, ch, Dict::NumToLetters);
+                }
+                if (py_states.empty() && en_states.empty()) break;
+
+                auto emit_completions = [&](Dict::DatType type,
+                                            const std::vector<trie::DoubleArray::PinyinState>& sts,
+                                            std::size_t max_num, bool en) {
+                    // Gate: skip expansion when an exact (non-fuzzy) eow
+                    // exists at this k — the user already typed a complete
+                    // token here, no need to expand it.
+                    auto exact_hits = dict_.Dat(type).CollectPrefixMatchesPinyin(
+                        sts, 0, 1, false);
+                    bool has_exact = false;
+                    for (const auto& r : exact_hits) {
+                        if (!r.fuzzy) { has_exact = true; break; }
+                    }
+                    if (has_exact) return;
+
+                    auto comps = dict_.Dat(type).CollectCompletionsPinyin(
+                        sts, k, max_num, /*stop_at_sep=*/true);
+                    for (const auto& r : comps) {
+                        if (r.length <= k) continue;
                         auto entry = dict_.GetEntry(type, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
-                            net[s].es.push_back({s, total, entry.items[i].id,
-                                                 entry.items[i].pieces, 0, true, en,
-                                                 r.fuzzy});
+                            net[s].es.push_back({s, s + k, entry.items[i].id,
+                                                 entry.items[i].pieces, 0, true,
+                                                 en, r.fuzzy});
                         }
                     }
                 };
-                t9_expand(Dict::LetterPinyin, Dict::NumToLettersLower, 512, false);
-                t9_expand(Dict::LetterEn, Dict::NumToLetters, 1024, true);
+                emit_completions(Dict::LetterPinyin, py_states, 32, false);
+                emit_completions(Dict::LetterEn, en_states, 32, true);
             }
         }
     }
@@ -330,23 +374,36 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
-    // `best[end]` = lowest tier seen for any edge ending at column `end`.
-    // Reused across columns: clear then refill. Sentinel 0xFF = unset.
-    std::vector<uint8_t> best(total + 2, 0xFF);
+    // Two-track per-bucket gate (mirrors InitNet): pinyin and english
+    // edges keep their own tier-tracks per (start, end). Required to
+    // preserve cases like "539" → 可以 where bucket (0, 3) has
+    // English exact "key" (tier 1, en) alongside CN expansion 可以
+    // (tier 3, py) — single-track would drop the CN side.
+    std::vector<uint8_t> best_py(total + 2, 0xFF);
+    std::vector<uint8_t> best_en(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            if (t < best[e.end]) best[e.end] = t;
+            if (e.english) {
+                if (t < best_en[e.end]) best_en[e.end] = t;
+            } else {
+                if (t < best_py[e.end]) best_py[e.end] = t;
+            }
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
                 if (has_full_cover_exact && e.fuzzy) return true;  // global gate
-                return tier_of(e) > best[e.end];                    // per-bucket
+                uint8_t t = tier_of(e);
+                uint8_t b = e.english ? best_en[e.end] : best_py[e.end];
+                return t > b;
             }), edges.end());
-        for (const auto& e : edges) best[e.end] = 0xFF;  // clear touched slots
+        for (const auto& e : edges) {
+            best_py[e.end] = 0xFF;
+            best_en[e.end] = 0xFF;
+        }
     }
 
     std::string combined(start);

@@ -383,103 +383,37 @@ void DoubleArray::CollectWords(std::size_t pos, std::string& word,
 std::vector<SearchResult> DoubleArray::PrefixSearchT9(
     std::string_view digits, CharExpander expand,
     std::size_t max_num) const {
+    // Exact-only T9 prefix scan. Fuzzy abbreviation matches (last-syllable
+    // DFS, multi-syllable skip) are delegated to incremental
+    // AdvanceT9States + CollectCompletionsPinyin in InitNumNet's per-digit
+    // expansion loop, so here we drop fuzzy states after each step.
     std::vector<SearchResult> results;
     if (Empty() || max_num == 0) return results;
 
-    // Reuse the pinyin state machine but expand each input char.
-    std::vector<PinyinState> states = {{0, 0, false}};
-
-    // Per-length budget: T9 short matches (1-2 digits) are very
-    // numerous and would starve longer matches under a global limit.
-    // Give each digit-length its own quota so all lengths get fair
-    // representation. Exact/full-path matches get a larger budget than
-    // fuzzy abbreviation completions.
     constexpr std::size_t MaxT9Digits = 24;
-    constexpr std::size_t FuzzyBudgetPerLen = 80;
     const std::size_t ndigits = std::min(digits.size(), MaxT9Digits);
-    const std::size_t exact_budget_per_len = max_num;
-    std::vector<std::size_t> exact_len_count(ndigits + 1, 0);
-    std::vector<std::size_t> fuzzy_len_count(ndigits + 1, 0);
-    std::vector<SearchResult> exact_results;
-    std::vector<SearchResult> fuzzy_results;
-    exact_results.reserve((ndigits + 1) * std::min<std::size_t>(exact_budget_per_len, 16));
-    fuzzy_results.reserve((ndigits + 1) * std::min<std::size_t>(FuzzyBudgetPerLen, 16));
-    std::unordered_set<uint64_t> exact_seen;
-    std::unordered_set<uint64_t> fuzzy_seen;
-    auto add_exact = [&](uint32_t val, std::size_t input_len) {
-        if (exact_len_count[input_len] >= exact_budget_per_len) return;
-        uint64_t key = (static_cast<uint64_t>(val) << 32)
-                      | static_cast<uint64_t>(input_len);
-        if (!exact_seen.insert(key).second) return;
-        exact_results.push_back({val, input_len, false});
-        ++exact_len_count[input_len];
-    };
-    auto add_fuzzy = [&](uint32_t val, std::size_t input_len) {
-        if (fuzzy_len_count[input_len] >= FuzzyBudgetPerLen) return;
-        uint64_t key = (static_cast<uint64_t>(val) << 32)
-                      | static_cast<uint64_t>(input_len);
-        if (exact_seen.contains(key) || !fuzzy_seen.insert(key).second) return;
-        fuzzy_results.push_back({val, input_len, true});
-        ++fuzzy_len_count[input_len];
-    };
 
-    // Record eow matches from current states
-    auto recordMatches = [&](std::size_t input_len) {
+    std::vector<PinyinState> states = {{0, 0, false}};
+    std::unordered_set<uint64_t> seen;
+
+    auto record_matches = [&](std::size_t input_len) {
         for (const auto& s : states) {
-            std::size_t pos = s.pos;
-            if (pos >= size_ || !array_[pos].eow) continue;
-            std::size_t vp = pos ^ array_[pos].index;
+            if (s.pos >= size_ || !array_[s.pos].eow) continue;
+            std::size_t vp = s.pos ^ array_[s.pos].index;
             if (vp >= size_ || !array_[vp].HasValue()) continue;
             uint32_t val = static_cast<uint32_t>(array_[vp].value);
-            if (s.fuzzy) {
-                add_fuzzy(val, input_len);
-            } else {
-                add_exact(val, input_len);
-            }
+            uint64_t key = (static_cast<uint64_t>(val) << 32)
+                         | static_cast<uint64_t>(input_len);
+            if (!seen.insert(key).second) continue;
+            results.push_back({val, input_len, false});
+            if (results.size() >= max_num) return;
         }
     };
 
-    // Complete the last syllable via bounded DFS.
-    // Only fires for depth==1 states (just the initial typed).
-    auto recordLastSyllableMatches = [&](std::size_t input_len) {
-        for (const auto& s : states) {
-            if (fuzzy_len_count[input_len] >= FuzzyBudgetPerLen) break;
-            if (s.depth != 1) continue;
-            struct Frame { std::size_t pos; int rem; };
-            std::vector<Frame> stack = {{s.pos, 6}};
-            while (!stack.empty() &&
-                   fuzzy_len_count[input_len] < FuzzyBudgetPerLen) {
-                auto [pos, rem] = stack.back();
-                stack.pop_back();
-                if (rem <= 0 || pos >= size_) continue;
-                if (array_[pos].eow) {
-                    std::size_t vp = pos ^ array_[pos].index;
-                    if (vp < size_ && array_[vp].HasValue()) {
-                        add_fuzzy(
-                            static_cast<uint32_t>(array_[vp].value),
-                            input_len);
-                    }
-                }
-                // Only scan letters (a-z, A-Z) — letter DATs have no
-                // digits or punctuation, so 52 iterations vs 254.
-                uint32_t base = array_[pos].index;
-                auto tryChild = [&](int ch) {
-                    std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
-                    if (child < size_ && child != pos &&
-                        array_[child].label == ch &&
-                        array_[child].parent == pos) {
-                        stack.push_back({child, rem - 1});
-                    }
-                };
-                for (int ch = 'a'; ch <= 'z'; ++ch) tryChild(ch);
-                for (int ch = 'A'; ch <= 'Z'; ++ch) tryChild(ch);
-            }
-        }
-    };
-
-    recordMatches(0);
+    record_matches(0);
 
     for (std::size_t i = 0; i < ndigits && !states.empty(); ++i) {
+        if (results.size() >= max_num) break;
         auto ch = static_cast<uint8_t>(digits[i]);
 
         if (ch == '\'') {
@@ -489,22 +423,15 @@ std::vector<SearchResult> DoubleArray::PrefixSearchT9(
             if (letters && letters[0]) {
                 AdvanceT9(states, letters);
             } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
-                // Direct letter in a mixed letter+digit string:
-                // advance as exact pinyin match.
                 AdvancePinyin(states, ch);
             } else {
                 states.clear();
                 break;
             }
         }
-        recordMatches(i + 1);
-        recordLastSyllableMatches(i + 1);
+        std::erase_if(states, [](const PinyinState& s) { return s.fuzzy; });
+        record_matches(i + 1);
     }
-    results.reserve(std::min<std::size_t>(
-        exact_results.size() + fuzzy_results.size(),
-        (ndigits + 1) * (exact_budget_per_len + FuzzyBudgetPerLen)));
-    results.insert(results.end(), exact_results.begin(), exact_results.end());
-    results.insert(results.end(), fuzzy_results.begin(), fuzzy_results.end());
     return results;
 }
 
