@@ -1,5 +1,6 @@
 #include "dict.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <fcntl.h>
@@ -183,6 +184,33 @@ bool Dict::IsKnownT9Syllable(std::string_view digits) {
         return s;
     }();
     return set.contains(std::string(digits));
+}
+
+std::vector<std::string> Dict::T9PinyinSyllables(
+    std::string_view digits, std::size_t limit) {
+    std::vector<std::string> result;
+    if (digits.empty() || limit == 0) return result;
+    for (char c : digits) {
+        if (c < '2' || c > '9') return result;
+    }
+
+    constexpr uint32_t FinalMask = 0xFFF;
+    std::vector<std::string> matches;
+    for (std::size_t i = 0; i < PinyinDictSize; ++i) {
+        if ((PinyinDict[i].value & FinalMask) == 0) continue;
+        std::string text(PinyinDict[i].text);
+        std::string nums = LettersToNums(text);
+        if (nums.empty() || nums.size() > digits.size()) continue;
+        if (digits.substr(0, nums.size()) != nums) continue;
+        matches.push_back(std::move(text));
+    }
+
+    std::stable_sort(matches.begin(), matches.end(),
+        [](const std::string& a, const std::string& b) {
+            return a.size() > b.size();
+        });
+    if (matches.size() > limit) matches.resize(limit);
+    return matches;
 }
 
 char Dict::LetterToNum(char c) {

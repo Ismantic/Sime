@@ -810,15 +810,15 @@ void Sime::InitNet(std::string_view input,
     }
 
     // Tier-gated source filter:
-    //   0: CN exact   (!expansion, !english)
-    //   1: everything else — CN expansion, English exact, English expansion
+    //   0: exact matches (!expansion), both CN and English
+    //   1: expansion matches
     auto tier_of = [](const Link& e) -> uint8_t {
         if (e.id == NotToken) return 0;
-        return (!e.expansion && !e.english) ? 0 : 1;
+        return !e.expansion ? 0 : 1;
     };
 
-    // Single-track per-bucket gate: CN exact dominates its bucket;
-    // otherwise tier-1 edges (CN expansion + any English) all survive.
+    // Single-track per-bucket gate: exact matches dominate expansion in
+    // the same bucket; otherwise expansion edges survive for scoring.
     std::vector<uint8_t> best(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
@@ -1061,13 +1061,13 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
-        // l2_full = direct CN exact only (= !expansion && !english).
+        // l2_full = direct exact matches, including English exact.
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
             {{std::move(text_utf8), std::move(edge_py),
               ExtractTokens({edge}), score, edge.end},
-             !edge.expansion && !edge.english});
+             !edge.expansion});
     }
 
     for (auto& entry : best_l2) {
