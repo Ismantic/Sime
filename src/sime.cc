@@ -640,9 +640,12 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
 
         Scorer::Pos epos{};
         Scorer::Pos enext{};
+        const float_t ep = edge.english
+            ? (total <= 4 ? EnglishPenaltyShort : EnglishPenalty)
+            : 0.0f;
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
                         - dist_penalty
-                        - (edge.english ? EnglishPenalty : 0.0f);
+                        - ep;
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
