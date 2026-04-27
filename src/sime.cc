@@ -178,47 +178,51 @@ void Sime::InitNumNet(std::string_view start,
         }
     };
 
-    // Segment letter prefix into pinyin syllables (greedy longest match).
-    // Mirrors InitNet — FWWPP fires only at non-known-pinyin boundaries.
+    // Segment letter prefix — inclusive boundary set (every position p
+    // where some [j, p) is a known pinyin syllable). Mirrors InitNet.
     std::vector<std::size_t> letter_bounds;
     if (p > 0) {
-        std::size_t pos = 0;
-        letter_bounds.push_back(0);
-        while (pos < p) {
-            if (start[pos] == '\'') { pos++; letter_bounds.push_back(pos); continue; }
-            std::size_t best = 1;
-            for (std::size_t len = std::min(p - pos, std::size_t(6));
-                 len >= 2; --len) {
-                if (Dict::IsKnownPinyin(std::string(start.substr(pos, len)))) {
-                    best = len; break;
+        std::vector<bool> is_bound(p + 1, false);
+        is_bound[0] = true;
+        is_bound[p] = true;
+        for (std::size_t j = 0; j < p; ++j) {
+            if (start[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            std::size_t max_len = std::min(p - j, std::size_t(6));
+            for (std::size_t len = 2; len <= max_len; ++len) {
+                if (Dict::IsKnownPinyin(std::string(start.substr(j, len)))) {
+                    is_bound[j + len] = true;
                 }
             }
-            pos += best;
-            letter_bounds.push_back(pos);
+        }
+        for (std::size_t i = 0; i <= p; ++i) {
+            if (is_bound[i]) letter_bounds.push_back(i);
         }
     }
 
     // Segment digits via T9 syllable lookup — the T9 analog of letter
-    // segmentation. digit_bounds[i] holds positions in `nums` (not in
-    // the global lattice column index) where a syllable potentially ends.
-    // For full-pinyin T9 input ("744" = shi) bounds are sparse; for
-    // abbreviation input ("66") every digit is a boundary. Same semantic
-    // as InitNet's seg_bounds — defines where expansion may fire.
+    // segmentation. Inclusive boundary set: position p is a boundary iff
+    // some [j, p) is a known T9 syllable (or p ∈ {0, d}, or marked by '\'').
+    // T9 has segmentation ambiguity (e.g. "744824" parses as both
+    // "744+824" = shi+tai and "74+4824" = ri+huai), so we keep ALL
+    // possible syllable ends rather than greedy-longest-only — the
+    // analog of letter mode's static IsKnownPinyin lookup which is
+    // independent at every position.
     std::vector<std::size_t> digit_bounds;
     if (d > 0) {
-        std::size_t pos = 0;
-        digit_bounds.push_back(0);
-        while (pos < d) {
-            if (nums[pos] == '\'') { pos++; digit_bounds.push_back(pos); continue; }
-            std::size_t best = 1;
-            for (std::size_t len = std::min(d - pos, std::size_t(6));
-                 len >= 2; --len) {
-                if (Dict::IsKnownT9Syllable(nums.substr(pos, len))) {
-                    best = len; break;
+        std::vector<bool> is_bound(d + 1, false);
+        is_bound[0] = true;
+        is_bound[d] = true;
+        for (std::size_t j = 0; j < d; ++j) {
+            if (nums[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            std::size_t max_len = std::min(d - j, std::size_t(6));
+            for (std::size_t len = 2; len <= max_len; ++len) {
+                if (Dict::IsKnownT9Syllable(nums.substr(j, len))) {
+                    is_bound[j + len] = true;
                 }
             }
-            pos += best;
-            digit_bounds.push_back(pos);
+        }
+        for (std::size_t i = 0; i <= d; ++i) {
+            if (is_bound[i]) digit_bounds.push_back(i);
         }
     }
 
@@ -793,26 +797,26 @@ void Sime::InitNet(std::string_view input,
         net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
     };
 
-    // Segment input into pinyin syllables (greedy longest known-pinyin match,
-    // up to 6 chars). Boundaries mark candidate "incomplete spots" where the
-    // user may have typed an abbreviation rather than a full syllable —
-    // expansion FWWPP is dispatched at every such boundary so multiple
-    // abbreviated words can be chained by beam search.
+    // Inclusive boundary set: position p is a boundary iff some [j, p)
+    // is a known pinyin syllable (or 0/total/'\'' boundary). Pinyin has
+    // segmentation ambiguity (e.g. "xian" = xian or xi+an), so we keep
+    // ALL possible syllable ends rather than greedy-longest-only.
     std::vector<std::size_t> seg_bounds;
     {
-        std::size_t pos = 0;
-        seg_bounds.push_back(0);
-        while (pos < total) {
-            if (input[pos] == '\'') { pos++; seg_bounds.push_back(pos); continue; }
-            std::size_t best = 1;
-            for (std::size_t len = std::min(total - pos, std::size_t(6));
-                 len >= 2; --len) {
-                if (Dict::IsKnownPinyin(std::string(input.substr(pos, len)))) {
-                    best = len; break;
+        std::vector<bool> is_bound(total + 1, false);
+        is_bound[0] = true;
+        is_bound[total] = true;
+        for (std::size_t j = 0; j < total; ++j) {
+            if (input[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            std::size_t max_len = std::min(total - j, std::size_t(6));
+            for (std::size_t len = 2; len <= max_len; ++len) {
+                if (Dict::IsKnownPinyin(std::string(input.substr(j, len)))) {
+                    is_bound[j + len] = true;
                 }
             }
-            pos += best;
-            seg_bounds.push_back(pos);
+        }
+        for (std::size_t i = 0; i <= total; ++i) {
+            if (is_bound[i]) seg_bounds.push_back(i);
         }
     }
 
