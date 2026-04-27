@@ -630,14 +630,14 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             edge.start, edge.end - edge.start);
         std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, is_t9);
 
+        // Use edge.penalty (English + expansion, set by
+        // ComputeEdgePenalties) so L2 score sits on the same coordinate
+        // system as L1: -(LM unigram + edge.penalty) - dist_penalty.
         Scorer::Pos epos{};
         Scorer::Pos enext{};
-        const float_t ep = edge.english
-            ? (total <= 4 ? EnglishPenaltyShort : EnglishPenalty)
-            : 0.0f;
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
                         - dist_penalty
-                        - ep;
+                        - edge.penalty;
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
@@ -1138,14 +1138,14 @@ std::vector<DecodeResult> Sime::DecodeSentence(
             edge.start, edge.end - edge.start);
         std::size_t mismatch = CountSyllableMismatch(edge.pieces, slice, false);
 
+        // Use edge.penalty (English + expansion) so L2 score is on the
+        // same coordinate system as L1: -(LM unigram + edge.penalty)
+        // - dist_penalty.
         Scorer::Pos epos{};
         Scorer::Pos enext{};
-        const float_t ep = edge.english
-            ? (lower.size() <= 4 ? EnglishPenaltyShort : EnglishPenalty)
-            : 0.0f;
         float_t score = -scorer_.ScoreMove(epos, edge.id, enext)
                         - dist_penalty
-                        - ep;
+                        - edge.penalty;
 
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
