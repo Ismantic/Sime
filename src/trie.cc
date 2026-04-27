@@ -788,93 +788,37 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
 
 std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
     std::string_view str, std::size_t max_num) const {
+    // Exact-only prefix scan. Fuzzy abbreviation completions (last-syllable
+    // DFS, syllable-skip) are delegated to FindWordsWithPrefixPinyin called
+    // by InitNet at segment boundaries — so here we drop fuzzy states after
+    // each AdvancePinyin step to keep this path cheap.
     std::vector<SearchResult> results;
     if (Empty() || max_num == 0) return results;
 
     std::vector<PinyinState> states = {{0, 0, false}};
-    std::vector<SearchResult> exact_results;
-    std::vector<SearchResult> fuzzy_results;
-    exact_results.reserve(max_num);
-    fuzzy_results.reserve(max_num);
-    std::unordered_set<uint64_t> exact_seen;
-    std::unordered_set<uint64_t> fuzzy_seen;
-    auto add_exact = [&](uint32_t val, std::size_t input_len) {
-        if (exact_results.size() >= max_num) return;
-        uint64_t key = (static_cast<uint64_t>(val) << 32)
-                     | static_cast<uint64_t>(input_len);
-        if (!exact_seen.insert(key).second) return;
-        exact_results.push_back({val, input_len, false});
-    };
-    auto add_fuzzy = [&](uint32_t val, std::size_t input_len) {
-        if (fuzzy_results.size() >= max_num) return;
-        uint64_t key = (static_cast<uint64_t>(val) << 32)
-                     | static_cast<uint64_t>(input_len);
-        if (exact_seen.contains(key) || !fuzzy_seen.insert(key).second) return;
-        fuzzy_results.push_back({val, input_len, true});
-    };
+    std::unordered_set<uint64_t> seen;
+
     auto record_matches = [&](std::size_t input_len) {
         for (const auto& s : states) {
             if (s.pos >= size_ || !array_[s.pos].eow) continue;
             std::size_t vp = s.pos ^ array_[s.pos].index;
             if (vp >= size_ || !array_[vp].HasValue()) continue;
             uint32_t val = static_cast<uint32_t>(array_[vp].value);
-            if (s.fuzzy) {
-                add_fuzzy(val, input_len);
-            } else {
-                add_exact(val, input_len);
-            }
+            uint64_t key = (static_cast<uint64_t>(val) << 32)
+                         | static_cast<uint64_t>(input_len);
+            if (!seen.insert(key).second) continue;
+            results.push_back({val, input_len, false});
+            if (results.size() >= max_num) return;
         }
     };
 
     record_matches(0);
 
-    auto recordLastSyllableMatches = [&](std::size_t input_len) {
-        for (const auto& s : states) {
-            if (fuzzy_results.size() >= max_num) break;
-            if (s.depth != 1) continue;
-            // Bounded DFS looking for eow within the current syllable
-            struct Frame { std::size_t pos; int rem; };
-            std::vector<Frame> stack = {{s.pos, 6}};
-            while (!stack.empty() && fuzzy_results.size() < max_num) {
-                auto [pos, rem] = stack.back();
-                stack.pop_back();
-                if (rem <= 0 || pos >= size_) continue;
-                if (array_[pos].eow) {
-                    std::size_t vp = pos ^ array_[pos].index;
-                    if (vp < size_ && array_[vp].HasValue()) {
-                        add_fuzzy(
-                            static_cast<uint32_t>(array_[vp].value),
-                            input_len);
-                    }
-                }
-                uint32_t base = array_[pos].index;
-                for (int ch = 1; ch <= 255; ++ch) {
-                    if (ch == '\'') continue;
-                    std::size_t child = pos ^ base ^ static_cast<unsigned>(ch);
-                    if (child >= size_ || child == pos) continue;
-                    if (array_[child].label != ch ||
-                        array_[child].parent != pos) continue;
-                    stack.push_back({child, rem - 1});
-                }
-            }
-        }
-    };
-
     for (std::size_t i = 0; i < str.size() && !states.empty(); ++i) {
-        if (exact_results.size() >= max_num) break;
+        if (results.size() >= max_num) break;
         AdvancePinyin(states, static_cast<uint8_t>(str[i]));
+        std::erase_if(states, [](const PinyinState& s) { return s.fuzzy; });
         record_matches(i + 1);
-        recordLastSyllableMatches(i + 1);
-    }
-
-    results.reserve(std::min(max_num, exact_results.size() + fuzzy_results.size()));
-    for (const auto& r : exact_results) {
-        if (results.size() >= max_num) break;
-        results.push_back(r);
-    }
-    for (const auto& r : fuzzy_results) {
-        if (results.size() >= max_num) break;
-        results.push_back(r);
     }
     return results;
 }

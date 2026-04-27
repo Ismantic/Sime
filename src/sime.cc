@@ -731,15 +731,37 @@ void Sime::InitNet(std::string_view input,
         net[s].es.push_back({s, new_col, tid, pieces, 0, false, en, fuzzy});
     };
 
+    // Segment input into pinyin syllables (greedy longest known-pinyin match,
+    // up to 6 chars). Boundaries mark candidate "incomplete spots" where the
+    // user may have typed an abbreviation rather than a full syllable —
+    // expansion FWWPP is dispatched at every such boundary so multiple
+    // abbreviated words can be chained by beam search.
+    std::vector<std::size_t> seg_bounds;
+    {
+        std::size_t pos = 0;
+        seg_bounds.push_back(0);
+        while (pos < total) {
+            if (input[pos] == '\'') { pos++; seg_bounds.push_back(pos); continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(total - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownPinyin(std::string(input.substr(pos, len)))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            seg_bounds.push_back(pos);
+        }
+    }
+
     for (std::size_t s = 0; s < total; ++s) {
         if (input[s] == '\'') {
             net[s].es.push_back({s, s + 1, NotToken});
             continue;
         }
 
-        // Pinyin: PrefixSearchPinyin handles separator skipping
-        // and syllable abbreviation at query time.
-        // English: plain PrefixSearch (no abbreviation).
+        // Pinyin: PrefixSearchPinyin is exact-only (fuzzy delegated to FWWPP
+        // at segment boundaries). English: plain PrefixSearch.
         std::string_view suffix = input.substr(s);
 
         auto emit_results = [&](const std::vector<trie::SearchResult>& results,
@@ -760,38 +782,43 @@ void Sime::InitNet(std::string_view input,
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
             Dict::LetterEn, true);
 
-        // Tail expansion: skip only when a Chinese non-expansion edge
-        // already reaches total. English exact (e.g. "key") is not a
-        // complete-pinyin match so should not suppress expansion.
-        bool has_nonexp_to_total = false;
-        for (const auto& e : net[s].es) {
-            if (e.end == total && !e.expansion && !e.english) {
-                has_nonexp_to_total = true; break;
-            }
-        }
-        if (expansion && !has_nonexp_to_total &&
-            !Dict::IsKnownPinyin(std::string(suffix))) {
-            auto expand_results = [&](
-                const std::vector<trie::SearchResult>& results,
-                Dict::DatType type, std::size_t tail_len, bool en) {
+        // Chinese expansion: FWWPP at every segment boundary > s within 8
+        // chars. The old "tail-only to total" expansion is the special case
+        // where the only boundary is total. Skip boundaries whose prefix is
+        // already a known pinyin syllable (no need to "complete" it).
+        // English expansion: full suffix → total only.
+        if (expansion) {
+            for (std::size_t bi = 0; bi < seg_bounds.size(); ++bi) {
+                if (seg_bounds[bi] <= s) continue;
+                std::size_t target = seg_bounds[bi];
+                if (target - s > 8) break;
+                auto prefix = input.substr(s, target - s);
+                if (Dict::IsKnownPinyin(std::string(prefix))) continue;
+                auto results = dict_.Dat(Dict::LetterPinyin)
+                    .FindWordsWithPrefixPinyin(prefix, 512);
                 for (const auto& r : results) {
-                    if (r.length <= tail_len) continue;
-                    auto entry = dict_.GetEntry(type, r.value);
+                    if (r.length <= prefix.size()) continue;
+                    auto entry = dict_.GetEntry(Dict::LetterPinyin, r.value);
                     for (uint32_t i = 0; i < entry.count; ++i) {
-                        net[s].es.push_back({s, total, entry.items[i].id,
-                                             entry.items[i].pieces, 0, true, en,
-                                             r.fuzzy});
+                        net[s].es.push_back({s, target, entry.items[i].id,
+                                             entry.items[i].pieces, 0, true,
+                                             false, r.fuzzy});
                     }
                 }
-            };
-            expand_results(
-                dict_.Dat(Dict::LetterPinyin).FindWordsWithPrefixPinyin(
-                    suffix, 512),
-                Dict::LetterPinyin, suffix.size(), false);
-            expand_results(
-                dict_.Dat(Dict::LetterEn).FindWordsWithPrefix(
-                    suffix, 1024),
-                Dict::LetterEn, suffix.size(), true);
+            }
+            if (!Dict::IsKnownPinyin(std::string(suffix))) {
+                auto results = dict_.Dat(Dict::LetterEn)
+                    .FindWordsWithPrefix(suffix, 1024);
+                for (const auto& r : results) {
+                    if (r.length <= suffix.size()) continue;
+                    auto entry = dict_.GetEntry(Dict::LetterEn, r.value);
+                    for (uint32_t i = 0; i < entry.count; ++i) {
+                        net[s].es.push_back({s, total, entry.items[i].id,
+                                             entry.items[i].pieces, 0, true,
+                                             true, r.fuzzy});
+                    }
+                }
+            }
         }
     }
 
