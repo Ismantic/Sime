@@ -87,10 +87,16 @@ private:
     static constexpr std::size_t NodeSize = 40;
     static constexpr std::size_t BeamSize = 20;
     static constexpr float_t DistancePenalty = 1.8;
-    // Per-syllable penalty for incomplete pinyin matches. Applied on edges
-    // before beam search so that fully-typed syllables outrank abbreviated
-    // ones during Process. Layer 2 also applies it in post-processing.
-    static constexpr float_t PinyinMatchPenalty = 3.2;
+    // Flat per-edge penalty for expansion edges (abbreviations / tail
+    // completions). A single value — not multiplied by syllable mismatch
+    // count — so longer abbreviations aren't punished more than shorter
+    // ones (mirrors English exact). Short input (≤4) gets a smaller
+    // penalty so n-initial abbreviations like 87 → 他说 can beat short
+    // English exact (e.g. up); long input gets a larger penalty so
+    // abbreviation expansions don't crowd out the natural full-pinyin
+    // path in long sentences.
+    static constexpr float_t ExpansionPenalty = 5.5;
+    static constexpr float_t ExpansionPenaltyShort = 4.0;
     // Flat penalty for English edges so Chinese full-pinyin matches rank
     // higher in beam search and Layer 2, while common English words
     // (iphone, hello) still surface when there's no strong Chinese rival.
@@ -107,9 +113,7 @@ private:
                     std::vector<Node>& net,
                     bool expansion = true) const;
     static void ComputeEdgePenalties(std::vector<Node>& net,
-                                     std::string_view input,
-                                     float_t penalty_per_mismatch,
-                                     std::size_t t9_boundary);
+                                     std::string_view input);
     void PruneNode(std::vector<Link>& edges,
                    std::unordered_map<TokenID, float_t>* score_cache = nullptr) const;
 

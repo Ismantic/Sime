@@ -14,8 +14,8 @@ namespace {
 
 // Count syllables in `pieces` whose letters are not fully present in
 // `input_slice`. When `input_is_digits` is true, compare pieces letters
-// against their T9 digit form instead. Used to penalize abbreviated or
-// tail-expanded matches relative to fully-typed ones.
+// against their T9 digit form instead. Used for L2 exact/abbrev grouping
+// (mismatch == 0 means full match).
 std::size_t CountSyllableMismatch(const char* pieces,
                                   std::string_view input_slice,
                                   bool input_is_digits) {
@@ -93,36 +93,26 @@ Sime::Sime(const std::filesystem::path& dict_path,
 }
 
 void Sime::ComputeEdgePenalties(std::vector<Node>& net,
-                                std::string_view input,
-                                float_t penalty_per_mismatch,
-                                std::size_t t9_boundary) {
-    // Short-input English penalty bump: when input is short (≤4 letters/
-    // digits) and an English exact word happens to spell-match it (e.g.
-    // "nm", "us", "be"), the LM's <eos>|english=0 transition makes the
-    // English path beat any CN 简拼 alternative by a small margin.
-    // Bumping the penalty for short inputs nudges CN ahead without
-    // affecting long sentences (where English exact full-coverage doesn't
-    // exist anyway).
-    const float_t english_penalty = input.size() <= 4
-        ? EnglishPenaltyShort
-        : EnglishPenalty;
+                                std::string_view input) {
+    // Short-input bumps:
+    // - English: penalty Short>Long so that an English exact word that
+    //   coincidentally spell-matches a short input (e.g. "nm"/"up") doesn't
+    //   beat a CN 简拼 alternative.
+    // - Expansion: penalty Short<Long so that a deliberate short-input
+    //   n-initial abbreviation (e.g. 87→他说) can beat a short English
+    //   exact, while long inputs keep stricter expansion penalty so
+    //   abbrev edges don't crowd out the natural full-pinyin path.
+    const bool short_input = input.size() <= 4;
+    const float_t english_penalty = short_input
+        ? EnglishPenaltyShort : EnglishPenalty;
+    const float_t expansion_penalty = short_input
+        ? ExpansionPenaltyShort : ExpansionPenalty;
     for (auto& col : net) {
         for (auto& edge : col.es) {
             if (!edge.pieces || edge.id == NotToken) continue;
-            // Tier 0/1 edges (non-fuzzy, non-expansion) have mismatch==0
-            // by construction: strict pinyin/english matches consume input
-            // letters verbatim, so no abbreviated syllable exists.
-            std::size_t mismatch = 0;
-            if (edge.fuzzy || edge.expansion) {
-                auto slice = input.substr(
-                    edge.start, edge.end - edge.start);
-                bool is_t9 = (edge.start >= t9_boundary);
-                mismatch = CountSyllableMismatch(
-                    edge.pieces, slice, is_t9);
-            }
             edge.penalty =
-                static_cast<float_t>(mismatch) * penalty_per_mismatch
-                + (edge.english ? english_penalty : 0.0f);
+                (edge.english ? english_penalty : 0.0f)
+                + (edge.expansion ? expansion_penalty : 0.0f);
         }
     }
 }
@@ -561,7 +551,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::vector<Node> net;
     const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
     InitNumNet(start, nums, net, can_tail_expand);
-    ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, p);
+    ComputeEdgePenalties(net, combined_input);
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -699,7 +689,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(  // (DecodeNumSentence: 保持原 
 
     std::vector<Node> net;
     InitNumNet(start, nums, net, /*expansion=*/false);
-    ComputeEdgePenalties(net, combined_input, PinyinMatchPenalty, start.size());
+    ComputeEdgePenalties(net, combined_input);
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
@@ -757,7 +747,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/false);
-    ComputeEdgePenalties(net, lower, PinyinMatchPenalty, lower.size() + 1);
+    ComputeEdgePenalties(net, lower);
     for (auto& col : net) PruneNode(col.es);
 
     const std::size_t max_top = num == 0 ? 1 : num;
@@ -1059,7 +1049,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
 
     std::vector<Node> net;
     InitNet(lower, net, /*expansion=*/true);
-    ComputeEdgePenalties(net, lower, PinyinMatchPenalty, total + 1);
+    ComputeEdgePenalties(net, lower);
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
