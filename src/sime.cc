@@ -1003,16 +1003,20 @@ void Sime::PruneNode(std::vector<Link>& edges,
                               edges[idx].english, idx});
         }
 
-        // Priority: exact pinyin > english > abbreviated > expansion,
-        // then by score.
+        // Priority: !expansion > !english > low mismatch > low score.
+        // !english is checked before mismatch so CN expansion (typically
+        // mismatch >= n_syllables-1) ranks above English expansion (which
+        // has no '\'' separators in pieces and so mismatch counts as a
+        // single "syllable" with at most 1 mismatch). Otherwise English
+        // expansion would push CN expansion off the per-span cap.
         std::partial_sort(
             scored.begin(),
             scored.begin() + static_cast<std::ptrdiff_t>(NodeSize),
             scored.end(),
             [](const ScoredEdge& a, const ScoredEdge& b) {
                 if (a.expansion != b.expansion) return !a.expansion;
-                if (a.mismatch != b.mismatch) return a.mismatch < b.mismatch;
                 if (a.english != b.english) return !a.english;
+                if (a.mismatch != b.mismatch) return a.mismatch < b.mismatch;
                 return a.score < b.score;
             });
 
