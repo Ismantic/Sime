@@ -105,7 +105,7 @@ private:
     // (e.g. "nm" / "us" / "be") need a stronger nudge so CN 简拼
     // candidates can win — the LM's <eos>|english=0 transition gives
     // English an unfair tail-cost edge in beam scoring otherwise.
-    static constexpr float_t EnglishPenaltyShort = 5.0;
+    static constexpr float_t EnglishPenaltyShort = 8.0;
 
     // Lattice building
     void InitNet(std::string_view input,

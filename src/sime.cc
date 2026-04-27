@@ -59,24 +59,30 @@ Sime::Sime(const std::filesystem::path& dict_path,
 
 void Sime::ComputeEdgePenalties(std::vector<Node>& net,
                                 std::string_view input) {
-    // Short-input bumps:
-    // - English: penalty Short>Long so that an English exact word that
-    //   coincidentally spell-matches a short input (e.g. "nm"/"up") doesn't
-    //   beat a CN 简拼 alternative.
-    // - Expansion: penalty Short<Long so that a deliberate short-input
-    //   n-initial abbreviation (e.g. 87→他说) can beat a short English
-    //   exact, while long inputs keep stricter expansion penalty so
-    //   abbrev edges don't crowd out the natural full-pinyin path.
+    // English penalty: only "long input + full coverage" English gets
+    // the lighter EnglishPenalty (e.g. google on 466453, hello on
+    // input "hello"). Everything else (partial-coverage like zg in
+    // zgkxjsdx, zgkxjs in zgkxjsdx, or short input full-cover like up
+    // / nm / key) gets EnglishPenaltyShort — these are likely
+    // coincidental English spellings of CN abbreviations.
+    // Expansion penalty: short input gets ExpansionPenaltyShort (lets
+    // 87→他说 beat short English exact); long input keeps stricter
+    // ExpansionPenalty so abbrev edges don't crowd out the natural
+    // full-pinyin path.
     const bool short_input = input.size() <= 4;
-    const float_t english_penalty = short_input
-        ? EnglishPenaltyShort : EnglishPenalty;
     const float_t expansion_penalty = short_input
         ? ExpansionPenaltyShort : ExpansionPenalty;
     for (auto& col : net) {
         for (auto& edge : col.es) {
             if (!edge.pieces || edge.id == NotToken) continue;
-            edge.penalty =
-                (edge.english ? english_penalty : 0.0f)
+            float_t en_pen = 0.0f;
+            if (edge.english) {
+                bool full_cover =
+                    edge.start == 0 && edge.end == input.size();
+                en_pen = (full_cover && !short_input)
+                    ? EnglishPenalty : EnglishPenaltyShort;
+            }
+            edge.penalty = en_pen
                 + (edge.expansion ? expansion_penalty : 0.0f);
         }
     }
@@ -131,15 +137,29 @@ void Sime::InitNumNet(std::string_view start,
         }
     };
 
-    // Segment letter prefix — inclusive boundary set (every position p
-    // where some [j, p) is a known pinyin syllable). Mirrors InitNet.
+    // letter_bounds = greedy walk + inclusive syllable-ends (mirrors
+    // InitNet). Greedy ensures dense boundaries for abbrev input;
+    // inclusive ensures ambiguity coverage.
     std::vector<std::size_t> letter_bounds;
     if (p > 0) {
         std::vector<bool> is_bound(p + 1, false);
         is_bound[0] = true;
         is_bound[p] = true;
+        std::size_t pos = 0;
+        while (pos < p) {
+            if (start[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(p - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownPinyin(std::string(start.substr(pos, len)))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            is_bound[pos] = true;
+        }
         for (std::size_t j = 0; j < p; ++j) {
-            if (start[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            if (start[j] == '\'') continue;
             std::size_t max_len = std::min(p - j, std::size_t(6));
             for (std::size_t len = 2; len <= max_len; ++len) {
                 if (Dict::IsKnownPinyin(std::string(start.substr(j, len)))) {
@@ -152,21 +172,30 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
-    // Segment digits via T9 syllable lookup — the T9 analog of letter
-    // segmentation. Inclusive boundary set: position p is a boundary iff
-    // some [j, p) is a known T9 syllable (or p ∈ {0, d}, or marked by '\'').
-    // T9 has segmentation ambiguity (e.g. "744824" parses as both
-    // "744+824" = shi+tai and "74+4824" = ri+huai), so we keep ALL
-    // possible syllable ends rather than greedy-longest-only — the
-    // analog of letter mode's static IsKnownPinyin lookup which is
-    // independent at every position.
+    // digit_bounds = greedy walk + inclusive syllable-ends (T9 analog
+    // of letter segmentation). Greedy guarantees dense boundaries
+    // for abbreviation digit input; inclusive ensures ambiguity
+    // coverage (e.g. 744824 = shi+tai or ri+huai).
     std::vector<std::size_t> digit_bounds;
     if (d > 0) {
         std::vector<bool> is_bound(d + 1, false);
         is_bound[0] = true;
         is_bound[d] = true;
+        std::size_t pos = 0;
+        while (pos < d) {
+            if (nums[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(d - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownT9Syllable(nums.substr(pos, len))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            is_bound[pos] = true;
+        }
         for (std::size_t j = 0; j < d; ++j) {
-            if (nums[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            if (nums[j] == '\'') continue;
             std::size_t max_len = std::min(d - j, std::size_t(6));
             for (std::size_t len = 2; len <= max_len; ++len) {
                 if (Dict::IsKnownT9Syllable(nums.substr(j, len))) {
@@ -724,17 +753,34 @@ void Sime::InitNet(std::string_view input,
         net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
-    // Inclusive boundary set: position p is a boundary iff some [j, p)
-    // is a known pinyin syllable (or 0/total/'\'' boundary). Pinyin has
-    // segmentation ambiguity (e.g. "xian" = xian or xi+an), so we keep
-    // ALL possible syllable ends rather than greedy-longest-only.
+    // Boundary set = greedy walk (one step minimum, syllable-aware) +
+    // every other syllable-end position. Greedy walk guarantees dense
+    // boundaries for abbreviation input ("kxjsdx" with no syllable
+    // anywhere — every position becomes a boundary so abbrev expansion
+    // can fire at intermediate columns). Inclusive syllable-ends add
+    // extra parses for ambiguous input ("xian" = xian / xi+an).
     std::vector<std::size_t> seg_bounds;
     {
         std::vector<bool> is_bound(total + 1, false);
         is_bound[0] = true;
         is_bound[total] = true;
+        // Greedy walk — every step becomes a boundary.
+        std::size_t pos = 0;
+        while (pos < total) {
+            if (input[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            std::size_t best = 1;
+            for (std::size_t len = std::min(total - pos, std::size_t(6));
+                 len >= 2; --len) {
+                if (Dict::IsKnownPinyin(std::string(input.substr(pos, len)))) {
+                    best = len; break;
+                }
+            }
+            pos += best;
+            is_bound[pos] = true;
+        }
+        // Add other syllable-end positions (inclusive).
         for (std::size_t j = 0; j < total; ++j) {
-            if (input[j] == '\'') { is_bound[j] = true; is_bound[j + 1] = true; continue; }
+            if (input[j] == '\'') continue;
             std::size_t max_len = std::min(total - j, std::size_t(6));
             for (std::size_t len = 2; len <= max_len; ++len) {
                 if (Dict::IsKnownPinyin(std::string(input.substr(j, len)))) {
