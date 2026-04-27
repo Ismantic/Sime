@@ -522,9 +522,10 @@ const std::vector<std::size_t>& DoubleArray::GetSepDescendants(
 }
 
 void DoubleArray::AdvancePinyin(std::vector<PinyinState>& states,
-                                uint8_t ch) const {
+                                uint8_t ch,
+                                uint8_t max_skip_depth) const {
     auto canSkip = [&](const PinyinState& s) -> bool {
-        return s.depth == 1;
+        return s.depth >= 1 && s.depth <= max_skip_depth;
     };
 
     static thread_local std::vector<PinyinState> next;
@@ -660,7 +661,8 @@ void DoubleArray::AdvanceT9(std::vector<PinyinState>& states,
 }
 
 std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
-    std::string_view str, std::size_t max_num) const {
+    std::string_view str, std::size_t max_num,
+    uint8_t max_skip_depth) const {
     // Exact-only prefix scan. Fuzzy abbreviation completions (last-syllable
     // DFS, syllable-skip) are delegated to FindWordsWithPrefixPinyin called
     // by InitNet at segment boundaries — so here we drop fuzzy states after
@@ -689,7 +691,7 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
 
     for (std::size_t i = 0; i < str.size() && !states.empty(); ++i) {
         if (results.size() >= max_num) break;
-        AdvancePinyin(states, static_cast<uint8_t>(str[i]));
+        AdvancePinyin(states, static_cast<uint8_t>(str[i]), max_skip_depth);
         std::erase_if(states, [](const PinyinState& s) { return s.fuzzy; });
         record_matches(i + 1);
     }
@@ -697,14 +699,15 @@ std::vector<SearchResult> DoubleArray::PrefixSearchPinyin(
 }
 
 std::vector<SearchResult> DoubleArray::FindWordsWithPrefixPinyin(
-    std::string_view prefix, std::size_t max_num) const {
+    std::string_view prefix, std::size_t max_num,
+    uint8_t max_skip_depth) const {
     std::vector<SearchResult> results;
     if (Empty()) return results;
 
     // Advance through prefix using pinyin state machine
     std::vector<PinyinState> states = {{0, 0, false}};
     for (std::size_t i = 0; i < prefix.size() && !states.empty(); ++i) {
-        AdvancePinyin(states, static_cast<uint8_t>(prefix[i]));
+        AdvancePinyin(states, static_cast<uint8_t>(prefix[i]), max_skip_depth);
     }
 
     std::unordered_set<uint64_t> seen;

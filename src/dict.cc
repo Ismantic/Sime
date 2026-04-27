@@ -172,6 +172,35 @@ bool Dict::IsKnownPinyin(const std::string& text) {
     return false;
 }
 
+bool Dict::IsExtendablePinyin(const std::string& text) {
+    if (text.empty()) return true;
+    constexpr uint32_t FinalMask = 0xFFF;
+    // Find lower_bound of text in the sorted PinyinDict.
+    std::size_t left = 0;
+    std::size_t right = PinyinDictSize;
+    while (left < right) {
+        std::size_t mid = left + (right - left) / 2;
+        if (std::strcmp(PinyinDict[mid].text, text.c_str()) < 0) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    // Skip the entry equal to text (we want strictly longer extensions).
+    if (left < PinyinDictSize
+        && std::strcmp(PinyinDict[left].text, text.c_str()) == 0) {
+        ++left;
+    }
+    // Scan forward: while entry has text as prefix, look for any final.
+    while (left < PinyinDictSize) {
+        const char* entry = PinyinDict[left].text;
+        if (std::strncmp(entry, text.c_str(), text.size()) != 0) break;
+        if ((PinyinDict[left].value & FinalMask) != 0) return true;
+        ++left;
+    }
+    return false;
+}
+
 bool Dict::IsKnownT9Syllable(std::string_view digits) {
     if (digits.empty()) return false;
     static const std::unordered_set<std::string> set = []() {

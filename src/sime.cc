@@ -137,38 +137,35 @@ void Sime::InitNumNet(std::string_view start,
         }
     };
 
-    // letter_bounds = greedy walk + inclusive syllable-ends (mirrors
-    // InitNet). Greedy ensures dense boundaries for abbrev input;
-    // inclusive ensures ambiguity coverage.
+    // letter_bounds = greedy syllable walk (mirrors InitNet).
+    // letter_is_syllable[i] is true iff segment i is a *terminal*
+    // (non-extendable) pinyin syllable.
     std::vector<std::size_t> letter_bounds;
+    std::vector<bool> letter_is_syllable;
     if (p > 0) {
-        std::vector<bool> is_bound(p + 1, false);
-        is_bound[0] = true;
-        is_bound[p] = true;
+        letter_bounds.push_back(0);
         std::size_t pos = 0;
         while (pos < p) {
-            if (start[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            if (start[pos] == '\'') {
+                ++pos;
+                letter_bounds.push_back(pos);
+                letter_is_syllable.push_back(false);
+                continue;
+            }
+            bool terminal = false;
             std::size_t best = 1;
             for (std::size_t len = std::min(p - pos, std::size_t(6));
                  len >= 2; --len) {
-                if (Dict::IsKnownPinyin(std::string(start.substr(pos, len)))) {
-                    best = len; break;
+                std::string ps(start.substr(pos, len));
+                if (Dict::IsKnownPinyin(ps)) {
+                    best = len;
+                    terminal = !Dict::IsExtendablePinyin(ps);
+                    break;
                 }
             }
             pos += best;
-            is_bound[pos] = true;
-        }
-        for (std::size_t j = 0; j < p; ++j) {
-            if (start[j] == '\'') continue;
-            std::size_t max_len = std::min(p - j, std::size_t(6));
-            for (std::size_t len = 2; len <= max_len; ++len) {
-                if (Dict::IsKnownPinyin(std::string(start.substr(j, len)))) {
-                    is_bound[j + len] = true;
-                }
-            }
-        }
-        for (std::size_t i = 0; i <= p; ++i) {
-            if (is_bound[i]) letter_bounds.push_back(i);
+            letter_bounds.push_back(pos);
+            letter_is_syllable.push_back(terminal);
         }
     }
 
@@ -219,22 +216,6 @@ void Sime::InitNumNet(std::string_view start,
             std::string_view suffix = start.substr(s);
             emit_dat(s, Dict::LetterPinyin, suffix, p, true, false);
             emit_dat(s, Dict::LetterEn, suffix, p, false, true);
-
-            // Chinese expansion at every segment boundary > s within 8
-            // chars (mirrors InitNet). English expansion: full suffix → p.
-            if (expansion) {
-                for (std::size_t bi = 0; bi < letter_bounds.size(); ++bi) {
-                    if (letter_bounds[bi] <= s) continue;
-                    std::size_t target = letter_bounds[bi];
-                    if (target - s > 8) break;
-                    auto prefix = start.substr(s, target - s);
-                    if (Dict::IsKnownPinyin(std::string(prefix))) continue;
-                    expand_dat(s, Dict::LetterPinyin, prefix, target, 512, true, false);
-                }
-                if (!Dict::IsKnownPinyin(std::string(suffix.substr(0, p - s)))) {
-                    expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
-                }
-            }
 
             // Cross-boundary: search with letters + digits combined.
             // PrefixSearchT9 now handles letter chars via AdvancePinyin,
@@ -344,6 +325,30 @@ void Sime::InitNumNet(std::string_view start,
                 };
                 emit_completions(Dict::LetterPinyin, py_states, 64, false);
                 emit_completions(Dict::LetterEn, en_states, 64, true);
+            }
+        }
+    }
+
+    // Letter-side boundary expansion (mirrors InitNet): fire FWWPP at
+    // every later boundary target whose adjacent left segment is not
+    // terminal. English tail completion fires if the suffix contains
+    // any non-terminal segment.
+    if (expansion && p > 0) {
+        for (std::size_t s_idx = 0; s_idx + 1 < letter_bounds.size(); ++s_idx) {
+            std::size_t s = letter_bounds[s_idx];
+            if (s >= p || start[s] == '\'') continue;
+
+            bool any_non_terminal_in_tail = false;
+            for (std::size_t bi = s_idx + 1; bi < letter_bounds.size(); ++bi) {
+                if (!letter_is_syllable[bi - 1]) any_non_terminal_in_tail = true;
+                if (letter_is_syllable[bi - 1]) continue;
+                std::size_t target = letter_bounds[bi];
+                auto prefix = start.substr(s, target - s);
+                expand_dat(s, Dict::LetterPinyin, prefix, target, 512, true, false);
+            }
+            if (any_non_terminal_in_tail) {
+                std::string_view suffix = start.substr(s);
+                expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
             }
         }
     }
@@ -753,43 +758,38 @@ void Sime::InitNet(std::string_view input,
         net[s].es.push_back({s, new_col, tid, pieces, 0, false, en});
     };
 
-    // Boundary set = greedy walk (one step minimum, syllable-aware) +
-    // every other syllable-end position. Greedy walk guarantees dense
-    // boundaries for abbreviation input ("kxjsdx" with no syllable
-    // anywhere — every position becomes a boundary so abbrev expansion
-    // can fire at intermediate columns). Inclusive syllable-ends add
-    // extra parses for ambiguous input ("xian" = xian / xi+an).
+    // Greedy syllable walk. seg_is_syllable[i] is true iff segment i is a
+    // *terminal* (non-extendable) known pinyin syllable. Extendable
+    // syllables like "xu" (→ xue/xun/xuan) are flagged false so the
+    // expansion gate fires through them — the user may have abbreviated a
+    // longer syllable to its prefix. best=1 fallback and apostrophe
+    // segments are also incomplete.
     std::vector<std::size_t> seg_bounds;
+    std::vector<bool> seg_is_syllable;
     {
-        std::vector<bool> is_bound(total + 1, false);
-        is_bound[0] = true;
-        is_bound[total] = true;
-        // Greedy walk — every step becomes a boundary.
+        seg_bounds.push_back(0);
         std::size_t pos = 0;
         while (pos < total) {
-            if (input[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            if (input[pos] == '\'') {
+                ++pos;
+                seg_bounds.push_back(pos);
+                seg_is_syllable.push_back(false);
+                continue;
+            }
+            bool terminal = false;
             std::size_t best = 1;
             for (std::size_t len = std::min(total - pos, std::size_t(6));
                  len >= 2; --len) {
-                if (Dict::IsKnownPinyin(std::string(input.substr(pos, len)))) {
-                    best = len; break;
+                std::string p(input.substr(pos, len));
+                if (Dict::IsKnownPinyin(p)) {
+                    best = len;
+                    terminal = !Dict::IsExtendablePinyin(p);
+                    break;
                 }
             }
             pos += best;
-            is_bound[pos] = true;
-        }
-        // Add other syllable-end positions (inclusive).
-        for (std::size_t j = 0; j < total; ++j) {
-            if (input[j] == '\'') continue;
-            std::size_t max_len = std::min(total - j, std::size_t(6));
-            for (std::size_t len = 2; len <= max_len; ++len) {
-                if (Dict::IsKnownPinyin(std::string(input.substr(j, len)))) {
-                    is_bound[j + len] = true;
-                }
-            }
-        }
-        for (std::size_t i = 0; i <= total; ++i) {
-            if (is_bound[i]) seg_bounds.push_back(i);
+            seg_bounds.push_back(pos);
+            seg_is_syllable.push_back(terminal);
         }
     }
 
@@ -799,8 +799,6 @@ void Sime::InitNet(std::string_view input,
             continue;
         }
 
-        // Pinyin: PrefixSearchPinyin is exact-only (fuzzy delegated to FWWPP
-        // at segment boundaries). English: plain PrefixSearch.
         std::string_view suffix = input.substr(s);
 
         auto emit_results = [&](const std::vector<trie::SearchResult>& results,
@@ -815,26 +813,33 @@ void Sime::InitNet(std::string_view input,
         };
 
         emit_results(
-            dict_.Dat(Dict::LetterPinyin).PrefixSearchPinyin(suffix, 512),
+            dict_.Dat(Dict::LetterPinyin).PrefixSearchPinyin(suffix, 512, 2),
             Dict::LetterPinyin, false);
         emit_results(
             dict_.Dat(Dict::LetterEn).PrefixSearch(suffix, 512),
             Dict::LetterEn, true);
+    }
 
-        // Chinese expansion: FWWPP at every segment boundary > s within 8
-        // chars. The old "tail-only to total" expansion is the special case
-        // where the only boundary is total. Skip boundaries whose prefix is
-        // already a known pinyin syllable (no need to "complete" it).
-        // English expansion: full suffix → total only.
-        if (expansion) {
-            for (std::size_t bi = 0; bi < seg_bounds.size(); ++bi) {
-                if (seg_bounds[bi] <= s) continue;
+    // Boundary-driven expansion: for each boundary s, fire FWWPP at every
+    // later boundary `target` whose adjacent left segment is *not*
+    // terminal (i.e., either incomplete or an extendable known syllable
+    // like "xu" → xue/xun). Terminal syllables are skipped because
+    // PrefixSearchPinyin's walk already reaches their stems. English
+    // tail completion fires per boundary if the suffix [s, total)
+    // contains any non-terminal segment.
+    if (expansion) {
+        for (std::size_t s_idx = 0; s_idx + 1 < seg_bounds.size(); ++s_idx) {
+            std::size_t s = seg_bounds[s_idx];
+            if (s >= total || input[s] == '\'') continue;
+
+            bool any_non_terminal_in_tail = false;
+            for (std::size_t bi = s_idx + 1; bi < seg_bounds.size(); ++bi) {
+                if (!seg_is_syllable[bi - 1]) any_non_terminal_in_tail = true;
+                if (seg_is_syllable[bi - 1]) continue;
                 std::size_t target = seg_bounds[bi];
-                if (target - s > 8) break;
                 auto prefix = input.substr(s, target - s);
-                if (Dict::IsKnownPinyin(std::string(prefix))) continue;
                 auto results = dict_.Dat(Dict::LetterPinyin)
-                    .FindWordsWithPrefixPinyin(prefix, 512);
+                    .FindWordsWithPrefixPinyin(prefix, 512, 2);
                 for (const auto& r : results) {
                     if (r.length <= prefix.size()) continue;
                     auto entry = dict_.GetEntry(Dict::LetterPinyin, r.value);
@@ -845,7 +850,8 @@ void Sime::InitNet(std::string_view input,
                     }
                 }
             }
-            if (!Dict::IsKnownPinyin(std::string(suffix))) {
+            if (any_non_terminal_in_tail) {
+                std::string_view suffix = input.substr(s);
                 auto results = dict_.Dat(Dict::LetterEn)
                     .FindWordsWithPrefix(suffix, 1024);
                 for (const auto& r : results) {

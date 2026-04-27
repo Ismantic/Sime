@@ -63,9 +63,11 @@ public:
     // the next `'` (syllable abbreviation), and `'` in keys can be
     // silently skipped when the input has no separator.
     std::vector<SearchResult> PrefixSearchPinyin(
-        std::string_view str, std::size_t max_num = 96) const;
+        std::string_view str, std::size_t max_num = 96,
+        uint8_t max_skip_depth = 1) const;
     std::vector<SearchResult> FindWordsWithPrefixPinyin(
-        std::string_view prefix, std::size_t max_num = 96) const;
+        std::string_view prefix, std::size_t max_num = 96,
+        uint8_t max_skip_depth = 1) const;
 
     // T9 digit-expansion variants: each digit (2-9) is expanded to
     // its possible letters and matched against letter-based DAT keys.
@@ -148,7 +150,8 @@ private:
     // Core state-machine advance: given a set of DAT states and an input
     // character, compute the next state set.
     void AdvancePinyin(std::vector<PinyinState>& states,
-                       uint8_t ch) const;
+                       uint8_t ch,
+                       uint8_t max_skip_depth = 1) const;
     // Fused T9 advance: expand digit to letters and advance all states
     // in one pass, avoiding per-letter vector copies.
     void AdvanceT9(std::vector<PinyinState>& states,

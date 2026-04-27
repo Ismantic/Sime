@@ -45,6 +45,9 @@ public:
 
     // Static pinyin utilities (backed by dict.inc)
     static bool IsKnownPinyin(const std::string& text);
+    // True iff some longer pinyin final has `text` as a strict prefix
+    // (e.g. "xu" → true since "xue"/"xun"/"xuan" exist; "xue" → false).
+    static bool IsExtendablePinyin(const std::string& text);
     // T9 analog: digits is the T9 form of *some* known pinyin syllable.
     static bool IsKnownT9Syllable(std::string_view digits);
     static std::vector<std::string> T9PinyinSyllables(
