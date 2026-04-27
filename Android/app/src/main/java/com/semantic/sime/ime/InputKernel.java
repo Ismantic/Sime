@@ -753,6 +753,10 @@ public class InputKernel {
                 && mode != KeyboardMode.EMOJI) {
             this.previousMode = mode;
         }
+        // Flush English buffer when leaving ENGLISH mode.
+        if (mode == KeyboardMode.ENGLISH && englishBuffer.length() > 0) {
+            commitEnglishBuffer();
+        }
         this.mode = next;
         // Do not touch InputState — resuming CHINESE should continue the
         // in-flight input. ENGLISH / NUMBER / SYMBOL / SETTINGS don't run
