@@ -848,32 +848,36 @@ void Sime::InitNet(std::string_view input,
         }
     }
 
-    // Per-bucket source filter (relaxed):
-    //   - If a CN exact (tier 0) exists in the bucket → drop everything else
-    //     in the bucket (the user clearly typed full pinyin).
-    //   - Otherwise → keep English (tier 1) and CN fuzzy (tier 2) side by
-    //     side; only drop tail-expansion (tier 3) when any non-expansion
-    //     edge already reaches the same end.
-    //   - English exact alone (without CN exact) does NOT count as 完整拼音
-    //     and so does not suppress CN fuzzy candidates like the 可以 fuzzy
-    //     edge for input "key".
-    std::vector<uint8_t> best(total + 2, 0xFF);
+    // Per-bucket source filter: pinyin and english edges compete on
+    // separate tracks per (start, end). Each track keeps only its
+    // highest-priority tier; the two tracks don't suppress each other,
+    // so English exact (e.g. "key") doesn't drop CN expansion edges in
+    // the same bucket — the beam picks the winner by score.
+    std::vector<uint8_t> best_py(total + 2, 0xFF);
+    std::vector<uint8_t> best_en(total + 2, 0xFF);
     for (std::size_t i = 0; i < total; ++i) {
         auto& edges = net[i].es;
         if (edges.empty()) continue;
         for (const auto& e : edges) {
             uint8_t t = tier_of(e);
-            if (t < best[e.end]) best[e.end] = t;
+            if (e.english) {
+                if (t < best_en[e.end]) best_en[e.end] = t;
+            } else {
+                if (t < best_py[e.end]) best_py[e.end] = t;
+            }
         }
         edges.erase(std::remove_if(edges.begin(), edges.end(),
             [&](const Link& e) {
                 if (e.id == NotToken) return false;
                 if (has_full_cover_exact && e.fuzzy) return true;
                 uint8_t t = tier_of(e);
-                if (best[e.end] == 0) return t > 0;     // CN exact dominates
-                return t == 3 && best[e.end] < 3;        // drop expansion when alternatives exist
+                uint8_t b = e.english ? best_en[e.end] : best_py[e.end];
+                return t > b;
             }), edges.end());
-        for (const auto& e : edges) best[e.end] = 0xFF;
+        for (const auto& e : edges) {
+            best_py[e.end] = 0xFF;
+            best_en[e.end] = 0xFF;
+        }
     }
 
     for (std::size_t i = 0; i < total; ++i) {
