@@ -340,7 +340,7 @@ void Sime::InitNumNet(std::string_view start,
                 std::size_t k = target_dpos - s_dpos;
                 auto emit_cn = [&](const std::vector<trie::DoubleArray::PinyinState>& sts) {
                     auto comps = dict_.Dat(Dict::LetterPinyin)
-                        .CollectCompletionsPinyin(sts, k, 64, /*stop_at_sep=*/true);
+                        .CollectCompletionsPinyin(sts, k, 1024, /*stop_at_sep=*/true);
                     for (const auto& r : comps) {
                         auto entry = dict_.GetEntry(Dict::LetterPinyin, r.value);
                         for (uint32_t i = 0; i < entry.count; ++i) {
@@ -352,7 +352,7 @@ void Sime::InitNumNet(std::string_view start,
                 };
                 auto emit_en = [&](const std::vector<trie::DoubleArray::PinyinState>& sts) {
                     auto comps = dict_.Dat(Dict::LetterEn)
-                        .CollectCompletionsPinyin(sts, k, 64, /*stop_at_sep=*/true);
+                        .CollectCompletionsPinyin(sts, k, 1024, /*stop_at_sep=*/true);
                     for (const auto& r : comps) {
                         if (r.length <= k) continue;
                         auto entry = dict_.GetEntry(Dict::LetterEn, r.value);

@@ -255,7 +255,12 @@ std::vector<SearchResult> DoubleArray::CollectCompletionsPinyin(
     if (Empty() || states.empty() || max_num == 0) return results;
 
     std::unordered_set<uint64_t> seen;
-    const std::size_t pool = max_num * 8 + 8;
+    // Per-state cap so a single high-fanout state can't monopolize the
+    // global budget. With T9's high letter ambiguity each digit step
+    // produces dozens of fuzzy states; without this, the state at the
+    // smallest trie pos (typically j-prefix) fills `max_num` first and
+    // k-/l-prefix states (e.g. "kan'yi'x" → 看一下) never emit.
+    constexpr std::size_t PerStateCap = 16;
 
     auto collect_group = [&](bool fuzzy) {
         for (const auto& s : states) {
@@ -267,7 +272,7 @@ std::vector<SearchResult> DoubleArray::CollectCompletionsPinyin(
             if (s.depth == 0) continue;
             std::vector<SearchResult> local;
             std::string word(prefix_len, 'x');
-            CollectWords(s.pos, word, local, pool, stop_at_sep);
+            CollectWords(s.pos, word, local, PerStateCap, stop_at_sep);
             for (const auto& r : local) {
                 uint64_t key = (static_cast<uint64_t>(r.value) << 32)
                              | static_cast<uint64_t>(r.length);
