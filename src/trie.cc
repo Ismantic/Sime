@@ -517,6 +517,19 @@ void DoubleArray::FindSepDescendants(std::size_t pos,
     }
 }
 
+void DoubleArray::ClearSepCache() const {
+    for (auto& v : sep_cache_) {
+        std::vector<std::size_t>().swap(v);  // free inner buffers
+    }
+    std::fill(sep_cache_computed_.begin(),
+              sep_cache_computed_.end(), false);
+}
+
+void DoubleArray::ResetSepCache() const {
+    std::vector<std::vector<std::size_t>>().swap(sep_cache_);
+    std::vector<bool>().swap(sep_cache_computed_);
+}
+
 const std::vector<std::size_t>& DoubleArray::GetSepDescendants(
     std::size_t pos) const {
     if (sep_cache_computed_.size() <= pos) {

@@ -27,6 +27,13 @@ public:
 
     bool Ready() const { return ready_; }
     int ContextSize() const { return scorer_.Num() - 1; }
+
+    // Cache trim hooks for the long-running daemon use case (Android
+    // service / Linux fcitx5). Called periodically inside decode entry
+    // points to bound the trie sep_cache content size; ResetCaches()
+    // is for hard release on memory pressure (e.g. Android
+    // onTrimMemory).
+    void ResetCaches() const { dict_.ResetSepCaches(); }
     // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
@@ -135,6 +142,14 @@ private:
                      std::string_view nums,
                      std::vector<Node>& net,
                      bool expansion = true) const;
+
+    // Periodic soft trim of trie sep_cache, called from decode entries.
+    // Drops cached sep lists every kSepCacheTrimInterval decodes so the
+    // daemon's memory footprint stays bounded. Soft (no allocator
+    // churn): ~free in latency.
+    void MaybeTrimCaches() const;
+    static constexpr std::size_t kSepCacheTrimInterval = 5000;
+    mutable std::size_t decode_count_ = 0;
 
     // Resources
     Dict dict_;

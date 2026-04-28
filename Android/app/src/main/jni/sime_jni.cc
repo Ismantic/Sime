@@ -67,6 +67,12 @@ Java_com_shiyu_sime_SimeEngine_nativeContextSize(
     return (g_sime && g_sime->Ready()) ? g_sime->ContextSize() : 2;
 }
 
+JNIEXPORT void JNICALL
+Java_com_shiyu_sime_SimeEngine_nativeResetCaches(
+    JNIEnv* /*env*/, jclass /*clazz*/) {
+    if (g_sime && g_sime->Ready()) g_sime->ResetCaches();
+}
+
 // ===== Decode (store results, return count) =====
 
 JNIEXPORT jint JNICALL

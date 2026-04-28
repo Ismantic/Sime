@@ -132,6 +132,16 @@ public:
     std::size_t Size() const { return size_; }
     bool Empty() const { return size_ == 0; }
 
+    // Cache management for the long-running daemon case.
+    // Soft: drop cached sep lists but keep the outer index; next access
+    // refills entries lazily without re-allocating the size_-sized
+    // backing array. ~free.
+    // Hard: release the entire backing array. Next access re-allocates
+    // the size_-sized vector (~10ms one-shot for 600k nodes). Use only
+    // on memory pressure (Android onTrimMemory) or long idle.
+    void ClearSepCache() const;
+    void ResetSepCache() const;
+
 private:
     void CollectWords(std::size_t pos, std::string& word,
                       std::vector<SearchResult>& results,

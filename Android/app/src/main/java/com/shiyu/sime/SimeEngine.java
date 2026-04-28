@@ -50,6 +50,7 @@ public class SimeEngine {
     private static native boolean nativeLoadResources(String triePath, String modelPath);
     private static native boolean nativeIsReady();
     private static native int nativeContextSize();
+    private static native void nativeResetCaches();
 
     // Decode methods store results in C++, return count.
     private static native int nativeDecodeSentence(String input, int extra);
@@ -74,6 +75,11 @@ public class SimeEngine {
     /** Max context tokens the LM can use (n-gram order minus 1). */
     public int contextSize() {
         return ready ? nativeContextSize() : 2;
+    }
+
+    /** Hard cache release for memory-pressure callbacks (onTrimMemory). */
+    public void resetCaches() {
+        if (ready) nativeResetCaches();
     }
 
     /**

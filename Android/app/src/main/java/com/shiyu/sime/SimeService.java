@@ -91,6 +91,16 @@ public class SimeService extends InputMethodService
         super.onDestroy();
     }
 
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        // System is asking us to release memory. Drop the trie sep_cache
+        // (rebuilds lazily on next decode at small one-shot cost).
+        if (level >= TRIM_MEMORY_RUNNING_MODERATE && engine != null) {
+            engine.resetCaches();
+        }
+    }
+
     private void applyPrefs() {
         SimePrefs prefs = new SimePrefs(this);
         kernel.setChineseLayout(prefs.getChineseLayout());

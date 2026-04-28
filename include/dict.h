@@ -40,6 +40,14 @@ public:
     const trie::DoubleArray& Dat(DatType type) const { return dats_[type]; }
     Entry GetEntry(DatType type, uint32_t index) const;
 
+    // Cache trim. See trie::DoubleArray::ClearSepCache / ResetSepCache.
+    void ClearSepCaches() const {
+        for (int t = 0; t < DatCount; ++t) dats_[t].ClearSepCache();
+    }
+    void ResetSepCaches() const {
+        for (int t = 0; t < DatCount; ++t) dats_[t].ResetSepCache();
+    }
+
     const char32_t* TokenAt(uint32_t id) const;
     uint32_t TokenCount() const { return token_count_; }
 

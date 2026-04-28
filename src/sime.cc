@@ -38,6 +38,12 @@ void PushBestLayer2Entry(std::vector<DecodeResult>& best_entries,
 
 } // namespace
 
+void Sime::MaybeTrimCaches() const {
+    if (++decode_count_ % kSepCacheTrimInterval == 0) {
+        dict_.ClearSepCaches();
+    }
+}
+
 Sime::Sime(const std::filesystem::path& dict_path,
                          const std::filesystem::path& model_path) {
     if (!dict_.Load(dict_path)) {
@@ -516,6 +522,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::size_t extra) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
+    MaybeTrimCaches();
     for (char c : nums) {
         if (c == '\'') continue;
         if (c < '2' || c > '9') return results;
@@ -645,6 +652,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     std::size_t num) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
+    MaybeTrimCaches();
     for (char c : nums) {
         if (c == '\'') continue;
         if (c < '2' || c > '9') return results;
@@ -710,6 +718,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
     std::size_t num) const {
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
+    MaybeTrimCaches();
 
     std::string lower = NormalizeInput(input);
     if (lower.empty()) return results;
@@ -1024,6 +1033,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::size_t extra) const {
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
+    MaybeTrimCaches();
 
     std::string lower = NormalizeInput(input);
     if (lower.empty()) return results;
@@ -1146,6 +1156,7 @@ std::vector<DecodeResult> Sime::NextTokens(
     bool en) const {
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0) return results;
+    MaybeTrimCaches();
 
     // Only the last (num-1) context tokens matter — that's the maximum
     // history a num-gram model can condition on.  Walking from root with
@@ -1202,6 +1213,7 @@ std::vector<DecodeResult> Sime::GetTokens(
     bool en) const {
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0 || prefix.empty()) return results;
+    MaybeTrimCaches();
 
     struct Candidate {
         std::string text;
