@@ -215,6 +215,32 @@ bool Dict::IsKnownT9Syllable(std::string_view digits) {
     return set.contains(std::string(digits));
 }
 
+bool Dict::IsExtendableT9Syllable(std::string_view digits) {
+    if (digits.empty()) return true;
+    // Lazily build a sorted, deduplicated list of T9-encoded final
+    // syllables. Binary-search for the lower bound of `digits`, skip the
+    // exact match, and check whether the next entry has `digits` as a
+    // strict prefix.
+    static const std::vector<std::string> sorted_t9 = []() {
+        std::vector<std::string> v;
+        constexpr uint32_t FinalMask = 0xFFF;
+        v.reserve(PinyinDictSize);
+        for (std::size_t i = 0; i < PinyinDictSize; ++i) {
+            if ((PinyinDict[i].value & FinalMask) == 0) continue;
+            v.push_back(LettersToNums(PinyinDict[i].text));
+        }
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+        return v;
+    }();
+    std::string key(digits);
+    auto it = std::lower_bound(sorted_t9.begin(), sorted_t9.end(), key);
+    while (it != sorted_t9.end() && *it == key) ++it;
+    if (it == sorted_t9.end()) return false;
+    if (it->size() <= digits.size()) return false;
+    return it->compare(0, digits.size(), digits) == 0;
+}
+
 std::vector<std::string> Dict::T9PinyinSyllables(
     std::string_view digits, std::size_t limit) {
     std::vector<std::string> result;

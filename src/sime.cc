@@ -173,39 +173,35 @@ void Sime::InitNumNet(std::string_view start,
         }
     }
 
-    // digit_bounds = greedy walk + inclusive syllable-ends (T9 analog
-    // of letter segmentation). Greedy guarantees dense boundaries
-    // for abbreviation digit input; inclusive ensures ambiguity
-    // coverage (e.g. 744824 = shi+tai or ri+huai).
+    // digit_bounds = greedy T9-syllable walk (mirrors letter_bounds).
+    // digit_is_syllable[i] is true iff segment i is a *terminal*
+    // (non-extendable) T9 syllable.
     std::vector<std::size_t> digit_bounds;
+    std::vector<bool> digit_is_syllable;
     if (d > 0) {
-        std::vector<bool> is_bound(d + 1, false);
-        is_bound[0] = true;
-        is_bound[d] = true;
+        digit_bounds.push_back(0);
         std::size_t pos = 0;
         while (pos < d) {
-            if (nums[pos] == '\'') { ++pos; is_bound[pos] = true; continue; }
+            if (nums[pos] == '\'') {
+                ++pos;
+                digit_bounds.push_back(pos);
+                digit_is_syllable.push_back(false);
+                continue;
+            }
+            bool terminal = false;
             std::size_t best = 1;
             for (std::size_t len = std::min(d - pos, std::size_t(6));
                  len >= 2; --len) {
-                if (Dict::IsKnownT9Syllable(nums.substr(pos, len))) {
-                    best = len; break;
+                std::string_view span = nums.substr(pos, len);
+                if (Dict::IsKnownT9Syllable(span)) {
+                    best = len;
+                    terminal = !Dict::IsExtendableT9Syllable(span);
+                    break;
                 }
             }
             pos += best;
-            is_bound[pos] = true;
-        }
-        for (std::size_t j = 0; j < d; ++j) {
-            if (nums[j] == '\'') continue;
-            std::size_t max_len = std::min(d - j, std::size_t(6));
-            for (std::size_t len = 2; len <= max_len; ++len) {
-                if (Dict::IsKnownT9Syllable(nums.substr(j, len))) {
-                    is_bound[j + len] = true;
-                }
-            }
-        }
-        for (std::size_t i = 0; i <= d; ++i) {
-            if (is_bound[i]) digit_bounds.push_back(i);
+            digit_bounds.push_back(pos);
+            digit_is_syllable.push_back(terminal);
         }
     }
 
@@ -278,59 +274,6 @@ void Sime::InitNumNet(std::string_view start,
         t9_emit(Dict::LetterPinyin, Dict::NumToLettersLower, 512, false);
         // English DAT: both cases
         t9_emit(Dict::LetterEn, Dict::NumToLetters, 512, true);
-
-        // Boundary-driven expansion. Walk AdvanceT9States forward
-        // incrementally from s; at each digit_bounds boundary within 8
-        // chars, if the segment is NOT a known T9 syllable (the analog
-        // of !IsKnownPinyin), emit expansion edges (s, s+k) for
-        // completions that extend beyond the boundary. This is the T9
-        // mirror of InitNet's segment-boundary FWWPP.
-        if (expansion) {
-            auto py_states = dict_.Dat(Dict::LetterPinyin).StartPinyinStates();
-            auto en_states = dict_.Dat(Dict::LetterEn).StartPinyinStates();
-            std::size_t bi = 0;
-            while (bi < digit_bounds.size() && digit_bounds[bi] <= dpos) ++bi;
-            for (std::size_t k = 1; k <= 8; ++k) {
-                std::size_t pos = dpos + k - 1;
-                if (pos >= d) break;
-                if (nums[pos] == '\'') break;
-                auto ch = static_cast<uint8_t>(nums[pos]);
-                if (!py_states.empty()) {
-                    dict_.Dat(Dict::LetterPinyin).AdvanceT9States(
-                        py_states, ch, Dict::NumToLettersLower);
-                }
-                if (!en_states.empty()) {
-                    dict_.Dat(Dict::LetterEn).AdvanceT9States(
-                        en_states, ch, Dict::NumToLetters);
-                }
-                if (py_states.empty() && en_states.empty()) break;
-
-                std::size_t target_dpos = dpos + k;
-                if (bi >= digit_bounds.size()
-                    || digit_bounds[bi] != target_dpos) continue;
-                ++bi;
-
-                if (Dict::IsKnownT9Syllable(nums.substr(dpos, k))) continue;
-
-                auto emit_completions = [&](Dict::DatType type,
-                                            const std::vector<trie::DoubleArray::PinyinState>& sts,
-                                            std::size_t max_num, bool en) {
-                    auto comps = dict_.Dat(type).CollectCompletionsPinyin(
-                        sts, k, max_num, /*stop_at_sep=*/true);
-                    for (const auto& r : comps) {
-                        if (r.length <= k) continue;
-                        auto entry = dict_.GetEntry(type, r.value);
-                        for (uint32_t i = 0; i < entry.count; ++i) {
-                            net[s].es.push_back({s, s + k, entry.items[i].id,
-                                                 entry.items[i].pieces, 0, true,
-                                                 en});
-                        }
-                    }
-                };
-                emit_completions(Dict::LetterPinyin, py_states, 64, false);
-                emit_completions(Dict::LetterEn, en_states, 64, true);
-            }
-        }
     }
 
     // Letter-side boundary expansion (mirrors InitNet): fire FWWPP at
@@ -353,6 +296,75 @@ void Sime::InitNumNet(std::string_view start,
             if (saw_incomplete) {
                 std::string_view suffix = start.substr(s);
                 expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
+            }
+        }
+    }
+
+    // Digit-side boundary expansion (T9 mirror of letter-side). For each
+    // digit boundary s, walk AdvanceT9States forward; latch on first
+    // non-terminal segment; emit completions at every later boundary
+    // target. Drops the old per-column outer loop and 8-char hard cap.
+    if (expansion && d > 0) {
+        for (std::size_t s_bi = 0; s_bi + 1 < digit_bounds.size(); ++s_bi) {
+            std::size_t s_dpos = digit_bounds[s_bi];
+            std::size_t s = p + s_dpos;
+            if (s_dpos >= d || nums[s_dpos] == '\'') continue;
+
+            auto py_states = dict_.Dat(Dict::LetterPinyin).StartPinyinStates();
+            auto en_states = dict_.Dat(Dict::LetterEn).StartPinyinStates();
+            bool saw_incomplete = false;
+            std::size_t next_bi = s_bi + 1;
+
+            for (std::size_t pos = s_dpos; pos < d; ++pos) {
+                if (nums[pos] == '\'') break;
+                auto ch = static_cast<uint8_t>(nums[pos]);
+                if (!py_states.empty()) {
+                    dict_.Dat(Dict::LetterPinyin).AdvanceT9States(
+                        py_states, ch, Dict::NumToLettersLower);
+                }
+                if (!en_states.empty()) {
+                    dict_.Dat(Dict::LetterEn).AdvanceT9States(
+                        en_states, ch, Dict::NumToLetters);
+                }
+                if (py_states.empty() && en_states.empty()) break;
+
+                std::size_t target_dpos = pos + 1;
+                if (next_bi >= digit_bounds.size()
+                    || digit_bounds[next_bi] != target_dpos) continue;
+
+                std::size_t seg_idx = next_bi - 1;
+                if (!digit_is_syllable[seg_idx]) saw_incomplete = true;
+                ++next_bi;
+                if (!saw_incomplete) continue;
+
+                std::size_t k = target_dpos - s_dpos;
+                auto emit_cn = [&](const std::vector<trie::DoubleArray::PinyinState>& sts) {
+                    auto comps = dict_.Dat(Dict::LetterPinyin)
+                        .CollectCompletionsPinyin(sts, k, 64, /*stop_at_sep=*/true);
+                    for (const auto& r : comps) {
+                        auto entry = dict_.GetEntry(Dict::LetterPinyin, r.value);
+                        for (uint32_t i = 0; i < entry.count; ++i) {
+                            net[s].es.push_back({s, s + k, entry.items[i].id,
+                                                 entry.items[i].pieces, 0, true,
+                                                 false});
+                        }
+                    }
+                };
+                auto emit_en = [&](const std::vector<trie::DoubleArray::PinyinState>& sts) {
+                    auto comps = dict_.Dat(Dict::LetterEn)
+                        .CollectCompletionsPinyin(sts, k, 64, /*stop_at_sep=*/true);
+                    for (const auto& r : comps) {
+                        if (r.length <= k) continue;
+                        auto entry = dict_.GetEntry(Dict::LetterEn, r.value);
+                        for (uint32_t i = 0; i < entry.count; ++i) {
+                            net[s].es.push_back({s, s + k, entry.items[i].id,
+                                                 entry.items[i].pieces, 0, true,
+                                                 true});
+                        }
+                    }
+                };
+                emit_cn(py_states);
+                emit_en(en_states);
             }
         }
     }

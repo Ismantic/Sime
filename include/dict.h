@@ -50,6 +50,9 @@ public:
     static bool IsExtendablePinyin(const std::string& text);
     // T9 analog: digits is the T9 form of *some* known pinyin syllable.
     static bool IsKnownT9Syllable(std::string_view digits);
+    // T9 analog of IsExtendablePinyin: true iff some longer pinyin
+    // final's T9 form has `digits` as a strict prefix.
+    static bool IsExtendableT9Syllable(std::string_view digits);
     static std::vector<std::string> T9PinyinSyllables(
         std::string_view digits, std::size_t limit);
     static char LetterToNum(char c);
