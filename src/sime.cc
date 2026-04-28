@@ -309,7 +309,6 @@ void Sime::InitNumNet(std::string_view start,
             std::size_t next_bi = s_bi + 1;
 
             for (std::size_t pos = s_dpos; pos < d; ++pos) {
-                if (nums[pos] == '\'') break;
                 auto ch = static_cast<uint8_t>(nums[pos]);
                 if (!py_states.empty()) {
                     dict_.Dat(Dict::LetterPinyin).AdvanceT9States(
@@ -530,8 +529,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     combined_input += nums;
 
     std::vector<Node> net;
-    const bool can_tail_expand = !nums.empty() && nums.back() != '\'';
-    InitNumNet(start, nums, net, can_tail_expand);
+    InitNumNet(start, nums, net, /*expansion=*/true);
     ComputeEdgePenalties(net, combined_input);
     for (auto& col : net) PruneNode(col.es);
 
