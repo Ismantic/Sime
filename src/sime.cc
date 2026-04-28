@@ -128,7 +128,11 @@ void Sime::InitNumNet(std::string_view start,
             ? dict_.Dat(type).FindWordsWithPrefixPinyin(tail, max_num)
             : dict_.Dat(type).FindWordsWithPrefix(tail, max_num);
         for (const auto& r : results) {
-            if (r.length <= tail.size()) continue;
+            // For English exact-stem matches PrefixSearch already emits
+            // them, so skip duplicates. CN fuzzy walks (q→qi etc.) can
+            // hit eow at length == tail.size() — keep those, since
+            // PrefixSearchPinyin drops fuzzy states and would miss them.
+            if (!pinyin && r.length <= tail.size()) continue;
             auto entry = dict_.GetEntry(type, r.value);
             for (uint32_t i = 0; i < entry.count; ++i) {
                 net[s].es.push_back({s, target_col, entry.items[i].id,
@@ -338,15 +342,15 @@ void Sime::InitNumNet(std::string_view start,
             std::size_t s = letter_bounds[s_idx];
             if (s >= p || start[s] == '\'') continue;
 
-            bool any_non_terminal_in_tail = false;
+            bool saw_incomplete = false;
             for (std::size_t bi = s_idx + 1; bi < letter_bounds.size(); ++bi) {
-                if (!letter_is_syllable[bi - 1]) any_non_terminal_in_tail = true;
-                if (letter_is_syllable[bi - 1]) continue;
+                if (!letter_is_syllable[bi - 1]) saw_incomplete = true;
+                if (!saw_incomplete) continue;
                 std::size_t target = letter_bounds[bi];
                 auto prefix = start.substr(s, target - s);
                 expand_dat(s, Dict::LetterPinyin, prefix, target, 512, true, false);
             }
-            if (any_non_terminal_in_tail) {
+            if (saw_incomplete) {
                 std::string_view suffix = start.substr(s);
                 expand_dat(s, Dict::LetterEn, suffix, p, 1024, false, true);
             }
@@ -820,28 +824,28 @@ void Sime::InitNet(std::string_view input,
             Dict::LetterEn, true);
     }
 
-    // Boundary-driven expansion: for each boundary s, fire FWWPP at every
-    // later boundary `target` whose adjacent left segment is *not*
-    // terminal (i.e., either incomplete or an extendable known syllable
-    // like "xu" → xue/xun). Terminal syllables are skipped because
-    // PrefixSearchPinyin's walk already reaches their stems. English
-    // tail completion fires per boundary if the suffix [s, total)
-    // contains any non-terminal segment.
+    // Boundary-driven expansion: walk forward; once any segment in the
+    // span is incomplete (non-terminal pinyin or best=1 fallback), fire
+    // FWWPP at every subsequent boundary target. Latching catches
+    // "incomplete-then-terminal" spans like "qchuang" → 起床, where the
+    // first seg (q) is incomplete but the trailing seg (chuang) is
+    // terminal — without the latch, PSPinyin can't reach 起床 because
+    // it drops fuzzy states. English tail completion fires per boundary
+    // if any non-terminal segment remains in the suffix.
     if (expansion) {
         for (std::size_t s_idx = 0; s_idx + 1 < seg_bounds.size(); ++s_idx) {
             std::size_t s = seg_bounds[s_idx];
             if (s >= total || input[s] == '\'') continue;
 
-            bool any_non_terminal_in_tail = false;
+            bool saw_incomplete = false;
             for (std::size_t bi = s_idx + 1; bi < seg_bounds.size(); ++bi) {
-                if (!seg_is_syllable[bi - 1]) any_non_terminal_in_tail = true;
-                if (seg_is_syllable[bi - 1]) continue;
+                if (!seg_is_syllable[bi - 1]) saw_incomplete = true;
+                if (!saw_incomplete) continue;
                 std::size_t target = seg_bounds[bi];
                 auto prefix = input.substr(s, target - s);
                 auto results = dict_.Dat(Dict::LetterPinyin)
                     .FindWordsWithPrefixPinyin(prefix, 512, 2);
                 for (const auto& r : results) {
-                    if (r.length <= prefix.size()) continue;
                     auto entry = dict_.GetEntry(Dict::LetterPinyin, r.value);
                     for (uint32_t i = 0; i < entry.count; ++i) {
                         net[s].es.push_back({s, target, entry.items[i].id,
@@ -850,7 +854,7 @@ void Sime::InitNet(std::string_view input,
                     }
                 }
             }
-            if (any_non_terminal_in_tail) {
+            if (saw_incomplete) {
                 std::string_view suffix = input.substr(s);
                 auto results = dict_.Dat(Dict::LetterEn)
                     .FindWordsWithPrefix(suffix, 1024);
