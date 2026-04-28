@@ -12,28 +12,21 @@ namespace sime {
 
 namespace {
 
-struct Layer2Entry {
-    DecodeResult result;
-    bool exact = false;
-};
-
-bool BetterLayer2Entry(const Layer2Entry& lhs, const Layer2Entry& rhs) {
-    if (lhs.exact != rhs.exact) return lhs.exact && !rhs.exact;
-    if (lhs.result.score != rhs.result.score) {
-        return lhs.result.score > rhs.result.score;
-    }
-    if (lhs.result.cnt != rhs.result.cnt) {
-        return lhs.result.cnt > rhs.result.cnt;
-    }
-    return lhs.result.units.size() > rhs.result.units.size();
+bool BetterLayer2Entry(const DecodeResult& lhs, const DecodeResult& rhs) {
+    // Dedup tie-break: pure score comparison. Penalty is already in score
+    // so the cleaner-provenance entry (exact emit, no expansion penalty)
+    // naturally wins.
+    if (lhs.score != rhs.score) return lhs.score > rhs.score;
+    if (lhs.cnt != rhs.cnt) return lhs.cnt > rhs.cnt;
+    return lhs.units.size() > rhs.units.size();
 }
 
-void PushBestLayer2Entry(std::vector<Layer2Entry>& best_entries,
+void PushBestLayer2Entry(std::vector<DecodeResult>& best_entries,
                          std::unordered_map<std::string, std::size_t>& index_by_text,
-                         Layer2Entry candidate) {
-    auto it = index_by_text.find(candidate.result.text);
+                         DecodeResult candidate) {
+    auto it = index_by_text.find(candidate.text);
     if (it == index_by_text.end()) {
-        index_by_text.emplace(candidate.result.text, best_entries.size());
+        index_by_text.emplace(candidate.text, best_entries.size());
         best_entries.push_back(std::move(candidate));
         return;
     }
@@ -585,12 +578,11 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     }
 
     // === Layer 2: unigram alternatives at column 0 ===
-    // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
-    // then abbreviated prefix matches (mismatch>0), each sorted by score.
-    std::vector<Layer2Entry> best_l2;
+    // All entries (exact + expansion) compete on score; penalty is
+    // already in the score so no separate exact/abbrev tiering.
+    const std::size_t l2_start = results.size();
+    std::vector<DecodeResult> best_l2;
     std::unordered_map<std::string, std::size_t> l2_index_by_text;
-    std::vector<DecodeResult> l2_full;
-    std::vector<DecodeResult> l2_abbrev;
 
     // Skip leading apostrophe-only columns (those carry only a NotToken
     // sentinel edge). Without this, an input that starts with `'` (e.g.
@@ -629,37 +621,27 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
         std::size_t cnt = edge.end;
-        // l2_full = direct exact matches (CN or English), sorted by
-        // score within the full group. Mirrors DecodeSentence so English
-        // exact (e.g. google for 466453) ranks alongside CN exact.
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
-            {{std::move(text_utf8), std::move(edge_py),
-              ExtractTokens({edge}), score, cnt},
-             !edge.expansion});
+            {std::move(text_utf8), std::move(edge_py),
+             ExtractTokens({edge}), score, cnt});
     }
 
     for (auto& entry : best_l2) {
-        if (entry.exact) {
-            l2_full.push_back(std::move(entry.result));
-        } else {
-            l2_abbrev.push_back(std::move(entry.result));
-        }
+        results.push_back(std::move(entry));
     }
-
     auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
         return a.score > b.score;
     };
-    std::sort(l2_full.begin(), l2_full.end(), by_score);
-    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
-    for (auto& r : l2_full) results.push_back(std::move(r));
-    for (auto& r : l2_abbrev) results.push_back(std::move(r));
+    // Sort the L2 tail (everything after the L1 sentence head) by score —
+    // exact and expansion entries compete on equal footing.
+    std::sort(results.begin() + l2_start, results.end(), by_score);
 
     return results;
 }
 
-std::vector<DecodeResult> Sime::DecodeNumStr(  // (DecodeNumSentence: 保持原 l2_full > l2_abbrev 分组顺序)
+std::vector<DecodeResult> Sime::DecodeNumStr(
     std::string_view nums,
     std::string_view start,
     std::size_t num) const {
@@ -1098,12 +1080,11 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     }
 
     // === Layer 2: word/char alternatives at position 0 ===
-    // Split into two tiers: full-pinyin prefix matches first (mismatch==0),
-    // then abbreviated prefix matches (mismatch>0), each sorted by score.
-    std::vector<Layer2Entry> best_l2;
+    // All entries (exact + expansion) compete on score; penalty is
+    // already in the score so no separate exact/abbrev tiering.
+    const std::size_t l2_start = results.size();
+    std::vector<DecodeResult> best_l2;
     std::unordered_map<std::string, std::size_t> l2_index_by_text;
-    std::vector<DecodeResult> l2_full;
-    std::vector<DecodeResult> l2_abbrev;
 
     // Skip leading apostrophe-only columns (see DecodeNumSentence).
     std::size_t l2_col = 0;
@@ -1138,30 +1119,20 @@ std::vector<DecodeResult> Sime::DecodeSentence(
         std::string edge_py = edge.pieces
             ? AbbreviatePieces(edge.pieces, slice)
             : "";
-        // l2_full = direct exact matches, including English exact.
         PushBestLayer2Entry(
             best_l2,
             l2_index_by_text,
-            {{std::move(text_utf8), std::move(edge_py),
-              ExtractTokens({edge}), score, edge.end},
-             !edge.expansion});
+            {std::move(text_utf8), std::move(edge_py),
+             ExtractTokens({edge}), score, edge.end});
     }
 
     for (auto& entry : best_l2) {
-        if (entry.exact) {
-            l2_full.push_back(std::move(entry.result));
-        } else {
-            l2_abbrev.push_back(std::move(entry.result));
-        }
+        results.push_back(std::move(entry));
     }
-
     auto by_score = [](const DecodeResult& a, const DecodeResult& b) {
         return a.score > b.score;
     };
-    std::sort(l2_full.begin(), l2_full.end(), by_score);
-    std::sort(l2_abbrev.begin(), l2_abbrev.end(), by_score);
-    for (auto& r : l2_full) results.push_back(std::move(r));
-    for (auto& r : l2_abbrev) results.push_back(std::move(r));
+    std::sort(results.begin() + l2_start, results.end(), by_score);
 
     return results;
 }
