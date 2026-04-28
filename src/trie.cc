@@ -261,6 +261,10 @@ std::vector<SearchResult> DoubleArray::CollectCompletionsPinyin(
         for (const auto& s : states) {
             if (results.size() >= max_num) break;
             if (s.fuzzy != fuzzy) continue;
+            // Mirror FindWordsWithPrefixPinyin: depth=0 means we just
+            // crossed a '\'' boundary; expanding here would synthesize
+            // letters for an untyped syllable.
+            if (s.depth == 0) continue;
             std::vector<SearchResult> local;
             std::string word(prefix_len, 'x');
             CollectWords(s.pos, word, local, pool, stop_at_sep);
@@ -716,6 +720,11 @@ std::vector<SearchResult> DoubleArray::FindWordsWithPrefixPinyin(
         for (const auto& s : states) {
             if (results.size() >= max_num) break;
             if (s.fuzzy != fuzzy) continue;
+            // Skip states that have just crossed a '\'' boundary (depth=0):
+            // expanding here would synthesize letters for a syllable the
+            // user never typed (e.g. "q'chuang'" → 起床了 by walking into
+            // the 'l','e' children of "qi'chuang'").
+            if (s.depth == 0) continue;
             std::vector<SearchResult> local;
             std::string word(prefix);
             CollectWords(s.pos, word, local, pool, /*stop_at_sep=*/true);
