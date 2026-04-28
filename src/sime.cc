@@ -834,7 +834,12 @@ void Sime::InitNet(std::string_view input,
                 if (!seg_is_syllable[bi - 1]) saw_incomplete = true;
                 if (!saw_incomplete) continue;
                 std::size_t target = seg_bounds[bi];
-                auto prefix = input.substr(s, target - s);
+                auto raw_prefix = input.substr(s, target - s);
+                std::string prefix;
+                prefix.reserve(raw_prefix.size());
+                for (char c : raw_prefix) {
+                    if (c != '\'') prefix.push_back(c);
+                }
                 auto results = dict_.Dat(Dict::LetterPinyin)
                     .FindWordsWithPrefixPinyin(prefix, 512, 2);
                 for (const auto& r : results) {
