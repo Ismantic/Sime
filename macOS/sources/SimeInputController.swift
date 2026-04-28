@@ -453,8 +453,8 @@ final class SimeInputController: IMKInputController {
       return true
     }
 
-    // Page down / =
-    if keyCode == kVK_PageDown || (chars == "=" && state.hasNextPage) {
+    // Next page: . or = or PageDown
+    if keyCode == kVK_PageDown || chars == "=" || chars == "." {
       if state.hasNextPage {
         state.page += 1
         state.highlightedIndex = state.pageStart
@@ -463,8 +463,8 @@ final class SimeInputController: IMKInputController {
       return true
     }
 
-    // Page up / -
-    if keyCode == kVK_PageUp || chars == "-" {
+    // Previous page: , or - or PageUp
+    if keyCode == kVK_PageUp || chars == "-" || chars == "," {
       if state.page > 0 {
         state.page -= 1
         state.highlightedIndex = state.pageStart
