@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Colors are now defined in code by com.semantic.sime.ime.theme.SimeTheme.
+  Colors are now defined in code by com.shiyu.sime.ime.theme.SimeTheme.
   This file is kept as an empty placeholder so resource tooling has a
   values/ entry; new entries should be added to SimeTheme instead.
 -->

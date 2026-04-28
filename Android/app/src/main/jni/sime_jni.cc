@@ -38,7 +38,7 @@ extern "C" {
 // ===== Lifecycle =====
 
 JNIEXPORT jboolean JNICALL
-Java_com_semantic_sime_SimeEngine_nativeLoadResources(
+Java_com_shiyu_sime_SimeEngine_nativeLoadResources(
     JNIEnv* env, jclass /*clazz*/,
     jstring triePath, jstring modelPath) {
 
@@ -56,13 +56,13 @@ Java_com_semantic_sime_SimeEngine_nativeLoadResources(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_semantic_sime_SimeEngine_nativeIsReady(
+Java_com_shiyu_sime_SimeEngine_nativeIsReady(
     JNIEnv* /*env*/, jclass /*clazz*/) {
     return (g_sime && g_sime->Ready()) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeContextSize(
+Java_com_shiyu_sime_SimeEngine_nativeContextSize(
     JNIEnv* /*env*/, jclass /*clazz*/) {
     return (g_sime && g_sime->Ready()) ? g_sime->ContextSize() : 2;
 }
@@ -70,7 +70,7 @@ Java_com_semantic_sime_SimeEngine_nativeContextSize(
 // ===== Decode (store results, return count) =====
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
+Java_com_shiyu_sime_SimeEngine_nativeDecodeSentence(
     JNIEnv* env, jclass /*clazz*/,
     jstring input, jint extra) {
 
@@ -82,7 +82,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeSentence(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
+Java_com_shiyu_sime_SimeEngine_nativeDecodeNumSentence(
     JNIEnv* env, jclass /*clazz*/,
     jstring prefixLetters, jstring digits, jint extra) {
 
@@ -95,7 +95,7 @@ Java_com_semantic_sime_SimeEngine_nativeDecodeNumSentence(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeNextTokens(
+Java_com_shiyu_sime_SimeEngine_nativeNextTokens(
     JNIEnv* env, jclass /*clazz*/,
     jintArray contextIds, jint limit, jboolean enOnly) {
 
@@ -111,7 +111,7 @@ Java_com_semantic_sime_SimeEngine_nativeNextTokens(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeGetTokens(
+Java_com_shiyu_sime_SimeEngine_nativeGetTokens(
     JNIEnv* env, jclass /*clazz*/,
     jstring prefix, jint limit, jboolean enOnly) {
 
@@ -124,7 +124,7 @@ Java_com_semantic_sime_SimeEngine_nativeGetTokens(
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_com_semantic_sime_SimeEngine_nativeT9PinyinSyllables(
+Java_com_shiyu_sime_SimeEngine_nativeT9PinyinSyllables(
     JNIEnv* env, jclass /*clazz*/,
     jstring digits, jint limit) {
 
@@ -148,7 +148,7 @@ Java_com_semantic_sime_SimeEngine_nativeT9PinyinSyllables(
 // ===== Result accessors =====
 
 JNIEXPORT jstring JNICALL
-Java_com_semantic_sime_SimeEngine_nativeResultText(
+Java_com_shiyu_sime_SimeEngine_nativeResultText(
     JNIEnv* env, jclass /*clazz*/, jint index) {
     auto i = static_cast<std::size_t>(index);
     if (i >= g_results.size()) return env->NewStringUTF("");
@@ -156,7 +156,7 @@ Java_com_semantic_sime_SimeEngine_nativeResultText(
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_semantic_sime_SimeEngine_nativeResultUnits(
+Java_com_shiyu_sime_SimeEngine_nativeResultUnits(
     JNIEnv* env, jclass /*clazz*/, jint index) {
     auto i = static_cast<std::size_t>(index);
     if (i >= g_results.size()) return env->NewStringUTF("");
@@ -164,7 +164,7 @@ Java_com_semantic_sime_SimeEngine_nativeResultUnits(
 }
 
 JNIEXPORT jint JNICALL
-Java_com_semantic_sime_SimeEngine_nativeResultConsumed(
+Java_com_shiyu_sime_SimeEngine_nativeResultConsumed(
     JNIEnv* /*env*/, jclass /*clazz*/, jint index) {
     auto i = static_cast<std::size_t>(index);
     if (i >= g_results.size()) return 0;
@@ -172,7 +172,7 @@ Java_com_semantic_sime_SimeEngine_nativeResultConsumed(
 }
 
 JNIEXPORT jintArray JNICALL
-Java_com_semantic_sime_SimeEngine_nativeResultTokenIds(
+Java_com_shiyu_sime_SimeEngine_nativeResultTokenIds(
     JNIEnv* env, jclass /*clazz*/, jint index) {
     auto i = static_cast<std::size_t>(index);
     if (i >= g_results.size()) return env->NewIntArray(0);
