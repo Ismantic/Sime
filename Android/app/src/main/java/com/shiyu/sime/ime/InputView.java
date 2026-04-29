@@ -410,8 +410,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         int screenW = dm.widthPixels;
         boolean landscape = screenW > screenH;
         if (landscape) {
-            return Math.min(dp(240), Math.round(screenH * 0.55f));
+            return Math.min(dp(250), Math.round(screenH * 0.55f));
         }
-        return dp(240);
+        return dp(250);
     }
 }

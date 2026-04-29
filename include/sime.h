@@ -121,7 +121,7 @@ private:
     };
 
     // Search parameters
-    static constexpr std::size_t NodeSize = 40;
+    static constexpr std::size_t NodeSize = 60;
     static constexpr std::size_t BeamSize = 20;
     static constexpr float_t DistancePenalty = 1.8;
     // Flat per-edge penalty for expansion edges (abbreviations / tail
