@@ -51,6 +51,18 @@ public:
                   std::string_view vocab_sig = {},
                   const TokenTextFn& token_text = {}) const;
 
+    // Migration path for vocab-mismatched files. Reads the file
+    // ignoring stored token IDs, joins each paragraph's text column
+    // back to a continuous string, and re-tokenizes via `tokenize`
+    // (typically a Cutter.Cut bound by Sime). Each new token becomes
+    // its own Selection. Caller persists the migrated state with a
+    // fresh vocab_sig.
+    using TokenizeFn =
+        std::function<std::vector<std::pair<TokenID, std::string>>(
+            std::string_view)>;
+    bool LoadAndMigrate(const std::filesystem::path& path,
+                        const TokenizeFn& tokenize);
+
     void SetMaxSentenceCount(std::size_t count);
     std::size_t MaxSentenceCount() const { return max_sentence_count_; }
     std::size_t SentenceCount() const { return sentences_.size(); }

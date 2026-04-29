@@ -1,5 +1,6 @@
 #include "sime.h"
 
+#include "cut.h"
 #include "ustr.h"
 
 #include <algorithm>
@@ -10,6 +11,7 @@
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace sime {
 
@@ -86,7 +88,33 @@ void Sime::SetUserSentenceEnabled(bool enabled) {
 }
 
 bool Sime::LoadUserSentence(const std::filesystem::path& path) {
-    return user_sentence_.Load(path, vocab_sig_);
+    if (user_sentence_.Load(path, vocab_sig_)) {
+        return true;  // fast path: vocab unchanged
+    }
+
+    // Vocab mismatch (LM regenerated, token IDs shifted). Try to
+    // migrate: re-tokenize each paragraph's text under the new
+    // vocabulary via Cutter, then persist immediately so the file is
+    // consistent and next load takes the fast path.
+    if (!ready_) return false;
+    Cutter cutter(dict_, scorer_);
+    auto tokenize = [&cutter](std::string_view text) {
+        std::vector<std::pair<TokenID, std::string>> out;
+        auto cuts = cutter.Cut(text);
+        out.reserve(cuts.size());
+        for (auto& ct : cuts) {
+            TokenID id = ct.is_unk ? NotToken : ct.id;
+            out.emplace_back(id, std::move(ct.text));
+        }
+        return out;
+    };
+    if (!user_sentence_.LoadAndMigrate(path, tokenize)) {
+        return false;
+    }
+    // Re-write the file with the new vocab_sig and re-tokenized IDs so
+    // subsequent loads skip migration.
+    SaveUserSentence(path);
+    return true;
 }
 
 bool Sime::SaveUserSentence(const std::filesystem::path& path) const {

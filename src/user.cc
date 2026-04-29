@@ -197,6 +197,82 @@ bool UserSentence::LoadText(std::istream& in, std::string_view vocab_sig) {
     return true;
 }
 
+bool UserSentence::LoadAndMigrate(const std::filesystem::path& path,
+                                  const TokenizeFn& tokenize) {
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    if (!std::getline(in, line) || line != kHeader) {
+        return false;
+    }
+    // Skip the stored VOCAB line — caller's vocab_sig will be written
+    // on the next save.
+    if (!std::getline(in, line) ||
+        line.size() < kVocabPrefix.size() ||
+        std::string_view(line).substr(0, kVocabPrefix.size()) != kVocabPrefix) {
+        return false;
+    }
+
+    std::deque<Entry> migrated;
+    Entry current;
+
+    auto flush_paragraph = [&]() {
+        if (!current.selections.empty()) {
+            migrated.push_back(std::move(current));
+            current = Entry{};
+        }
+    };
+
+    while (std::getline(in, line)) {
+        if (line.empty()) {
+            flush_paragraph();
+            if (migrated.size() >= max_sentence_count_) {
+                break;
+            }
+            continue;
+        }
+        // Take only the text column (after tab); old IDs are useless
+        // under the new vocab. Strip the per-token spaces we wrote at
+        // save time so Cutter sees an unbroken run.
+        auto tab = line.find('\t');
+        if (tab == std::string::npos) {
+            continue;
+        }
+        std::string text = line.substr(tab + 1);
+        text.erase(std::remove(text.begin(), text.end(), ' '), text.end());
+        if (text.empty()) {
+            continue;
+        }
+
+        // Per-line tokenize: each original selection becomes one new
+        // Selection in the migrated file, preserving the user's pick
+        // grouping. If any token in the slice is OOV under the new
+        // vocab, drop the whole selection.
+        auto cuts = tokenize(text);
+        Sentence sel_tokens;
+        bool has_unk = false;
+        for (const auto& [id, txt] : cuts) {
+            if (id == NotToken || id == static_cast<TokenID>(-1)) {
+                has_unk = true;
+                break;
+            }
+            sel_tokens.push_back(id);
+        }
+        if (has_unk || sel_tokens.empty()) {
+            continue;
+        }
+        current.selections.push_back({std::move(sel_tokens)});
+    }
+    flush_paragraph();
+
+    sentences_ = std::move(migrated);
+    Rebuild();
+    return true;
+}
+
 bool UserSentence::SaveText(std::ostream& out,
                            std::string_view vocab_sig,
                            const TokenTextFn& token_text) const {
