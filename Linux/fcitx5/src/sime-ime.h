@@ -78,7 +78,7 @@ public:
         // Candidates
         Option<int> nbest{this, "NBest", _("额外全句数"), 0};
         Option<bool> prediction{this, "Prediction", _("联想"), true};
-        Option<bool> userSentence{this, "UserSentence", _("用户句子学习"), false};
+        Option<bool> userSentence{this, "UserSentence", _("用户句子学习"), true};
 
         // Preedit
         OptionWithAnnotation<PreeditMode, PreeditModeI18NAnnotation> preeditMode{

@@ -23,6 +23,7 @@ add_library(sime_core STATIC
     ${SIME_SRC}/sime.cc
     ${SIME_SRC}/dict.cc
     ${SIME_SRC}/cut.cc
+    ${SIME_SRC}/user.cc
 )
 target_include_directories(sime_core PUBLIC ${SIME_INC} ${SIME_SRC})
 target_compile_options(sime_core PRIVATE -Wall -Wextra -O2)

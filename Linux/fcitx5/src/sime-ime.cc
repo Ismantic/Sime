@@ -19,7 +19,7 @@ namespace fcitx {
 
 namespace {
 constexpr int kPageSize = 9;
-constexpr const char *kUserSentencePath = "sime/user.sentence";
+constexpr const char *kUserSentencePath = "sime/sentences.txt";
 
 const KeyList &selectionKeys() {
     static const KeyList keys = Key::keyListFromString("1 2 3 4 5 6 7 8 9");

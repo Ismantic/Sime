@@ -49,4 +49,14 @@ public final class SimeEngineDecoder implements Decoder {
     public int contextSize() {
         return engine.contextSize();
     }
+
+    @Override
+    public void learnUserSentence(int[] context, int[] tokens) {
+        engine.learnUserSentence(context, tokens);
+    }
+
+    @Override
+    public void flushUserSentence() {
+        engine.flushUserSentence();
+    }
 }

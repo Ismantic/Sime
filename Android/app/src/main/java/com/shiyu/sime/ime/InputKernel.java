@@ -238,6 +238,7 @@ public class InputKernel {
     public void detach() {
         this.listener = null;
         this.observer = null;
+        engineRunner.post(decoder::flushUserSentence);
         engineRunner.quitSafely();
     }
 
@@ -246,7 +247,12 @@ public class InputKernel {
     }
 
     public void onFinishInput() {
-        engineRunner.post(this::resetAll);
+        engineRunner.post(() -> {
+            resetAll();
+            // Persist any pending learns at session end so we don't lose
+            // them if the IME process is reaped without onDestroy.
+            decoder.flushUserSentence();
+        });
     }
 
     // ===== State accessors =====
@@ -690,6 +696,9 @@ public class InputKernel {
         if (state.fullySelected()) {
             String out = state.committedText();
             fireCommitText(out);
+            if (!privateField) {
+                decoder.learnUserSentence(state.contextIdsArray(), c.tokenIds);
+            }
             resetAll();
         } else {
             // Flush the committed portion so the app sees it immediately.
@@ -771,7 +780,16 @@ public class InputKernel {
         if (state.fullySelected()) {
             String out = state.committedText();
             fireCommitText(out);
-            pushSelectionContext();
+            // Learn each selection in turn so the engine's per-call
+            // context matches what the user actually saw at pick time
+            // (each successive learn picks up the prior selections via
+            // pushContext). Mirrors the fcitx5 plugin's flow.
+            for (int[] selTokens : selectionTokenIds) {
+                if (!privateField) {
+                    decoder.learnUserSentence(state.contextIdsArray(), selTokens);
+                }
+                state.pushContext(selTokens);
+            }
             resetInput();
             showPredictions(false);
         } else {
@@ -782,6 +800,9 @@ public class InputKernel {
     private void onPredictionPickInternal(int index) {
         if (index < 0 || index >= candidates.size()) return;
         DecodeResult c = candidates.get(index);
+        if (!privateField) {
+            decoder.learnUserSentence(state.contextIdsArray(), c.tokenIds);
+        }
         state.pushContext(c.tokenIds);
         fireCommitText(tradTextOf(c));
         showPredictions(false);
@@ -1062,15 +1083,6 @@ public class InputKernel {
     }
 
     // ===== Prediction =====
-
-    /**
-     * Push all accumulated selection token IDs into the prediction context.
-     */
-    private void pushSelectionContext() {
-        for (int[] ids : selectionTokenIds) {
-            state.pushContext(ids);
-        }
-    }
 
     /**
      * Show prediction candidates (NextTokens) if context is available.

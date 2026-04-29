@@ -95,9 +95,12 @@ public class SimeService extends InputMethodService
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
         // System is asking us to release memory. Drop the trie sep_cache
-        // (rebuilds lazily on next decode at small one-shot cost).
+        // (rebuilds lazily on next decode at small one-shot cost) and
+        // flush user-sentence history so unsaved learns aren't lost if
+        // the process is reaped under pressure.
         if (level >= TRIM_MEMORY_RUNNING_MODERATE && engine != null) {
             engine.resetCaches();
+            engine.flushUserSentence();
         }
     }
 

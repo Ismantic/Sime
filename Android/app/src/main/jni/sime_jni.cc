@@ -191,4 +191,52 @@ Java_com_shiyu_sime_SimeEngine_nativeResultTokenIds(
     return arr;
 }
 
+// ===== User-history LM (sentences.txt) =====
+
+JNIEXPORT jboolean JNICALL
+Java_com_shiyu_sime_SimeEngine_nativeLoadUserSentence(
+    JNIEnv* env, jclass /*clazz*/, jstring path) {
+    if (!g_sime || !g_sime->Ready()) return JNI_FALSE;
+    auto p = jstringToString(env, path);
+    return g_sime->LoadUserSentence(p) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_shiyu_sime_SimeEngine_nativeSaveUserSentence(
+    JNIEnv* env, jclass /*clazz*/, jstring path) {
+    if (!g_sime || !g_sime->Ready()) return JNI_FALSE;
+    auto p = jstringToString(env, path);
+    return g_sime->SaveUserSentence(p) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_shiyu_sime_SimeEngine_nativeSetUserSentenceEnabled(
+    JNIEnv* /*env*/, jclass /*clazz*/, jboolean enabled) {
+    if (!g_sime || !g_sime->Ready()) return;
+    g_sime->SetUserSentenceEnabled(static_cast<bool>(enabled));
+}
+
+JNIEXPORT void JNICALL
+Java_com_shiyu_sime_SimeEngine_nativeLearnUserSentence(
+    JNIEnv* env, jclass /*clazz*/,
+    jintArray contextIds, jintArray tokenIds) {
+    if (!g_sime || !g_sime->Ready()) return;
+    if (!tokenIds) return;
+
+    jsize ctx_len = contextIds ? env->GetArrayLength(contextIds) : 0;
+    std::vector<sime::TokenID> ctx(static_cast<std::size_t>(ctx_len));
+    if (ctx_len > 0) {
+        env->GetIntArrayRegion(contextIds, 0, ctx_len,
+            reinterpret_cast<jint*>(ctx.data()));
+    }
+
+    jsize tok_len = env->GetArrayLength(tokenIds);
+    std::vector<sime::TokenID> tokens(static_cast<std::size_t>(tok_len));
+    if (tok_len > 0) {
+        env->GetIntArrayRegion(tokenIds, 0, tok_len,
+            reinterpret_cast<jint*>(tokens.data()));
+    }
+    g_sime->LearnUserSentence(ctx, tokens);
+}
+
 } // extern "C"

@@ -65,8 +65,29 @@ public class SimeEngine {
     private static native int nativeResultConsumed(int index);
     private static native int[] nativeResultTokenIds(int index);
 
+    // User-history LM (sentences.txt). Persists user picks across
+    // sessions so repeated bigrams get a score boost on next decode.
+    private static native boolean nativeLoadUserSentence(String path);
+    private static native boolean nativeSaveUserSentence(String path);
+    private static native void nativeSetUserSentenceEnabled(boolean enabled);
+    private static native void nativeLearnUserSentence(int[] context, int[] tokens);
+
     /** Set true once init has loaded the native resources successfully. */
     private volatile boolean ready = false;
+
+    /**
+     * Absolute path to the on-disk user-sentence history file.
+     * Set during {@link #doStart} once the data dir is known.
+     */
+    private volatile String userSentencePath = null;
+
+    /**
+     * Number of accepted learns waiting to be persisted. We flush at
+     * threshold or on lifecycle hooks (onFinishInput, detach, onTrimMemory).
+     */
+    private int pendingUserSentenceSaves = 0;
+    private static final int USER_SENTENCE_FLUSH_THRESHOLD = 8;
+    private static final String USER_SENTENCE_FILENAME = "sentences.txt";
 
     public boolean isReady() {
         return ready;
@@ -148,6 +169,35 @@ public class SimeEngine {
         return nativeT9PinyinSyllables(digits, limit);
     }
 
+    /**
+     * Record a single user pick into the in-memory history LM and bump the
+     * dirty counter. Triggers a flush once {@link #USER_SENTENCE_FLUSH_THRESHOLD}
+     * accumulated learns have happened. Cheap when engine isn't ready —
+     * just a no-op.
+     */
+    public void learnUserSentence(int[] context, int[] tokens) {
+        if (!ready || tokens == null || tokens.length == 0) return;
+        nativeLearnUserSentence(context != null ? context : new int[0], tokens);
+        if (++pendingUserSentenceSaves >= USER_SENTENCE_FLUSH_THRESHOLD) {
+            flushUserSentence();
+        }
+    }
+
+    /**
+     * Persist the in-memory user-history to disk if there are pending
+     * learns since the last flush. Called from lifecycle hooks
+     * (onFinishInput, detach, onTrimMemory) and as the threshold safety
+     * net inside {@link #learnUserSentence}.
+     */
+    public void flushUserSentence() {
+        if (!ready || pendingUserSentenceSaves == 0
+                || userSentencePath == null) return;
+        if (!nativeSaveUserSentence(userSentencePath)) {
+            Log.w(TAG, "save user sentence failed: " + userSentencePath);
+        }
+        pendingUserSentenceSaves = 0;
+    }
+
     // ===== Internals =====
 
     /** Read stored results from C++ via typed accessors. */
@@ -183,6 +233,13 @@ public class SimeEngine {
                         + " model=" + modelPath);
                 return;
             }
+            // Load any persisted user-sentence history; vocab-signature
+            // mismatch (LM regen) silently rejects the old file and a
+            // fresh one is written on the next flush.
+            userSentencePath =
+                new File(dataDir, USER_SENTENCE_FILENAME).getAbsolutePath();
+            nativeLoadUserSentence(userSentencePath);
+            nativeSetUserSentenceEnabled(true);
             ready = true;
             Log.i(TAG, "engine ready");
         } catch (Throwable t) {

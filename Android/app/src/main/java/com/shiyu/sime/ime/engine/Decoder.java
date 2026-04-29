@@ -54,4 +54,15 @@ public interface Decoder {
 
     /** Max context tokens the LM uses for prediction (n-gram order minus 1). */
     int contextSize();
+
+    /**
+     * Records a single user pick into the user-history LM. Implementations
+     * may throttle disk writes; pair with {@link #flushUserSentence()}
+     * at session boundaries. Default no-op so test stubs don't have to
+     * implement learning.
+     */
+    default void learnUserSentence(int[] context, int[] tokens) {}
+
+    /** Persist any pending user-history learns to disk. Default no-op. */
+    default void flushUserSentence() {}
 }
