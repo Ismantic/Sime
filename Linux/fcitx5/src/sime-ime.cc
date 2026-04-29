@@ -2,7 +2,9 @@
 
 #include "sime-ime.h"
 #include <cstdlib>
+#include <filesystem>
 #include <fcitx-utils/key.h>
+#include <fcitx-utils/standardpaths.h>
 #include <fcitx-utils/utf8.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputcontext.h>
@@ -17,9 +19,34 @@ namespace fcitx {
 
 namespace {
 constexpr int kPageSize = 9;
+constexpr const char *kUserSentencePath = "sime/user.sentence";
+
 const KeyList &selectionKeys() {
     static const KeyList keys = Key::keyListFromString("1 2 3 4 5 6 7 8 9");
     return keys;
+}
+
+std::filesystem::path userSentencePath() {
+    // PkgData = $XDG_DATA_HOME/fcitx5 (e.g. ~/.local/share/fcitx5).
+    // `Data` (without Pkg) is the bare XDG_DATA_HOME, which would put
+    // our state outside fcitx5's own dir.
+    auto dir = StandardPaths::global().userDirectory(StandardPathsType::PkgData);
+    if (!dir.empty()) {
+        return dir / kUserSentencePath;
+    }
+    if (const char *home = std::getenv("HOME")) {
+        return std::filesystem::path(home) / ".local/share/fcitx5" /
+               kUserSentencePath;
+    }
+    return kUserSentencePath;
+}
+
+std::vector<sime::TokenID> decodeContext(const SimeState *st) {
+    std::vector<sime::TokenID> context = st->context_ids;
+    for (const auto &sel : st->selections) {
+        context.insert(context.end(), sel.tokens.begin(), sel.tokens.end());
+    }
+    return context;
 }
 }  // namespace
 
@@ -59,6 +86,7 @@ public:
     void select(InputContext *ic) const override {
         auto *st = ic->propertyFor(engine_->stateFactory());
         int maxCtx = engine_->contextSize();
+        engine_->learnUserSentence(ic, tokens_);
         st->pushContext(text_, tokens_, maxCtx);
         ic->commitString(text_);
         engine_->showPredictions(ic);
@@ -80,10 +108,17 @@ Sime::Sime(Instance *instance)
     initSime();
 }
 
-Sime::~Sime() {}
+Sime::~Sime() { flushUserSentence(); }
 
 void Sime::reloadConfig() {
     readAsIni(config_, "conf/sime.conf");
+    applyConfig();
+}
+
+void Sime::applyConfig() {
+    if (sime_) {
+        sime_->SetUserSentenceEnabled(*config_.userSentence);
+    }
 }
 
 void Sime::initSime() {
@@ -96,6 +131,8 @@ void Sime::initSime() {
                       << " lm=" << kLmPath;
         sime_.reset();
     } else {
+        sime_->LoadUserSentence(userSentencePath());
+        sime_->SetUserSentenceEnabled(*config_.userSentence);
         FCITX_INFO() << "Sime: resources loaded";
     }
 }
@@ -142,6 +179,7 @@ void Sime::deactivate(const InputMethodEntry &entry, InputContextEvent &event) {
     reset(entry, event);
     st->clearContext();
     st->resetPuncState();
+    flushUserSentence();
 }
 
 void Sime::reset(const InputMethodEntry &, InputContextEvent &event) {
@@ -162,7 +200,9 @@ std::string Sime::commitText(InputContext *ic) const {
     if (sime_) {
         std::string rem = st->remaining();
         if (!rem.empty()) {
-            auto results = sime_->DecodeSentence(rem, 0);
+            auto results = *config_.userSentence
+                               ? sime_->DecodeSentence(rem, decodeContext(st), 0)
+                               : sime_->DecodeSentence(rem, 0);
             if (!results.empty())
                 result += results[0].text;
             else
@@ -186,8 +226,12 @@ void Sime::selectCandidate(InputContext *ic, const std::string& text,
 
     // If all input consumed, commit everything
     if (st->fullySelected()) {
-        // Push each selection into context
+        // Learn each selection in turn so the engine sees the right
+        // context at each step (and the file format gets one row per
+        // selection for easy inspection). pushContext between calls so
+        // each successive learn sees the prior selections in context.
         for (const auto& sel : st->selections) {
+            learnUserSentence(ic, sel.tokens);
             st->pushContext(sel.text, sel.tokens, contextSize());
         }
         ic->commitString(st->committedText());
@@ -198,6 +242,37 @@ void Sime::selectCandidate(InputContext *ic, const std::string& text,
         st->cursor = st->buffer.size();
         updateUI(ic);
     }
+}
+
+void Sime::learnUserSentence(InputContext *ic,
+                             const std::vector<sime::TokenID> &tokens) {
+    if (!sime_ || !*config_.userSentence || tokens.empty()) {
+        return;
+    }
+    auto *st = state(ic);
+    std::vector<sime::TokenID> context = st->context_ids;
+    auto maxContext = static_cast<std::size_t>(contextSize());
+    if (context.size() > maxContext) {
+        context.erase(context.begin(),
+                      context.begin() +
+                          static_cast<std::ptrdiff_t>(context.size() -
+                                                      maxContext));
+    }
+    sime_->LearnUserSentence(context, tokens);
+    ++pending_user_sentence_saves_;
+    if (pending_user_sentence_saves_ >= kUserSentenceFlushThreshold) {
+        flushUserSentence();
+    }
+}
+
+void Sime::flushUserSentence() {
+    if (pending_user_sentence_saves_ == 0 || !sime_) {
+        return;
+    }
+    if (!sime_->SaveUserSentence(userSentencePath())) {
+        FCITX_WARN() << "Sime: failed to save user sentence history";
+    }
+    pending_user_sentence_saves_ = 0;
 }
 
 void Sime::showPredictions(InputContext *ic) {
@@ -257,8 +332,14 @@ void Sime::updateUI(InputContext *ic) {
     std::string rem = st->remaining();
     std::vector<sime::DecodeResult> results;
     if (!rem.empty()) {
-        results = sime_->DecodeSentence(
-            rem, static_cast<std::size_t>(*config_.nbest));
+        if (*config_.userSentence) {
+            auto context = decodeContext(st);
+            results = sime_->DecodeSentence(
+                rem, context, static_cast<std::size_t>(*config_.nbest));
+        } else {
+            results = sime_->DecodeSentence(
+                rem, static_cast<std::size_t>(*config_.nbest));
+        }
     }
 
     // Build preedit based on mode

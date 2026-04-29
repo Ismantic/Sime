@@ -4,6 +4,7 @@
 #include "score.h"
 #include "state.h"
 #include "dict.h"
+#include "user.h"
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -34,11 +35,36 @@ public:
     // is for hard release on memory pressure (e.g. Android
     // onTrimMemory).
     void ResetCaches() const { dict_.ResetSepCaches(); }
+
+    void SetUserSentenceEnabled(bool enabled);
+    bool UserSentenceEnabled() const { return user_sentence_enabled_; }
+    UserSentence& MutableUserSentence() { return user_sentence_; }
+    const UserSentence& GetUserSentence() const { return user_sentence_; }
+    // Loads from disk. Returns false on missing/corrupt/vocab-mismatch
+    // files; the in-memory state is left empty in those cases. The
+    // caller may delete the stale file when this returns false.
+    bool LoadUserSentence(const std::filesystem::path& path);
+    bool SaveUserSentence(const std::filesystem::path& path) const;
+    // Opaque tag identifying the LM vocabulary the engine is currently
+    // bound to. Stored alongside user sentences so they get dropped
+    // when the LM is regenerated and TokenIDs no longer mean the same
+    // thing. Empty until/unless an LM was successfully loaded.
+    const std::string& VocabSignature() const { return vocab_sig_; }
+    void LearnUserSentence(const std::vector<TokenID>& context,
+                           const std::vector<TokenID>& sentence);
+    // UTF-8 text for a single token id, sourced from the dict's
+    // mmap'd token table. Empty for NotToken or out-of-range ids.
+    std::string TokenText(TokenID id) const;
+
     // Decode
     std::vector<DecodeResult> DecodeStr(std::string_view input,
                                         std::size_t num = 5) const;
     std::vector<DecodeResult> DecodeSentence(std::string_view input,
                                              std::size_t extra = 0) const;
+    std::vector<DecodeResult> DecodeSentence(
+        std::string_view input,
+        const std::vector<TokenID>& context,
+        std::size_t extra = 0) const;
     // Prediction: given confirmed token IDs as context, suggest next words.
     // When `en` is true, only English tokens are returned (for the English
     // IME's prediction slot); Chinese tokens are filtered out.
@@ -71,6 +97,11 @@ public:
     std::vector<DecodeResult> DecodeNumSentence(
         std::string_view nums,
         std::string_view start = {},
+        std::size_t extra = 0) const;
+    std::vector<DecodeResult> DecodeNumSentence(
+        std::string_view nums,
+        std::string_view start,
+        const std::vector<TokenID>& context,
         std::size_t extra = 0) const;
 private:
     // Lattice types
@@ -124,6 +155,7 @@ private:
                    std::unordered_map<TokenID, float_t>* score_cache = nullptr) const;
 
     // Beam search
+    State InitialState(const std::vector<TokenID>& context = {}) const;
     void Process(std::vector<Node>& net) const;
     static std::vector<Link> Backtrace(const State& tail_state,
                                        std::size_t end);
@@ -154,6 +186,9 @@ private:
     // Resources
     Dict dict_;
     Scorer scorer_;
+    UserSentence user_sentence_;
+    std::string vocab_sig_;
+    bool user_sentence_enabled_ = false;
     bool ready_ = false;
 };
 

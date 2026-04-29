@@ -3,8 +3,11 @@
 #include "ustr.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
+#include <sstream>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -36,6 +39,27 @@ void PushBestLayer2Entry(std::vector<DecodeResult>& best_entries,
     }
 }
 
+// Vocabulary signature used to detect stale user-sentence files when the
+// LM is regenerated (new TokenIDs). LM file size + mtime is a cheap proxy
+// for "was the LM regenerated"; when it changes we drop the old file.
+std::string MakeVocabSignature(const std::filesystem::path& dict_path,
+                               const std::filesystem::path& lm_path) {
+    std::error_code ec;
+    auto dict_size = std::filesystem::file_size(dict_path, ec);
+    if (ec) return {};
+    auto lm_size = std::filesystem::file_size(lm_path, ec);
+    if (ec) return {};
+    auto lm_mtime = std::filesystem::last_write_time(lm_path, ec);
+    if (ec) return {};
+    auto lm_mtime_secs =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            lm_mtime.time_since_epoch())
+            .count();
+    std::ostringstream ss;
+    ss << dict_size << ':' << lm_size << ':' << lm_mtime_secs;
+    return ss.str();
+}
+
 } // namespace
 
 void Sime::MaybeTrimCaches() const {
@@ -53,7 +77,45 @@ Sime::Sime(const std::filesystem::path& dict_path,
         dict_.Clear();
         return;
     }
+    vocab_sig_ = MakeVocabSignature(dict_path, model_path);
     ready_ = true;
+}
+
+void Sime::SetUserSentenceEnabled(bool enabled) {
+    user_sentence_enabled_ = enabled;
+}
+
+bool Sime::LoadUserSentence(const std::filesystem::path& path) {
+    return user_sentence_.Load(path, vocab_sig_);
+}
+
+bool Sime::SaveUserSentence(const std::filesystem::path& path) const {
+    return user_sentence_.Save(path, vocab_sig_,
+        [this](TokenID id) { return TokenText(id); });
+}
+
+void Sime::LearnUserSentence(const std::vector<TokenID>& context,
+                             const std::vector<TokenID>& sentence) {
+    if (!user_sentence_enabled_) {
+        return;
+    }
+    user_sentence_.Add(context, sentence);
+}
+
+std::string Sime::TokenText(TokenID id) const {
+    if (id == NotToken || !ready_) {
+        return {};
+    }
+    const char32_t* p = dict_.TokenAt(id);
+    if (!p) {
+        return {};
+    }
+    std::u32string u32;
+    while (*p) {
+        u32.push_back(*p);
+        ++p;
+    }
+    return TextFromU32(u32);
 }
 
 void Sime::ComputeEdgePenalties(std::vector<Node>& net,
@@ -520,6 +582,14 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view nums,
     std::string_view start,
     std::size_t extra) const {
+    return DecodeNumSentence(nums, start, {}, extra);
+}
+
+std::vector<DecodeResult> Sime::DecodeNumSentence(
+    std::string_view nums,
+    std::string_view start,
+    const std::vector<TokenID>& context,
+    std::size_t extra) const {
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     MaybeTrimCaches();
@@ -541,7 +611,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    State init = InitialState(context);
     net[0].states.Insert(init);
     Process(net);
 
@@ -670,7 +740,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    State init = InitialState();
     net[0].states.Insert(init);
     Process(net);
 
@@ -730,7 +800,7 @@ std::vector<DecodeResult> Sime::DecodeStr(
 
     const std::size_t max_top = num == 0 ? 1 : num;
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    State init = InitialState();
     net[0].states.Insert(init);
     Process(net);
 
@@ -974,6 +1044,28 @@ void Sime::PruneNode(std::vector<Link>& edges,
     edges = std::move(pruned);
 }
 
+State Sime::InitialState(const std::vector<TokenID>& context) const {
+    Scorer::Pos pos = scorer_.StartPos();
+    TokenID last = NotToken;
+    const std::size_t usable =
+        static_cast<std::size_t>(std::max(scorer_.Num() - 1, 1));
+    const std::size_t begin = context.size() > usable
+                                  ? context.size() - usable
+                                  : 0;
+    for (std::size_t i = begin; i < context.size(); ++i) {
+        TokenID token = context[i];
+        if (token == NotToken) {
+            continue;
+        }
+        Scorer::Pos next{};
+        scorer_.ScoreMove(pos, token, next);
+        scorer_.Back(next);
+        pos = next;
+        last = token;
+    }
+    return State(0.0, 0, pos, nullptr, last);
+}
+
 void Sime::Process(std::vector<Node>& net) const {
     for (std::size_t col = 0; col < net.size(); ++col) {
         auto& column = net[col];
@@ -986,7 +1078,13 @@ void Sime::Process(std::vector<Node>& net) const {
                 scorer_.Back(next_pos);
                 cur_pos = next_pos;
 
-                float_t next_cost = value.score + step + word.penalty;
+                float_t user_adjust = 0.0;
+                if (user_sentence_enabled_) {
+                    user_adjust = user_sentence_.CostAdjustment(
+                        value.backtrace_token, word.id, step);
+                }
+                float_t next_cost =
+                    value.score + step + word.penalty + user_adjust;
                 State next(next_cost, word.end, cur_pos, &value, word.id,
                            word.pieces);
                 net[word.end].states.Insert(next);
@@ -1031,6 +1129,13 @@ std::u32string Sime::ToText(const Link& n) const {
 std::vector<DecodeResult> Sime::DecodeSentence(
     std::string_view input,
     std::size_t extra) const {
+    return DecodeSentence(input, {}, extra);
+}
+
+std::vector<DecodeResult> Sime::DecodeSentence(
+    std::string_view input,
+    const std::vector<TokenID>& context,
+    std::size_t extra) const {
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
     MaybeTrimCaches();
@@ -1046,7 +1151,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     for (auto& col : net) PruneNode(col.es);
 
     for (auto& col : net) col.states.SetMaxTop(BeamSize);
-    State init(0.0, 0, scorer_.StartPos(), nullptr, 0);
+    State init = InitialState(context);
     net[0].states.Insert(init);
     Process(net);
 

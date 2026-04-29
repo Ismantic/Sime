@@ -44,6 +44,7 @@ public:
     void setConfig(const RawConfig &config) override {
         config_.load(config);
         safeSaveAsIni(config_, "conf/sime.conf");
+        applyConfig();
     }
     void reloadConfig() override;
 
@@ -63,6 +64,13 @@ public:
 
     // Called by SimeNextCandidateWord
     void showPredictions(InputContext *ic);
+    void learnUserSentence(InputContext *ic,
+                           const std::vector<sime::TokenID> &tokens);
+    // Persists the in-memory user-sentence dictionary if there are
+    // accumulated changes since the last save. Called from deactivate
+    // and from learnUserSentence once the dirty counter crosses
+    // kUserSentenceFlushThreshold.
+    void flushUserSentence();
     FactoryFor<SimeState> *stateFactory() { return &factory_; }
     int contextSize() const { return sime_ ? sime_->ContextSize() : 2; }
 
@@ -70,6 +78,7 @@ public:
         // Candidates
         Option<int> nbest{this, "NBest", _("额外全句数"), 0};
         Option<bool> prediction{this, "Prediction", _("联想"), true};
+        Option<bool> userSentence{this, "UserSentence", _("用户句子学习"), false};
 
         // Preedit
         OptionWithAnnotation<PreeditMode, PreeditModeI18NAnnotation> preeditMode{
@@ -115,6 +124,7 @@ public:
 
 private:
     void initSime();
+    void applyConfig();
     void updateUI(InputContext *ic);
     void resetState(InputContext *ic);
     SimeState *state(InputContext *ic);
@@ -123,6 +133,13 @@ private:
     FactoryFor<SimeState> factory_;
     std::unique_ptr<sime::Sime> sime_;
     Config config_;
+
+    // Number of accepted learns waiting to be persisted. We flush on
+    // deactivate (focus loss / IM switch / shutdown) and as a safety
+    // net every kUserSentenceFlushThreshold learns so a hard kill
+    // bounds the data loss to ≤threshold most-recent commits.
+    std::size_t pending_user_sentence_saves_ = 0;
+    static constexpr std::size_t kUserSentenceFlushThreshold = 8;
 
     FCITX_ADDON_DEPENDENCY_LOADER(fullwidth, instance_->addonManager());
     FCITX_ADDON_DEPENDENCY_LOADER(chttrans, instance_->addonManager());
