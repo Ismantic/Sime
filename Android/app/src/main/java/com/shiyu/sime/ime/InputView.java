@@ -66,13 +66,13 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         // of keys doesn't sit flush against the gesture bar / nav line
         // and is easier to tap. Matches reference IMEs which leave a
         // visible margin below the lowest key.
-        setPadding(0, 0, 0, dp(24));
+        setPadding(0, 0, 0, dp(32));
 
         candidatesBar = new CandidatesBar(getContext());
         // Tall enough to host the active 2-row layout (preedit on top
         // of the candidates row). Idle / settings modes use the same
         // height with center-vertical icons.
-        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
+        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(54));
         addView(candidatesBar, cbLp);
     }
 
@@ -410,8 +410,8 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         int screenW = dm.widthPixels;
         boolean landscape = screenW > screenH;
         if (landscape) {
-            return Math.min(dp(250), Math.round(screenH * 0.55f));
+            return Math.min(dp(248), Math.round(screenH * 0.55f));
         }
-        return dp(250);
+        return dp(248);
     }
 }
