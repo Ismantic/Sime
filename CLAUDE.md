@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Sime (是语) — a pure C++20 Chinese pinyin input method engine using Interpolated Absolute Discounting (Ney 1994) N-gram language models with Viterbi beam search decoding. Supports Linux (Fcitx5 plugin) and Android (JNI).
+Sime (是语) — a pure C++20 Chinese pinyin input method engine using Interpolated Absolute Discounting (Ney 1994) N-gram language models with Viterbi beam search decoding. Supports Linux (Fcitx5 plugin), Android (JNI), and macOS (`macOS/` has its own CMake build + installer package).
 
 ## Build
 
@@ -28,19 +28,26 @@ The Android app uses its own Gradle/NDK build (see `Android/BUILD.md`), not the 
 
 ## Testing
 
-No automated test suite. Use the interactive interpreter to verify behavior:
+No C++ unit-test suite. Use the interactive interpreter to verify engine behavior:
 
 ```bash
-./build/sime --dict pipeline/output/sime.dict --cnt pipeline/output/sime.raw.cnt
+./build/sime --dict pipeline/output/sime.dict --cnt pipeline/output/sime.cnt
 # Sentence mode: add -s
 # T9 mode: add --num
+# English mode: add --en
 ```
 
-Test case files: `pipeline/cases.1.txt`, `pipeline/cases.2.txt`, `pipeline/cases.num.1.txt`, `pipeline/cases.num.2.txt`.
+Use the compacted `.cnt` (not `.raw.cnt`) — that's the deployment format and matches what platform builds load. Test case files: `pipeline/cases.1.txt`, `pipeline/cases.2.txt`, `pipeline/cases.num.1.txt`, `pipeline/cases.num.2.txt`.
+
+Android does ship JUnit tests under `Android/app/src/test/java/` (buffer state, candidate selection, mode switching). Run from `Android/`:
+
+```bash
+./gradlew testDebugUnitTest
+```
 
 ## Training Pipeline
 
-Run from `pipeline/` directory. Requires a pre-segmented corpus `sentences.cut.txt` and a pinyin table (variable `UNITS` in the Makefile, currently `units.20260408.txt`). Steps are sequential via Makefile targets:
+Run from `pipeline/` directory. Requires a pre-segmented corpus `sentences.cut.txt` and a pinyin table (`UNITS` variable in the Makefile, defaults to `dict.unit`). Steps are sequential via Makefile targets:
 
 ```bash
 cd pipeline
@@ -48,11 +55,12 @@ make cut        # 0. (optional) segment raw text via cut.py
 make chars      # 1. Count corpus word frequencies
 make dict       # 2. Generate token dict + pinyin dictionary
 make count      # 3. Parallel n-gram counting (parallel_count.sh)
-make construct  # 4. Build IAD language model
-make convert    # 5. Build pinyin Trie
+make construct  # 4. Build IAD language model -> sime.raw.cnt
+make compact    # 4.5 Strip bow/boe -> sime.cnt (deployment format)
+make convert    # 5. Build pinyin Trie -> sime.dict
 ```
 
-Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Training tools reference `../build/`, so the C++ CLI tools must be built first.
+Outputs land in `$(OUT)`, which defaults to `pipeline/output-new/` in the Makefile (older `pipeline/output/` is sometimes referenced by docs/test commands — adjust paths to match wherever the active run wrote). Final deployable artifacts: `sime.dict` and `sime.cnt`. Training tools reference `../build/`, so the C++ CLI tools must be built first.
 
 **Sibling pipelines** (same structure, separate Makefiles):
 - `pipeline/en/` — English LM (`sime.en.dict`, `sime.en.raw.cnt`). Uses a char-level cut and its own `gen_token_dict.py`.
@@ -70,7 +78,7 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 - **Conversion** (`convert.h/cc`): builds the pinyin Trie; driver for `sime-converter`.
 - **Compact** (`compact.h/cc`): compacts raw `.cnt` LM files into deployment format; driver for `sime-compact`.
 - **Scorer** (`score.h/cc`): n-gram LM probability lookups with backoff.
-- **Decoder** (`sime.h/cc`): lattice construction + Viterbi beam search for both full-keyboard pinyin and T9/nine-key input (`DecodeNumStr`, `DecodeNumSentence`). Key constants: `NodeSize=40`, `BeamSize=60`.
+- **Decoder** (`sime.h/cc`): lattice construction + Viterbi beam search for both full-keyboard pinyin and T9/nine-key input (`DecodeNumStr`, `DecodeNumSentence`). Key constants in `include/sime.h`: `NodeSize=40`, `BeamSize=20`.
 - **State** (`state.h/cc`): beam search state heap.
 - **Cutter** (`cut.h/cc`): Chinese text segmenter reusing the Sime LM + dict via a byte-level DAT and Viterbi beam search.
 - **UTF-8** (`ustr.h/cc`): UTF-8 string utilities.
@@ -79,7 +87,8 @@ Outputs: `pipeline/output/sime.dict` and `pipeline/output/sime.raw.cnt`. Trainin
 
 **Platform layers**:
 - `Linux/fcitx5/` — Fcitx5 engine plugin (`sime.cc`, `sime-state.cc`)
-- `Android/` — Java IME service + JNI bridge (`app/src/main/jni/sime_jni.cc`)
+- `Android/` — Java IME service + JNI bridge (`app/src/main/jni/sime_jni.cc`). Java package is `com.shiyu.sime` (renamed from `com.semantic.sime` — older AGENTS.md references are stale).
+- `macOS/` — IMK input method app + installer; built via `macOS/CMakeLists.txt`.
 
 ## Language Model Conventions
 
