@@ -77,3 +77,31 @@ void sime_free_results(SimeResults *r) {
   r->items = nullptr;
   r->count = 0;
 }
+
+bool sime_load_user_sentence(SimeHandle *h, const char *path) {
+  if (!h || !h->sime || !h->sime->Ready() || !path) return false;
+  return h->sime->LoadUserSentence(path);
+}
+
+bool sime_save_user_sentence(const SimeHandle *h, const char *path) {
+  if (!h || !h->sime || !h->sime->Ready() || !path) return false;
+  return h->sime->SaveUserSentence(path);
+}
+
+void sime_set_user_sentence_enabled(SimeHandle *h, bool enabled) {
+  if (!h || !h->sime || !h->sime->Ready()) return;
+  h->sime->SetUserSentenceEnabled(enabled);
+}
+
+void sime_learn_user_sentence(SimeHandle *h,
+                              const uint32_t *context, int context_count,
+                              const uint32_t *tokens, int token_count) {
+  if (!h || !h->sime || !h->sime->Ready()) return;
+  if (!tokens || token_count <= 0) return;
+  std::vector<sime::TokenID> ctx;
+  if (context && context_count > 0) {
+    ctx.assign(context, context + context_count);
+  }
+  std::vector<sime::TokenID> toks(tokens, tokens + token_count);
+  h->sime->LearnUserSentence(ctx, toks);
+}

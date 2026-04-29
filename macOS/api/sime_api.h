@@ -46,6 +46,15 @@ SimeResults sime_next_tokens(const SimeHandle *h, const uint32_t *tokens,
 // Free results returned by any of the above.
 void sime_free_results(SimeResults *r);
 
+// User-history LM (sentences.txt). Persists user picks across sessions
+// so repeated bigrams get a score boost on next decode.
+bool sime_load_user_sentence(SimeHandle *h, const char *path);
+bool sime_save_user_sentence(const SimeHandle *h, const char *path);
+void sime_set_user_sentence_enabled(SimeHandle *h, bool enabled);
+void sime_learn_user_sentence(SimeHandle *h,
+                              const uint32_t *context, int context_count,
+                              const uint32_t *tokens, int token_count);
+
 #ifdef __cplusplus
 }
 #endif

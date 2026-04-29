@@ -95,8 +95,10 @@ final class SimeSettings {
     static let fullwidthPunctuation = "SimeFullwidthPunctuation"
     static let fullwidthCharacter   = "SimeFullwidthCharacter"
     static let prediction           = "SimePrediction"
+    static let userSentence         = "SimeUserSentence"
   }
-  // Defaults: Chinese punctuation ON, fullwidth characters OFF, prediction ON.
+  // Defaults: Chinese punctuation ON, fullwidth characters OFF, prediction ON,
+  // user-sentence learning ON.
   var fullwidthPunctuation: Bool {
     get { defaults.object(forKey: Key.fullwidthPunctuation) as? Bool ?? true }
     set { defaults.set(newValue, forKey: Key.fullwidthPunctuation) }
@@ -108,6 +110,13 @@ final class SimeSettings {
   var prediction: Bool {
     get { defaults.object(forKey: Key.prediction) as? Bool ?? true }
     set { defaults.set(newValue, forKey: Key.prediction) }
+  }
+  var userSentence: Bool {
+    get { defaults.object(forKey: Key.userSentence) as? Bool ?? true }
+    set {
+      defaults.set(newValue, forKey: Key.userSentence)
+      SimeEngine.shared.setUserSentenceEnabled(newValue)
+    }
   }
 }
 
@@ -152,12 +161,14 @@ final class SimeInputController: IMKInputController {
   override func deactivateServer(_ sender: Any!) {
     commitOrClear(sender)
     hidePalettes()
+    SimeEngine.shared.flushUserSentence()
     currentClient = nil
   }
 
   override func commitComposition(_ sender: Any!) {
     currentClient = sender as? IMKTextInput
     commitOrClear(sender)
+    SimeEngine.shared.flushUserSentence()
   }
 
   override func hidePalettes() {
@@ -345,6 +356,8 @@ final class SimeInputController: IMKInputController {
         #selector(toggleFullwidthCharacter))
     add("启用联想", SimeSettings.shared.prediction,
         #selector(togglePrediction))
+    add("用户句子学习", SimeSettings.shared.userSentence,
+        #selector(toggleUserSentence))
     return menu
   }
 
@@ -360,6 +373,9 @@ final class SimeInputController: IMKInputController {
       state.predicting = false
       SimePanel.shared.hide()
     }
+  }
+  @objc private func toggleUserSentence() {
+    SimeSettings.shared.userSentence.toggle()
   }
   @objc private func toggleEnglish() { toggleEnglishMode() }
 
@@ -543,10 +559,15 @@ final class SimeInputController: IMKInputController {
     state.highlightedIndex = 0
 
     if state.fullySelected {
-      // Commit everything and show predictions
+      // Commit everything and show predictions. Learn each selection in
+      // turn so the engine sees the right context at each step (mirrors
+      // sime-ime.cc::selectCandidate).
       let text = state.committedText
+      let maxCtx = SimeEngine.shared.contextSize
       for sel in state.selections {
-        state.pushContext(sel.text, sel.tokens, maxSize: SimeEngine.shared.contextSize)
+        SimeEngine.shared.learnUserSentence(
+          context: state.contextIds, tokens: sel.tokens)
+        state.pushContext(sel.text, sel.tokens, maxSize: maxCtx)
       }
       commit(string: text)
       state.reset()
@@ -561,6 +582,8 @@ final class SimeInputController: IMKInputController {
     let absIdx = state.pageStart + pageIndex
     guard absIdx < state.candidates.count else { return }
     let c = state.candidates[absIdx]
+    SimeEngine.shared.learnUserSentence(
+      context: state.contextIds, tokens: c.tokens)
     state.pushContext(c.text, c.tokens, maxSize: SimeEngine.shared.contextSize)
     commit(string: c.text)
     state.reset()

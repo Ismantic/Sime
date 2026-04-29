@@ -15,6 +15,7 @@ set(CXX_SOURCES
     ../src/score.cc
     ../src/trie.cc
     ../src/state.cc
+    ../src/user.cc
     ../src/ustr.cc
 )
 
