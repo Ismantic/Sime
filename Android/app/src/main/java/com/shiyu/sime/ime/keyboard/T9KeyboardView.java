@@ -53,7 +53,7 @@ public class T9KeyboardView extends KeyboardView {
 
     /** Max items in the left strip (pinyin alts + fallback letters). */
     private static final int MAX_LEFT_ITEMS = 12;
-    private static final int LEFT_ITEM_HEIGHT_DP = 38;
+    private static final int LEFT_ITEM_HEIGHT_DP = 42;
 
     private LinearLayout leftStrip;
     private ScrollView leftScroll;

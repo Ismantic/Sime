@@ -414,7 +414,7 @@ public class CandidatesBar extends FrameLayout {
             TextView tv = new TextView(getContext());
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
             tv.setGravity(Gravity.CENTER);
-            tv.setPadding(dp(12), dp(3), dp(12), dp(3));
+            tv.setPadding(dp(12), dp(1), dp(12), dp(1));
             tv.setClickable(true);
             tv.setFocusable(true);
             candidateContainer.addView(tv);
@@ -451,7 +451,7 @@ public class CandidatesBar extends FrameLayout {
                     tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
                     tv.setTextColor(theme.candidateText);
                     tv.setTypeface(null, Typeface.NORMAL);
-                    tv.setPadding(dp(12), dp(3), dp(12), dp(3));
+                    tv.setPadding(dp(12), dp(1), dp(12), dp(1));
                     tv.setBackground(null);
                     InputFeedbacks.wireClick(tv,
                             () -> listener.onEnglishLiteralCommit());
@@ -462,7 +462,7 @@ public class CandidatesBar extends FrameLayout {
                     tv.setText(c.text);
                     tv.setBackground(null);
                     // Reset padding (buffer cell tightened it).
-                    tv.setPadding(dp(12), dp(3), dp(12), dp(3));
+                    tv.setPadding(dp(12), dp(1), dp(12), dp(1));
                     tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.TITLE);
                     if (englishStyle) {
                         // English candidates / predictions: no first-cell

@@ -53,7 +53,7 @@ public final class StripHelper {
         int h = dp(ctx, heightDp);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, h);
-        int m = dp(ctx, 3);
+        int m = dp(ctx, 2);
         lp.setMargins(m, m, m, m);
         tv.setLayoutParams(lp);
         InputFeedbacks.wireClick(tv, onClick);
