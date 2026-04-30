@@ -99,7 +99,7 @@ public class NumberKeyboardView extends KeyboardView {
     }
 
     private TextView makePuncCell(final String label) {
-        return StripHelper.makeStripCell(getContext(), theme, label, true,
+        return StripHelper.makeStripCell(getContext(), theme, label,
                 () -> emit(SimeKey.punctuation(label)), LEFT_ITEM_HEIGHT_DP);
     }
 }

@@ -184,7 +184,7 @@ public class T9KeyboardView extends KeyboardView {
         if (!active) {
             for (int i = 0; i < IDLE_PUNC.length; i++) {
                 final String p = IDLE_PUNC[i];
-                leftStrip.addView(makeLeftItem(p, false,
+                leftStrip.addView(makeLeftItem(p,
                         () -> emit(SimeKey.punctuation(p))));
             }
             return;
@@ -197,7 +197,7 @@ public class T9KeyboardView extends KeyboardView {
         for (int i = 0; i < pinyinAlts.size() && added < MAX_LEFT_ITEMS; i++) {
             final int idx = i;
             String label = pinyinAlts.get(i).letters;
-            leftStrip.addView(makeLeftItem(label, true, () -> {
+            leftStrip.addView(makeLeftItem(label, () -> {
                 if (leftListener != null) leftListener.onPinyinAltPick(idx);
             }));
             shown.add(label);
@@ -207,7 +207,7 @@ public class T9KeyboardView extends KeyboardView {
             final char ch = firstDigitLetters.charAt(i);
             String label = String.valueOf(ch);
             if (shown.contains(label)) continue;
-            leftStrip.addView(makeLeftItem(label, false, () -> {
+            leftStrip.addView(makeLeftItem(label, () -> {
                 if (leftListener != null) leftListener.onFallbackLetter(ch);
             }));
             shown.add(label);
@@ -218,14 +218,14 @@ public class T9KeyboardView extends KeyboardView {
             // user isn't left with an empty strip.
             for (int i = 0; i < IDLE_PUNC.length; i++) {
                 final String p = IDLE_PUNC[i];
-                leftStrip.addView(makeLeftItem(p, false,
+                leftStrip.addView(makeLeftItem(p,
                         () -> emit(SimeKey.punctuation(p))));
             }
         }
     }
 
-    private TextView makeLeftItem(String label, boolean highlight, Runnable onClick) {
+    private TextView makeLeftItem(String label, Runnable onClick) {
         return StripHelper.makeStripCell(
-                getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
+                getContext(), theme, label, onClick, LEFT_ITEM_HEIGHT_DP);
     }
 }

@@ -21,32 +21,15 @@ public final class StripHelper {
 
     private StripHelper() {}
 
-    /**
-     * Create a single strip cell.
-     *
-     * @param ctx         Android context (for resources)
-     * @param theme       active theme palette
-     * @param label       text shown in the cell
-     * @param functionBg  {@code true} → function-key colors
-     *                    ({@link SimeTheme#functionKeyBackground} /
-     *                    {@link SimeTheme#keyTextFunction});
-     *                    {@code false} → normal key colors
-     *                    ({@link SimeTheme#keyBackground} /
-     *                    {@link SimeTheme#keyText})
-     * @param onClick     click action
-     * @param heightDp    fixed cell height in dp
-     */
     public static TextView makeStripCell(Context ctx, SimeTheme theme,
-                                         String label, boolean functionBg,
-                                         Runnable onClick, int heightDp) {
+                                         String label, Runnable onClick,
+                                         int heightDp) {
         TextView tv = new TextView(ctx);
         tv.setText(label);
         tv.setGravity(Gravity.CENTER);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.SMALL);
-        tv.setTextColor(functionBg ? theme.keyTextFunction : theme.keyText);
-        tv.setBackground(functionBg
-                ? makeFunctionSelector(ctx, theme)
-                : makeNormalSelector(ctx, theme));
+        tv.setTextColor(theme.keyTextFunction);
+        tv.setBackground(makeFunctionSelector(ctx, theme));
         tv.setClickable(true);
         tv.setFocusable(true);
         tv.setSingleLine(true);
@@ -58,14 +41,6 @@ public final class StripHelper {
         tv.setLayoutParams(lp);
         InputFeedbacks.wireClick(tv, onClick);
         return tv;
-    }
-
-    private static StateListDrawable makeNormalSelector(Context ctx, SimeTheme theme) {
-        StateListDrawable sl = new StateListDrawable();
-        sl.addState(new int[]{android.R.attr.state_pressed},
-                roundedRect(ctx, theme.keyBackgroundPressed));
-        sl.addState(new int[]{}, roundedRect(ctx, theme.keyBackground));
-        return sl;
     }
 
     private static StateListDrawable makeFunctionSelector(Context ctx, SimeTheme theme) {

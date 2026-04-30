@@ -202,7 +202,7 @@ public class ExpandedCandidatesView extends LinearLayout {
             InputFeedbacks.wireClick(item, onClick);
         } else {
             item = StripHelper.makeStripCell(
-                    getContext(), theme, label, true, onClick, LEFT_ITEM_HEIGHT_DP);
+                    getContext(), theme, label, onClick, LEFT_ITEM_HEIGHT_DP);
             leftItemPool.add(item);
             leftStrip.addView(item);
         }
