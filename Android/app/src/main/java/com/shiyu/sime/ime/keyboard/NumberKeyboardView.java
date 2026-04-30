@@ -1,14 +1,10 @@
 package com.shiyu.sime.ime.keyboard;
 
-import com.shiyu.sime.ime.theme.Typography;
 import android.content.Context;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.shiyu.sime.ime.feedback.InputFeedbacks;
 import com.shiyu.sime.ime.keyboard.framework.KeyboardContainer;
 import com.shiyu.sime.ime.keyboard.layouts.NumberLayout;
 
@@ -37,7 +33,7 @@ import com.shiyu.sime.ime.keyboard.layouts.NumberLayout;
  */
 public class NumberKeyboardView extends KeyboardView {
 
-    private static final int LEFT_ITEM_HEIGHT_DP = 38;
+    private static final int LEFT_ITEM_HEIGHT_DP = 42;
 
     public NumberKeyboardView(Context context) {
         super(context);
@@ -103,21 +99,7 @@ public class NumberKeyboardView extends KeyboardView {
     }
 
     private TextView makePuncCell(final String label) {
-        TextView tv = new TextView(getContext());
-        tv.setText(label);
-        tv.setGravity(Gravity.CENTER);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, Typography.BODY);
-        tv.setTextColor(theme.keyTextFunction);
-        tv.setBackground(makeKeySelector(theme.functionKeyBackground, theme.functionKeyBackgroundPressed));
-        tv.setClickable(true);
-        tv.setFocusable(true);
-        tv.setSingleLine(true);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(LEFT_ITEM_HEIGHT_DP));
-        int m = dp(3);
-        lp.setMargins(m, m, m, m);
-        tv.setLayoutParams(lp);
-        InputFeedbacks.wireClick(tv, () -> emit(SimeKey.punctuation(label)));
-        return tv;
+        return StripHelper.makeStripCell(getContext(), theme, label, true,
+                () -> emit(SimeKey.punctuation(label)), LEFT_ITEM_HEIGHT_DP);
     }
 }
