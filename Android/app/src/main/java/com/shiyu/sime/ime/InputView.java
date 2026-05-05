@@ -72,7 +72,7 @@ public class InputView extends LinearLayout implements InputKernel.StateObserver
         // Tall enough to host the active 2-row layout (preedit on top
         // of the candidates row). Idle / settings modes use the same
         // height with center-vertical icons.
-        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(54));
+        LayoutParams cbLp = new LayoutParams(LayoutParams.MATCH_PARENT, dp(52));
         addView(candidatesBar, cbLp);
     }
 
