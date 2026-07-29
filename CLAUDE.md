@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Sime (是语) — a pure C++20 Chinese pinyin input method engine using Interpolated Absolute Discounting (Ney 1994) N-gram language models with Viterbi beam search decoding. Supports Linux (Fcitx5 plugin), Android (JNI), and macOS (`macOS/` has its own CMake build + installer package).
+Sime (是语) — a pure C++20 Chinese pinyin input method engine using Interpolated Absolute Discounting (Ney 1994) N-gram language models with Viterbi beam search decoding. Platform frontends for Android, Fcitx5, and macOS live in the separate sibling `SimeApp` repository.
 
 ## Build
 
@@ -13,7 +13,8 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-For the Fcitx5 plugin: add `-DSIME_ENABLE_FCITX5=ON`, then `sudo cmake --install build` and `fcitx5 -r`.
+Set `-DSIME_BUILD_TOOLS=OFF` when embedding only `sime_core` in another
+CMake project.
 
 Build outputs in `./build/`:
 - `sime` — interactive decoder (used for manual testing)
@@ -23,8 +24,6 @@ Build outputs in `./build/`:
 - `sime-compact` — compacts a `.raw.cnt` into `.cnt` (final deployment format)
 - `sime-dump` — inspect a built `.cnt` LM file
 - `sime-cut` — Chinese text segmenter using the LM + dict
-
-The Android app uses its own Gradle/NDK build (see `Android/BUILD.md`), not the root CMake. The C++ engine under `src/` and `include/` is compiled via `Android/app/src/main/jni/CMakeLists.txt`.
 
 ## Testing
 
@@ -38,12 +37,6 @@ No C++ unit-test suite. Use the interactive interpreter to verify engine behavio
 ```
 
 Use the compacted `.cnt` (not `.raw.cnt`) — that's the deployment format and matches what platform builds load. Test case files: `pipeline/cases.1.txt`, `pipeline/cases.2.txt`, `pipeline/cases.num.1.txt`, `pipeline/cases.num.2.txt`.
-
-Android does ship JUnit tests under `Android/app/src/test/java/` (buffer state, candidate selection, mode switching). Run from `Android/`:
-
-```bash
-./gradlew testDebugUnitTest
-```
 
 ## Training Pipeline
 
@@ -85,10 +78,9 @@ Outputs land in `$(OUT)`, which defaults to `pipeline/output-new/` in the Makefi
 
 **CLI tools** (`bin/`): each tool is a thin entry point linking `sime_core`.
 
-**Platform layers**:
-- `Linux/fcitx5/` — Fcitx5 engine plugin (`sime.cc`, `sime-state.cc`)
-- `Android/` — Java IME service + JNI bridge (`app/src/main/jni/sime_jni.cc`). Java package is `com.shiyu.sime` (renamed from `com.semantic.sime` — older AGENTS.md references are stale).
-- `macOS/` — IMK input method app + installer; built via `macOS/CMakeLists.txt`.
+**Platform layers** are maintained in the sibling `SimeApp` repository. Public
+engine APIs stay under `include/`; JNI, Swift/C API adapters, and Fcitx5 glue
+stay in SimeApp.
 
 ## Language Model Conventions
 
@@ -104,12 +96,9 @@ No `<s>`/`</s>` sentence boundary tokens. The corpus is treated as a stream of f
 
 ## Deploying Assets to Platform Builds
 
-Platform builds (Android/Fcitx5) need LM assets copied from pipeline output — these are gitignored:
-
-```bash
-cp pipeline/output/sime.cnt pipeline/output/sime.dict Android/app/src/main/assets/
-cp pipeline/output/sime.cnt pipeline/output/sime.dict Linux/fcitx5/data/
-```
+Copy generated `sime.cnt` and `sime.dict` files to the appropriate resources
+in the sibling SimeApp checkout. Runtime model binaries remain untracked in
+both repositories.
 
 ## Compiler Settings
 
