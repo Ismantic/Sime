@@ -22,12 +22,27 @@ add_library(sime_core
     ${NEW_SRC_DIR}/sime.cc
     ${NEW_SRC_DIR}/trie.cc
     ${NEW_SRC_DIR}/cut.cc
+    ${NEW_SRC_DIR}/gru_reranker.cc
 )
 
 target_include_directories(sime_core PUBLIC ${NEW_INC_DIR} ${NEW_SRC_DIR})
 target_compile_features(sime_core PUBLIC cxx_std_20)
 target_compile_options(sime_core PRIVATE -Wall -Wextra -pedantic -Wconversion)
 set_target_properties(sime_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+option(SIME_ENABLE_NCNN "Enable the ncnn GRU reranker backend" OFF)
+if(SIME_ENABLE_NCNN)
+    include(${NEW_ROOT}/cmake/Ncnn.cmake)
+    sime_add_ncnn()
+    target_link_libraries(sime_core PRIVATE ncnn)
+    target_compile_definitions(sime_core PUBLIC SIME_ENABLE_NCNN=1)
+    # Android ncnn deliberately exports -fno-exceptions/-fno-rtti. Those
+    # flags must not leak into Sime, whose public API reports malformed
+    # UTF-8 and model errors with C++ exceptions.
+    if(ANDROID)
+        target_compile_options(sime_core PRIVATE -fexceptions -frtti)
+    endif()
+endif()
 
 option(SIME_BUILD_TOOLS "Build Sime command-line and model tools" ON)
 if(SIME_BUILD_TOOLS)

@@ -6,12 +6,15 @@
 #include "dict.h"
 #include "user.h"
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace sime {
+
+class GruReranker;
 
 struct DecodeResult {
     std::string text;        // UTF-8 display text (▁ prefix stripped)
@@ -26,8 +29,10 @@ public:
     Sime() = default;
     Sime(const std::filesystem::path& dict_path,
          const std::filesystem::path& model_path);
+    ~Sime();
 
     bool Ready() const { return ready_; }
+    bool GruReady() const;
     int ContextSize() const { return scorer_.Num() - 1; }
 
     // Cache trim hooks for the long-running daemon use case (Android
@@ -195,6 +200,7 @@ private:
     std::string vocab_sig_;
     bool user_sentence_enabled_ = false;
     bool ready_ = false;
+    std::unique_ptr<GruReranker> gru_;
 };
 
 } // namespace sime

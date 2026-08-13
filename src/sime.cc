@@ -1,6 +1,7 @@
 #include "sime.h"
 
 #include "cut.h"
+#include "gru_reranker.h"
 #include "ustr.h"
 
 #include <algorithm>
@@ -16,6 +17,27 @@
 namespace sime {
 
 namespace {
+
+constexpr std::size_t kGruCandidates = 10;
+constexpr float_t kGruPinyinScale = 0.60;
+constexpr float_t kGruT9Scale = 0.72;
+
+void RerankWithGru(std::vector<DecodeResult>& candidates,
+                   const GruReranker* reranker,
+                   bool t9) {
+    if (!reranker || !reranker->Ready()) return;
+    if (candidates.size() > kGruCandidates) {
+        candidates.resize(kGruCandidates);
+    }
+    const float_t scale = t9 ? kGruT9Scale : kGruPinyinScale;
+    for (auto& candidate : candidates) {
+        candidate.score += scale * reranker->Score(candidate.tokens, t9);
+    }
+    std::stable_sort(candidates.begin(), candidates.end(),
+        [](const DecodeResult& lhs, const DecodeResult& rhs) {
+            return lhs.score > rhs.score;
+        });
+}
 
 bool BetterLayer2Entry(const DecodeResult& lhs, const DecodeResult& rhs) {
     // Dedup tie-break: pure score comparison. Penalty is already in score
@@ -85,7 +107,15 @@ Sime::Sime(const std::filesystem::path& dict_path,
         return;
     }
     vocab_sig_ = MakeVocabSignature(dict_path, model_path);
+    gru_ = std::make_unique<GruReranker>();
+    gru_->Load(model_path.parent_path());
     ready_ = true;
+}
+
+Sime::~Sime() = default;
+
+bool Sime::GruReady() const {
+    return gru_ && gru_->Ready();
 }
 
 void Sime::SetUserSentenceEnabled(bool enabled) {
@@ -678,6 +708,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
                   [](const DecodeResult& a, const DecodeResult& b) {
                       return a.score > b.score;
                   });
+        RerankWithGru(l1, gru_.get(), true);
         const std::size_t full_limit = 1 + extra;
         for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
              ++i) {
@@ -1226,6 +1257,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
                   [](const DecodeResult& a, const DecodeResult& b) {
                       return a.score > b.score;
                   });
+        RerankWithGru(l1, gru_.get(), false);
         const std::size_t full_limit = 1 + extra;
         for (std::size_t i = 0; i < l1.size() && results.size() < full_limit;
              ++i) {

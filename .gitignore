@@ -74,6 +74,7 @@ pipeline/lookup_ngram.py
 
 # Local next-generation LM research workspace
 /next/
+/releases/
 /.codex
 
 # Scripts (training/debug utilities)
