@@ -1,0 +1,34 @@
+{
+  "embedding": {
+    "dimension": 32,
+    "model": "skipgram",
+    "window": 2,
+    "negative": 5,
+    "epochs": 1,
+    "minn": 2,
+    "maxn": 4
+  },
+  "reranker": {
+    "hidden": 64,
+    "bidirectional": true,
+    "candidate_limit": 10,
+    "batch_groups": 128,
+    "learning_rate": 0.002,
+    "weight_decay": 0.00001,
+    "gradient_clip": 5.0,
+    "seed": 1
+  },
+  "pinyin": {
+    "epochs": 8,
+    "scale": 0.60
+  },
+  "t9": {
+    "epochs": 7,
+    "scale": 0.72
+  },
+  "export": {
+    "embedding_format": "rowwise-int8-fp16-scale",
+    "ncnn_fp16": true,
+    "ncnn_threads": 1
+  }
+}
