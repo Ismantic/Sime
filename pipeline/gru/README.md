@@ -2,8 +2,9 @@
 
 This directory is the cleaned entry point for the GRU reranker released in
 Sime `v2026.08.13`. The fixed parameters are recorded in `config.json`; the
-design, data policy and final metrics are documented in
-[`../../GRU_TRAINING.md`](../../GRU_TRAINING.md).
+design and data policy are documented in
+[`GRU_TRAINING.md`](GRU_TRAINING.md), and the final metrics are summarized in
+[`GRU_EVALUATION.md`](GRU_EVALUATION.md).
 
 `run.py` orchestrates the verified research implementations under
 `next/scripts/`. Their historical filenames are retained so the released
