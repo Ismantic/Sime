@@ -6,6 +6,7 @@
 #include "dict.h"
 #include "user.h"
 #include <filesystem>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,7 +35,7 @@ public:
     // points to bound the trie sep_cache content size; ResetCaches()
     // is for hard release on memory pressure (e.g. Android
     // onTrimMemory).
-    void ResetCaches() const { dict_.ResetSepCaches(); }
+    void ResetCaches() const;
 
     void SetUserSentenceEnabled(bool enabled);
     bool UserSentenceEnabled() const { return user_sentence_enabled_; }
@@ -182,6 +183,10 @@ private:
     void MaybeTrimCaches() const;
     static constexpr std::size_t kSepCacheTrimInterval = 5000;
     mutable std::size_t decode_count_ = 0;
+    // Dict::scratch_ and the trie separator caches are intentionally reused
+    // between calls. Serialize public decode/cache entry points so const
+    // callers may safely share one Sime instance across threads.
+    mutable std::mutex decode_mutex_;
 
     // Resources
     Dict dict_;

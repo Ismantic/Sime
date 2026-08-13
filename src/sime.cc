@@ -70,6 +70,11 @@ void Sime::MaybeTrimCaches() const {
     }
 }
 
+void Sime::ResetCaches() const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
+    dict_.ResetSepCaches();
+}
+
 Sime::Sime(const std::filesystem::path& dict_path,
                          const std::filesystem::path& model_path) {
     if (!dict_.Load(dict_path)) {
@@ -618,6 +623,7 @@ std::vector<DecodeResult> Sime::DecodeNumSentence(
     std::string_view start,
     const std::vector<TokenID>& context,
     std::size_t extra) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     MaybeTrimCaches();
@@ -748,6 +754,7 @@ std::vector<DecodeResult> Sime::DecodeNumStr(
     std::string_view nums,
     std::string_view start,
     std::size_t num) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_) return results;
     MaybeTrimCaches();
@@ -814,6 +821,7 @@ std::string NormalizeInput(std::string_view input) {
 std::vector<DecodeResult> Sime::DecodeStr(
     std::string_view input,
     std::size_t num) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
     MaybeTrimCaches();
@@ -1164,6 +1172,7 @@ std::vector<DecodeResult> Sime::DecodeSentence(
     std::string_view input,
     const std::vector<TokenID>& context,
     std::size_t extra) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_ || input.empty()) return results;
     MaybeTrimCaches();
@@ -1287,6 +1296,7 @@ std::vector<DecodeResult> Sime::NextTokens(
     const std::vector<TokenID>& context,
     std::size_t num,
     bool en) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0) return results;
     MaybeTrimCaches();
@@ -1344,6 +1354,7 @@ std::vector<DecodeResult> Sime::GetTokens(
     std::string_view prefix,
     std::size_t num,
     bool en) const {
+    std::lock_guard<std::mutex> lock(decode_mutex_);
     std::vector<DecodeResult> results;
     if (!ready_ || num == 0 || prefix.empty()) return results;
     MaybeTrimCaches();
