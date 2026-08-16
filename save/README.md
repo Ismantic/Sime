@@ -1,8 +1,8 @@
-# Android runtime model bundle
+# Runtime model bundle
 
-This directory is the versioned Android runtime bundle for SimeApp. It is the
+This directory is the versioned runtime model bundle for Sime. It is the
 intentional exception to the repository rule that excludes large training
-outputs: an F-Droid build must obtain the exact non-executable model data from
+outputs: application packages must obtain exact non-executable model data from
 the tagged source tree.
 
 The bundle contains only files needed at runtime. Raw corpora, training
@@ -13,7 +13,7 @@ in `pipeline/gru/GRU_TRAINING.md`.
 Verify a checkout with:
 
 ```bash
-sha256sum -c models/android/MANIFEST.sha256
+sha256sum -c save/MANIFEST.sha256
 ```
 
 All files in this bundle are distributed under the repository's Apache-2.0

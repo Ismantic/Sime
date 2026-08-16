@@ -58,7 +58,7 @@ make convert
 
 主要产物为 `pipeline/output/sime.dict` 和 `pipeline/output/sime.cnt`。
 大规模语料、训练中间文件和生成模型不应提交到 Git。面向 Android/F-Droid 发布的
-最小运行时模型包是例外，固定在 `models/android/`，其余产物仍保持本地。
+最小运行时模型包是例外，固定在 `save/`，其余产物仍保持本地。
 
 ## 应用集成
 
